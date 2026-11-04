@@ -28,11 +28,11 @@
 	// domain onboarded to Email Sending; without it, ID runs with email off, and then nobody can
 	// sign up with an address or reset a password.
 	"send_email": [{ "name": "EMAIL" }],
-	// Once a day, deletes expired sessions and verifications (apps/web/src/server/db/prune.ts).
+	// Once a day, deletes expired sessions, verifications and tokens (apps/web/src/server/db/prune.ts).
 	"triggers": { "crons": ["17 3 * * *"] },
-	// Optional: BETTER_AUTH_URL, EMAIL_FROM, GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET,
-	// TURNSTILE_SITE_KEY with TURNSTILE_SECRET_KEY, and CHECK_BREACHED_PASSWORDS (see
-	// apps/web/src/server/env.d.ts).
+	// Optional: BETTER_AUTH_URL with OIDC_PAIRWISE_SECRET for the OIDC provider, EMAIL_FROM,
+	// GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET, TURNSTILE_SITE_KEY with TURNSTILE_SECRET_KEY, and
+	// CHECK_BREACHED_PASSWORDS (see apps/web/src/server/env.d.ts).
 	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
 	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
 	// `cloud` is https://id.gateweave.com, the same Worker and database the top level names, and

@@ -114,9 +114,10 @@ It runs in two places:
   id comes from `getOAuthProviderState()`, whose `query` is a serialized query string, not an object.
   A refused person goes to a page that explains why and gets no code. `prompt=none` gets
   `interaction_required`, and continuing past the page runs the check again.
-- **On refresh,** in `customTokenResponseFields`, which can throw `invalid_grant`. Authorization does
-  not run on refresh, so without this a removed person keeps their access. This hook sees the
-  client's metadata and not its id, so every app carries its own id in `metadata.app`.
+- **At every token,** in `customTokenResponseFields`, which can throw `invalid_grant` and runs before
+  any token is made. Authorization does not run on refresh, so without this a removed person keeps
+  their access, and a code issued a moment before someone was refused would still work. This hook sees
+  the client's metadata and not its id, so every app carries its own id in `metadata.app`.
 
 Removing someone from a workspace or group also deletes their refresh tokens for its apps, so access
 ends at the next expiry of a short-lived access token rather than at some later refresh.
@@ -136,21 +137,68 @@ app or breaks every integration, so each is decided here and not left to a defau
 | Signing          | ES256 (`jwks.keyPairConfig.alg`)                                       | Better Auth defaults to EdDSA, which is not on Cloudflare Access's documented list.     |
 | Subjects         | Pairwise for every app (`pairwiseSecret`)                              | With one shared issuer, a public `sub` would let unrelated customers match a person up. |
 | `pairwiseSecret` | Generated once, never rotated                                          | Rotating it changes every subject, so every app would see new people.                   |
-| Token prefixes   | Set before the first production deploy                                 | Better Auth's docs call them effectively immutable.                                     |
+| Token prefixes   | `gwid_at_`, `gwid_rt_`, `gwid_cs_`                                     | Better Auth's docs call them effectively immutable.                                     |
+
+**A deployment is a provider only when it says so:** `BETTER_AUTH_URL` and `OIDC_PAIRWISE_SECRET` both
+set. The issuer is the origin of the first. It is never taken from a request, whose Host header belongs
+to whoever sent it. Without both, discovery and every provider path answer 404, so a deployment that
+has not set them up has no provider rather than a wrong one. The secret stands alone, and is not derived
+from `BETTER_AUTH_SECRET`, so that rotating the session secret leaves every subject where it is.
 
 Other rules:
 
-- **Signing keys rotate** (`rotationInterval`, `gracePeriod`), and private keys stay encrypted at rest.
-- **Access tokens are opaque.** Better Auth's JWT access tokens carry the real user id, not the
-  pairwise one, so ID registers no resources for workspace apps.
-- **The ID token carries `email` and `email_verified`** through `customIdTokenClaims` when the `email`
-  scope is granted. They are not there by default, and Cloudflare Access reads the ID token.
+- **A subject is derived from the host of the app's first redirect URI** and the person's id. Moving an
+  app to a new host therefore gives everybody a new subject in it, so register the host it will keep.
+  `test/oidc.test.ts` pins the derivation, so that an upgrade of Better Auth cannot change it unnoticed.
+- **Signing keys rotate** every 90 days, and an old key stays published for 30 more, which is longer
+  than any ID token lives. Private keys stay encrypted at rest with `BETTER_AUTH_SECRET`. A new key signs
+  as soon as it exists, because Better Auth has no way to publish one first. So an app that fetched the
+  JWKS in the seconds before a rotation can fail to verify one sign-in until it fetches again, which
+  clients do when they meet an unknown key. Four times a year, this is accepted.
+- **Access tokens are opaque, and `resource` is refused.** A JWT access token's subject is the real user
+  id, whatever the app's subject type. Registering no resources is not enough: the provider always accepts
+  its own userinfo endpoint as one, so any app could ask for a JWT by naming it. So a request that names
+  any resource gets `invalid_target`, at authorization and at the token endpoint. Lifting this for APIs
+  later takes a way to give such a JWT the pairwise subject.
+- **`/token`, the JWT plugin's own endpoint, is closed** for the same reason.
+- **The ID token carries `email`, `email_verified`, `name` and `picture`** through `customIdTokenClaims`
+  when their scopes are granted. They are not there by default, and Cloudflare Access reads the ID token.
 - **`amr` and `auth_time` are the provider's own.** Reserved claims are stripped from custom claims,
   so `amr` cannot be added that way and `acr` is always `"0"`. Do not promise an app that it can tell
   how someone signed in until this is solved.
 - **Refresh tokens rotate,** and reusing an old one revokes the newer one too.
 - **Apps need PKCE and exact redirect URIs.** There is no open dynamic client registration: admins
   choose apps. A pairwise app's redirect URIs must share one host.
+- **`sid` is the session's own id, in the ID token and the logout token,** so two apps can match up a
+  person for as long as one session lasts. All apps are first-party for now. Workspace apps (who may
+  not trust each other) need this looked at before they get `backchannel_logout_uri`.
+- **Limits on the token and userinfo endpoints are high on purpose,** at 600 a minute per address. Apps'
+  servers call them, and apps on Workers all come from one Cloudflare address.
+
+## Registering an app
+
+First-party apps are registered by whoever runs the deployment, and nothing else can add one. Signed-in
+people get no client endpoint (`clientPrivileges` is always false), and Better Auth's admin function can
+only run inside the Worker, which no route offers:
+
+```sh
+pnpm --filter @gateweave/id-web apps:add --env staging --app track --name "Gateweave Track" \
+  --redirect-uri https://track-staging.gateweave.com/api/auth/oauth2/callback/gateweave-id \
+  --backchannel-logout-uri https://track-staging.gateweave.com/api/auth/backchannel-logout
+```
+
+It writes the row with `wrangler d1 execute`, keeps only a hash of the secret, and prints the secret once.
+Since this writes what the provider would, `scripts/app-row.ts` is the one part of ID that knows the
+provider's table. `test/oidc.test.ts` signs in through a row it builds, so an upgrade that changes what
+the provider reads fails there.
+
+## A patched dependency
+
+`@better-auth/oauth-provider` sends back-channel logouts with `redirect: "error"`, which Workers refuse
+outright, so every one of them failed with only a warning in the log. `patches/` changes that word to
+`"manual"`. The provider treats anything but 200 or 204 as a failure, so a redirect still is not followed.
+The same line is in 1.7.16. pnpm stops an install when a patch no longer has its version, so an upgrade
+has to look at this again: drop the patch if upstream has fixed it, otherwise move it.
 
 ## Products as clients
 
@@ -207,8 +255,13 @@ A throwaway Worker on workerd, driven by `oauth4webapi` and by Chromium's WebAut
 - Refresh rotation and reuse revoking the newer token.
 - TOTP enrolment, and a passkey registering and signing in.
 
+`apps/web/test/oidc.test.ts` now holds most of this against the built Worker, with `oauth4webapi` going
+through discovery and the JWKS. It found two things the throwaway Worker had not: back-channel logout
+never worked on Workers (see "A patched dependency"), and naming the userinfo endpoint as a `resource`
+got a JWT with the real user id.
+
 Still unproven:
 
 - Cloudflare Access against a deployed ID.
-- The back-channel logout round trip to a product.
+- The back-channel logout round trip to a product's own endpoint.
 - The OpenID conformance suite, which Pocket ID has passed and ID should too.

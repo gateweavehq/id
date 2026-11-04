@@ -1,0 +1,13 @@
+diff --git a/dist/authorize-B1Bc3IL6.mjs b/dist/authorize-B1Bc3IL6.mjs
+index b60fcb71b9818b580a7407f301f237f430647486..ac6f83f5349ef116d8282dd10c6b19aba75248a7 100644
+--- a/dist/authorize-B1Bc3IL6.mjs
++++ b/dist/authorize-B1Bc3IL6.mjs
+@@ -2911,7 +2911,7 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
+ 				},
+ 				body: new URLSearchParams({ logout_token: token }),
+ 				signal: AbortSignal.timeout(BACKCHANNEL_DISPATCH_TIMEOUT_MS),
+-				redirect: "error"
++				redirect: "manual"
+ 			});
+ 			if (response.status !== 200 && response.status !== 204) logger.warn(`back-channel logout to client ${client.clientId} returned ${response.status}`);
+ 		} catch (error) {

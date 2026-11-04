@@ -18,9 +18,15 @@ if (existsSync(DEV_VARS)) {
 			.replace(/^BETTER_AUTH_SECRET=.*$/m, `BETTER_AUTH_SECRET=${secret}`)
 			// Signing up takes a code sent by email, so local dev has email on. Nothing is sent: each
 			// message is saved to a file under apps/web/.wrangler/tmp/email.
-			.replace(/^# EMAIL_FROM=.*$/m, "EMAIL_FROM=Gateweave ID <id@example.com>"),
+			.replace(/^# EMAIL_FROM=.*$/m, "EMAIL_FROM=Gateweave ID <id@example.com>")
+			// Local dev is an OIDC provider too, so an app under development can sign in against it.
+			.replace(/^# BETTER_AUTH_URL=.*$/m, "BETTER_AUTH_URL=http://localhost:4730")
+			.replace(
+				/^# OIDC_PAIRWISE_SECRET=.*$/m,
+				`OIDC_PAIRWISE_SECRET=${randomBytes(32).toString("base64")}`,
+			),
 	);
-	console.log("Created .dev.vars with a fresh BETTER_AUTH_SECRET and email on.");
+	console.log("Created .dev.vars with fresh secrets, email on and the OIDC provider on.");
 }
 
 // The `db:migrate:local` script, without a second pnpm in between. Wrangler is on the PATH

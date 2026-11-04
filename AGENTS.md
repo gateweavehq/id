@@ -10,8 +10,9 @@ one Worker, one D1 database and a Durable Object for rate limits. It is part of
 [Gateweave](https://gateweave.com), next to [Gateweave Track](https://github.com/gateweavehq/track)
 and [Gateweave Agents](https://github.com/gateweavehq/agents), which will sign people in with it.
 
-It is early. Today it has accounts: sign-up, email verification, sign-in, password reset and an
-account page. The OIDC provider, passkeys, TOTP, workspaces, groups and apps come in later issues.
+It is early. Today it has accounts (sign-up, email verification, sign-in, password reset and an
+account page) and the OIDC provider, for first-party apps a deployment registers itself. Passkeys,
+TOTP, workspaces, groups and workspace apps come in later issues.
 
 Read [docs/architecture.md](docs/architecture.md) before changing sign-in, tokens or who may use an
 app. A mistake in those places signs the wrong person in to someone else's app.
@@ -56,6 +57,9 @@ root unless noted.
 Gateweave's own deployments are the `staging` and `cloud` environments in `wrangler.jsonc`:
 `pnpm --filter @gateweave/id-web deploy:staging` and `db:migrate:staging` for staging; production
 deploys from a published release (`.github/workflows/deploy.yml`).
+
+A deployment registers its first-party apps with `pnpm --filter @gateweave/id-web apps:add`; see
+"Registering an app" in [docs/architecture.md](docs/architecture.md).
 
 Scope a command to one package with `pnpm --filter <name> <script>`, for example
 `pnpm --filter @gateweave/id-web test`. Run `pnpm verify` before you consider a change done.
@@ -112,7 +116,8 @@ them, check whether the others have the same bug, especially in auth and rate li
   everything under `apps/web/migrations/`.
 - Dependencies are pinned to exact versions. Shared ones go in the `catalog:` of
   `pnpm-workspace.yaml`. `drizzle-orm` stays on 0.45: the 1.0 migration format does not work
-  with Wrangler's D1 migrations.
+  with Wrangler's D1 migrations. `patches/` holds one fix to `@better-auth/oauth-provider`, which
+  an upgrade has to look at again (see "A patched dependency" in the architecture notes).
 - UI code copied into the repository (components, blocks, hooks) must come from an MIT or
   Apache-2.0 source, such as shadcn/ui, Magic UI or SmoothUI. Note the source and keep its
   copyright notice in a comment at the top of the file, and in `THIRD_PARTY_NOTICES.md`. Paid or
