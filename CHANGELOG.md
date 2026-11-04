@@ -7,6 +7,16 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.1.1] - 2026-11-04
+
+### Security
+
+- **Better Auth 1.7.16.** A sign-up or sign-in code could take more guesses than its limit under
+  concurrent requests, and verification and email-change links worked for an account other than the
+  one they were issued to. The passkey plugin now holds to `userVerification: "required"` and to the
+  configured origin itself, so ID's own guards for them are gone, and the tests still refuse both. A
+  refused passkey now answers 400. (#16)
+
 ## [0.1.0] - 2026-11-04
 
 The first release. Gateweave ID is an OpenID Connect provider that runs entirely on Cloudflare: one
