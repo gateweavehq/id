@@ -60,6 +60,27 @@ function siteverify(host: string, body: string): Response {
 	}
 }
 
+/** Passwords the stand-in for Have I Been Pwned treats specially. Any other has not been seen. */
+export const PWNED_PASSWORDS = {
+	breached: "a-password-seen-in-a-breach",
+	serviceDown: "a-password-while-the-service-is-down",
+	noAnswer: "a-password-while-the-service-hangs",
+};
+
+// The service holds hashes and not passwords, so the stand-in does too. These are the SHA-1 of the
+// passwords above, in the same order.
+const BREACHED_SHA1 = "78C19D71E296D458874E2BE4E5CC300264A9CFBE";
+const SERVICE_DOWN_PREFIX = "B0D3E";
+const NO_ANSWER_PREFIX = "0F216";
+
+/** The range API: the suffixes of every password whose SHA-1 starts with this prefix. */
+async function pwnedRange(prefix: string): Promise<Response> {
+	if (prefix === SERVICE_DOWN_PREFIX) return new Response("Down", { status: 503 });
+	if (prefix === NO_ANSWER_PREFIX) await new Promise((resolve) => setTimeout(resolve, 6000));
+	const known = BREACHED_SHA1.startsWith(prefix) ? `${BREACHED_SHA1.slice(5)}:42\r\n` : "";
+	return new Response(`${known}0000000000000000000000000000000000A:1\r\n`);
+}
+
 /** Who the stand-in for GitHub says someone is. */
 export interface GitHubPerson {
 	id: number;
@@ -143,7 +164,7 @@ function builtModules(): V4ModuleDefinition[] {
  * ID needs no outside service for sign-in, so code that only works because local dev can reach
  * itself fails here instead of in production. Email is on unless `email` is false, and lands in
  * `emails()`. With `turnstile`, Siteverify answers: see `TURNSTILE_TOKENS`. With `github`, GitHub
- * does: see `gitHubCode`.
+ * does: see `gitHubCode`. With `breachedPasswords`, Have I Been Pwned does: see `PWNED_PASSWORDS`.
  *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
@@ -155,7 +176,14 @@ export async function startId(
 		email = true,
 		turnstile = false,
 		github = false,
-	}: { isolates?: number; email?: boolean; turnstile?: boolean; github?: boolean } = {},
+		breachedPasswords = false,
+	}: {
+		isolates?: number;
+		email?: boolean;
+		turnstile?: boolean;
+		github?: boolean;
+		breachedPasswords?: boolean;
+	} = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
 	const outbound: string[] = [];
@@ -196,6 +224,7 @@ export async function startId(
 									GITHUB_CLIENT_SECRET: GITHUB_CLIENT.secret,
 								}
 							: {}),
+						...(breachedPasswords ? { CHECK_BREACHED_PASSWORDS: "1" } : {}),
 					},
 					serviceBindings: { EMAIL: "outbox" },
 					d1Databases: { DB: "id-test" },
@@ -210,6 +239,8 @@ export async function startId(
 						}
 						const answer = github ? await gitHub(request) : null;
 						if (answer) return answer;
+						const range = /^https:\/\/api\.pwnedpasswords\.com\/range\/(.+)$/.exec(request.url);
+						if (breachedPasswords && range?.[1]) return pwnedRange(range[1]);
 						return new Response("Outbound requests are blocked in this test", { status: 502 });
 					},
 				})),

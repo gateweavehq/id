@@ -9,6 +9,7 @@ import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { passwordResetEmail } from "../email/templates";
+import { breachedPasswords } from "./breached-passwords";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 
 export interface AuthConfig {
@@ -29,6 +30,8 @@ export interface AuthConfig {
 	allowSignUpCode?: ((email: string) => Promise<boolean>) | undefined;
 	/** Puts Cloudflare Turnstile in front of the paths bots go for. Off without it. */
 	turnstileSecretKey?: string | undefined;
+	/** Refuses passwords known from breaches, by asking a service outside this deployment. */
+	checkBreachedPasswords?: boolean | undefined;
 }
 
 /**
@@ -151,6 +154,7 @@ export function createAuth(config: AuthConfig) {
 					]
 				: []),
 			...(mailer ? [signUpCodes(mailer)] : []),
+			...(config.checkBreachedPasswords ? [breachedPasswords()] : []),
 			firstPassword(),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.
 			tanstackStartCookies(),

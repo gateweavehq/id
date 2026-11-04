@@ -183,6 +183,11 @@ for why this replaced a shared session.
 - Changing a password ends every other session, since whoever knew the old one may be why it changed.
   The account page lists a person's sessions, and they can end any of them.
 - The cookie keeps the session token away from scripts, so the session a page carries leaves it out.
+- A password known from a breach is refused wherever someone chooses one. Only the first five
+  characters of its SHA-1 go to Have I Been Pwned. It is on in Gateweave Cloud, and self-hosters opt in
+  with `CHECK_BREACHED_PASSWORDS`, since it means calling another company. When the service cannot
+  answer within three seconds the password goes through: a reset is how someone takes their account
+  back, and another company's outage should not stand in the way.
 - A person cannot remove their last way to sign in.
 - Sign-ins, refusals, consents and admin changes go to an audit log from the first release. Exporting
   it is an `ee/` feature; recording it is not.

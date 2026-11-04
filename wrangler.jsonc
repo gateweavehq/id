@@ -30,8 +30,9 @@
 	"send_email": [{ "name": "EMAIL" }],
 	// Once a day, deletes expired sessions and verifications (apps/web/src/server/db/prune.ts).
 	"triggers": { "crons": ["17 3 * * *"] },
-	// Optional: BETTER_AUTH_URL, EMAIL_FROM, GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET, and
-	// TURNSTILE_SITE_KEY with TURNSTILE_SECRET_KEY (see apps/web/src/server/env.d.ts).
+	// Optional: BETTER_AUTH_URL, EMAIL_FROM, GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET,
+	// TURNSTILE_SITE_KEY with TURNSTILE_SECRET_KEY, and CHECK_BREACHED_PASSWORDS (see
+	// apps/web/src/server/env.d.ts).
 	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
 	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
 	// `cloud` is https://id.gateweave.com, the same Worker and database the top level names, and
@@ -40,6 +41,7 @@
 		"cloud": {
 			"name": "gateweave-id",
 			"routes": [{ "pattern": "id.gateweave.com", "custom_domain": true }],
+			"vars": { "CHECK_BREACHED_PASSWORDS": "1" },
 			"d1_databases": [
 				{
 					"binding": "DB",
@@ -56,6 +58,7 @@
 		"staging": {
 			"name": "gateweave-id-staging",
 			"routes": [{ "pattern": "id-staging.gateweave.com", "custom_domain": true }],
+			"vars": { "CHECK_BREACHED_PASSWORDS": "1" },
 			"d1_databases": [
 				{
 					"binding": "DB",

@@ -14,6 +14,10 @@ BETTER_AUTH_SECRET=
 # TURNSTILE_SITE_KEY=
 # TURNSTILE_SECRET_KEY=
 
+# Optional: "1" refuses passwords known from breaches. It sends the first five characters of a
+# password's SHA-1 to Have I Been Pwned, which never learns the password.
+# CHECK_BREACHED_PASSWORDS=
+
 # Optional: pins the app's URL. Leave it out to accept any host, for example from your phone.
 # BETTER_AUTH_URL=
 
