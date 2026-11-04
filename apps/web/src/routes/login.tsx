@@ -8,6 +8,7 @@ import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { safeRedirect } from "#/lib/redirect";
 import { getAuthOptions, getSession } from "#/lib/session";
+import { signInRefusal } from "#/lib/sign-in-refusal";
 import { useTurnstile } from "#/lib/turnstile";
 
 const loginSearch = z.object({
@@ -15,6 +16,8 @@ const loginSearch = z.object({
 	redirect: z.string().optional().catch(undefined),
 	/** Prefills the email field. */
 	email: z.string().optional().catch(undefined),
+	/** Why a GitHub sign-in came back here. */
+	error: z.string().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/login")({
@@ -31,6 +34,7 @@ function SignInForm() {
 	const search = Route.useSearch();
 	const next = safeRedirect(search.redirect) ?? "/account";
 	const router = useRouter();
+	const [refusal, setRefusal] = useState(() => signInRefusal(search.error));
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const turnstile = useTurnstile(options.turnstileSiteKey);
@@ -40,6 +44,7 @@ function SignInForm() {
 		const form = new FormData(event.currentTarget);
 		setPending(true);
 		setError(null);
+		setRefusal(null);
 		try {
 			const result = await authClient.signIn.email({
 				email: String(form.get("email")),
@@ -66,6 +71,12 @@ function SignInForm() {
 				<div className="space-y-1.5 text-center">
 					<h1 className="text-xl font-semibold tracking-tight">Sign in to Gateweave ID</h1>
 				</div>
+
+				{refusal && (
+					<p role="alert" className="text-sm text-destructive">
+						{refusal}
+					</p>
+				)}
 
 				{options.github && <GitHubSignIn next={next} />}
 

@@ -33,8 +33,11 @@ pnpm dev         # http://localhost:4730
 
 Sign up at `/signup`. Signing up takes a code sent by email, so `pnpm dev:setup` turns email on.
 Nothing is sent locally: each email is saved as a file under `apps/web/.wrangler/tmp/email`, and the
-terminal that runs `pnpm dev` prints its path. The code is in the `.txt` file. To enable "Continue
-with GitHub", uncomment and fill in `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.dev.vars`.
+terminal that runs `pnpm dev` prints its path. The code is in the `.txt` file.
+
+To enable "Continue with GitHub", [create an OAuth App](https://github.com/settings/applications/new)
+with the callback URL `http://localhost:4730/api/auth/callback/github`, then uncomment and fill in
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.dev.vars`.
 
 `pnpm verify` runs everything CI does: lint, types, tests and a build. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for how the code is organized and

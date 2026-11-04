@@ -75,6 +75,24 @@ want, because signing in with only a mailbox would skip the password and, later,
 The first password goes through `/account/first-password`, which needs a session from the last day.
 Setting a password outlasts a stolen cookie, so an old session cannot do it.
 
+## Signing in with GitHub
+
+GitHub is a second way to prove an address, under the same rule: no account without a verified one.
+
+- **ID asks for `user:email` and nothing else.** That is enough to read someone's verified addresses,
+  and it keeps the consent screen short. Each environment has its own OAuth App, since one has a single
+  callback URL. An OAuth App rather than a GitHub App, because signing in with a GitHub App asks to
+  "act on your behalf", and ID does not.
+- **ID keeps none of GitHub's tokens.** It asks who someone is once per sign-in and never calls GitHub
+  for them afterwards, so a token it does not store cannot leak.
+- **A verified address that matches an account signs in to it.** An account's address is always
+  verified, so both sides have proven it, and Better Auth links them. An address GitHub has not verified
+  neither makes an account nor reaches one.
+- **The link is to the GitHub account, not its address.** Someone who changes their address on GitHub
+  stays the same person in ID, with the address ID already has.
+- **A refusal comes back to `/login` as a code,** because it ends in a redirect. The page turns known
+  codes into its own words and shows nothing from the URL, or a link could put any text on the page.
+
 ## Who may sign in
 
 Three rules, in this order:

@@ -1,5 +1,6 @@
 import type { BetterAuthRateLimitOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError } from "better-auth/api";
 import { betterAuth } from "better-auth/minimal";
 import { captcha } from "better-auth/plugins/captcha";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
@@ -39,6 +40,18 @@ const TURNSTILE_PATHS = [
 	"/sign-in/email",
 	"/request-password-reset",
 ];
+
+/**
+ * ID asks a provider who someone is when they sign in, and never calls it for them afterwards. A
+ * token it does not keep cannot leak.
+ */
+const NO_TOKENS = {
+	accessToken: null,
+	refreshToken: null,
+	idToken: null,
+	accessTokenExpiresAt: null,
+	refreshTokenExpiresAt: null,
+};
 
 /**
  * Builds the Better Auth instance. Kept free of `cloudflare:workers` imports so the Better Auth
@@ -89,7 +102,20 @@ export function createAuth(config: AuthConfig) {
 				revokeSessionsOnPasswordReset: true,
 			}),
 		},
-		socialProviders: config.github ? { github: config.github } : {},
+		socialProviders: config.github
+			? {
+					github: {
+						...config.github,
+						// Enough to read someone's verified addresses, which is all ID asks GitHub.
+						disableDefaultScope: true,
+						scope: ["user:email"],
+					},
+				}
+			: {},
+		// Better Auth's own error page knows nothing of this app. The sign-in page explains a refusal.
+		onAPIError: { errorURL: "/login" },
+		// With no tokens kept, signing in again has nothing to refresh.
+		account: { updateAccountOnSignIn: false },
 		databaseHooks: {
 			user: {
 				create: {
@@ -97,9 +123,18 @@ export function createAuth(config: AuthConfig) {
 					// acme.com" rest on it. A sign-up code proves the address before this runs, so what
 					// this refuses is a GitHub account whose address GitHub has not verified.
 					before: async (user) => {
-						if (!user.emailVerified) return false;
+						if (!user.emailVerified) {
+							throw APIError.from("FORBIDDEN", {
+								code: "EMAIL_NOT_VERIFIED",
+								message: "This email address is not verified",
+							});
+						}
 					},
 				},
+			},
+			account: {
+				create: { before: async (account) => ({ data: { ...account, ...NO_TOKENS } }) },
+				update: { before: async (account) => ({ data: { ...account, ...NO_TOKENS } }) },
 			},
 		},
 		hooks: signUpHooks(config.allowSignUpCode),
