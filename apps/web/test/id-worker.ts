@@ -212,6 +212,7 @@ export async function startId(
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
 	const outbound: string[] = [];
 	const outboundBodies: { url: string; body: string }[] = [];
+	const logoutAnswers = new Map<string, (number | "no answer")[]>();
 	const logs: WorkerLog[] = [];
 	const modules = builtModules();
 	const secret = randomBytes(32).toString("base64url");
@@ -269,7 +270,9 @@ export async function startId(
 						if (breachedPasswords && range?.[1]) return pwnedRange(range[1]);
 						if (new URL(request.url).hostname.endsWith(".apps.test")) {
 							outboundBodies.push({ url: request.url, body: await request.text() });
-							return new Response(null, { status: 200 });
+							const answer = logoutAnswers.get(request.url)?.shift() ?? 200;
+							if (answer === "no answer") return new Promise<Response>(() => {});
+							return new Response(null, { status: answer });
 						}
 						return new Response("Outbound requests are blocked in this test", { status: 502 });
 					},
@@ -363,6 +366,8 @@ export async function startId(
 		outbound,
 		/** What the Worker sent to apps. */
 		outboundBodies,
+		/** What an app's address answers to each delivery in turn, then 200. */
+		logoutAnswers,
 		/** Everything the Worker has logged so far, oldest first. */
 		logs,
 		/** Every email sent so far, oldest first. Email goes out after the response. */
