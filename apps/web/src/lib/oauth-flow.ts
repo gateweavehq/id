@@ -51,6 +51,16 @@ export function onItsWay(data: unknown): boolean {
 	);
 }
 
+/** Whether a right password still leaves a code to enter, and nobody is signed in yet. */
+export function owesACode(data: unknown): boolean {
+	return (
+		typeof data === "object" &&
+		data !== null &&
+		"twoFactorRedirect" in data &&
+		data.twoFactorRedirect === true
+	);
+}
+
 /** Whether a request failed because the page's signature ran out, which it does after 10 minutes. */
 export function linkExpired(error: unknown): boolean {
 	return (

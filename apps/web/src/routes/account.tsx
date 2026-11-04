@@ -4,6 +4,7 @@ import { AccountPasskeys } from "#/components/account-passkeys";
 import { AccountPassword } from "#/components/account-password";
 import { AccountProfile } from "#/components/account-profile";
 import { AccountSessions } from "#/components/account-sessions";
+import { AccountTwoFactor } from "#/components/account-two-factor";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
 import { getAuthOptions, getSession, hasPassword } from "#/lib/session";
@@ -47,6 +48,12 @@ function AccountPage() {
 
 			<AccountProfile name={session.user.name} email={session.user.email} />
 			<AccountPassword email={session.user.email} hasPassword={data.hasPassword} />
+			{data.hasPassword && (
+				<AccountTwoFactor
+					enabled={session.user.twoFactorEnabled === true}
+					email={session.user.email}
+				/>
+			)}
 			{data.passkeys && <AccountPasskeys />}
 			{/* A changed password replaces this session, and with it what the list has to show. */}
 			<AccountSessions key={session.session.id} currentId={session.session.id} />

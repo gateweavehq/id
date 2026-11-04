@@ -80,17 +80,38 @@ const SIGN_IN_METHODS: Record<string, string> = {
 	"/sign-in/email": "password",
 	"/sign-in/email-otp": "code",
 	"/passkey/verify-authentication": "passkey",
+	"/two-factor/verify-totp": "totp",
+	"/two-factor/verify-backup-code": "recovery_code",
 };
 const PROVIDER_CALLBACK = "/callback/:id";
 
 function signInMethod(context: GenericEndpointContext | null): string | undefined {
 	if (!context) return undefined;
 	if (context.path === PROVIDER_CALLBACK) return context.params?.id;
+	// Someone with a session here is showing that their authenticator works, and the session this makes
+	// replaces theirs.
+	if (context.path === "/two-factor/verify-totp" && context.context.session) return undefined;
 	return SIGN_IN_METHODS[context.path];
 }
 
+/** What turns two-factor sign-in on or off, the only thing that changes a person at these paths. */
+const TWO_FACTOR_CHANGES: Record<string, AuditEventType> = {
+	"/two-factor/verify-totp": "two_factor_enabled",
+	"/two-factor/disable": "two_factor_disabled",
+};
+
+/** Whether a right password still leaves this person a code to enter. */
+async function owesACode(db: Database, userId: string): Promise<boolean> {
+	const user = await db
+		.select({ twoFactorEnabled: schema.user.twoFactorEnabled })
+		.from(schema.user)
+		.where(eq(schema.user.id, userId))
+		.get();
+	return user?.twoFactorEnabled === true;
+}
+
 /** For Better Auth's `databaseHooks`: what happens to a row, however a request came to do it. */
-export function auditDatabaseHooks(record: RecordEvent) {
+export function auditDatabaseHooks(db: Database, record: RecordEvent) {
 	return {
 		user: {
 			afterCreate: async (user: { id: string }, context: GenericEndpointContext | null) => {
@@ -99,6 +120,10 @@ export function auditDatabaseHooks(record: RecordEvent) {
 					detail: signInMethod(context),
 					...whereFrom(context?.headers),
 				});
+			},
+			afterUpdate: async (user: { id: string }, context: GenericEndpointContext | null) => {
+				const type = context && TWO_FACTOR_CHANGES[context.path];
+				if (type) record(type, { userId: user.id, ...whereFrom(context.headers) });
 			},
 		},
 		account: {
@@ -134,7 +159,10 @@ export function auditDatabaseHooks(record: RecordEvent) {
 			) => {
 				const method = signInMethod(context);
 				if (!method) return;
-				record("sign_in", {
+				// The plugin takes this session away again when a code is owed. A password alone has not
+				// signed anyone in, though someone who did not enter it will want to know it was right.
+				const asked = method === "password" && (await owesACode(db, session.userId));
+				record(asked ? "two_factor_asked" : "sign_in", {
 					userId: session.userId,
 					detail: method,
 					ip: session.ipAddress ?? null,
@@ -151,12 +179,11 @@ const ACCOUNT_EVENTS: Record<string, { type: AuditEventType; detail?: string }> 
 	"/account/first-password": { type: "password_changed", detail: "first" },
 	"/passkey/verify-registration": { type: "passkey_added" },
 	"/account/remove-passkey": { type: "passkey_removed" },
+	"/two-factor/generate-backup-codes": { type: "recovery_codes_replaced" },
 	"/revoke-session": { type: "sessions_revoked" },
 	"/revoke-sessions": { type: "sessions_revoked" },
 	"/revoke-other-sessions": { type: "sessions_revoked" },
 };
-
-const FAILED_SIGN_IN_PATHS = new Set(["/sign-in/email", "/passkey/verify-authentication"]);
 
 /** The address someone typed names an account or nothing, and only the account is kept. */
 function ownerOfAddress(db: Database, body: Record<string, unknown> | undefined) {
@@ -179,6 +206,44 @@ function ownerOfPasskey(db: Database, body: Record<string, unknown> | undefined)
 		.where(eq(schema.passkey.credentialID, credentialID))
 		.get();
 }
+
+/**
+ * Who a sign-in waiting for a code belongs to. The cookie only says which challenge it is, and the
+ * challenge says who. Nobody has one who has not given that person's password.
+ */
+export async function ownerOfChallenge(
+	ctx: Pick<GenericEndpointContext, "context" | "getSignedCookie">,
+): Promise<{ id: string } | undefined> {
+	const { name } = ctx.context.createAuthCookie("two_factor");
+	const challenge = await ctx.getSignedCookie(name, ctx.context.secret);
+	if (!challenge) return undefined;
+	const row = await ctx.context.internalAdapter.findVerificationValue(challenge);
+	return row ? { id: row.value } : undefined;
+}
+
+/** What each way of signing in calls itself when it fails, and who it was against. */
+const FAILED_SIGN_INS: Record<
+	string,
+	{
+		detail: string;
+		owner: (db: Database, ctx: GenericEndpointContext) => Promise<{ id: string } | undefined>;
+	}
+> = {
+	"/sign-in/email": { detail: "password", owner: async (db, ctx) => ownerOfAddress(db, ctx.body) },
+	"/passkey/verify-authentication": {
+		detail: "passkey",
+		owner: async (db, ctx) => {
+			const owner = await ownerOfPasskey(db, ctx.body);
+			return owner ?? undefined;
+		},
+	},
+	// Someone with a session mistyping as they set this up has no challenge, and writes nothing.
+	"/two-factor/verify-totp": { detail: "totp", owner: (_db, ctx) => ownerOfChallenge(ctx) },
+	"/two-factor/verify-backup-code": {
+		detail: "recovery_code",
+		owner: (_db, ctx) => ownerOfChallenge(ctx),
+	},
+};
 
 /** The most a person is shown: enough to spot what was not them. */
 const ACTIVITY_LIMIT = 50;
@@ -243,23 +308,19 @@ export function auditLog(db: Database, record: RecordEvent): BetterAuthPlugin {
 		hooks: {
 			after: [
 				{
-					matcher: ({ path = "" }) => FAILED_SIGN_IN_PATHS.has(path) || path in ACCOUNT_EVENTS,
+					matcher: ({ path = "" }) => path in FAILED_SIGN_INS || path in ACCOUNT_EVENTS,
 					handler: createAuthMiddleware(async (ctx) => {
 						const failed = isAPIError(ctx.context.returned);
 						const from = whereFrom(ctx.headers);
 
-						if (FAILED_SIGN_IN_PATHS.has(ctx.path)) {
+						const signIn = FAILED_SIGN_INS[ctx.path];
+						if (signIn) {
 							if (!failed) return;
-							const password = ctx.path === "/sign-in/email";
 							// Someone trying addresses leaves no rows: the rate limit bounds what can reach here
 							// for an account, and nothing bounds the addresses that have none.
 							record("sign_in_failed", async () => {
-								const owner = await (password
-									? ownerOfAddress(db, ctx.body)
-									: ownerOfPasskey(db, ctx.body));
-								return (
-									owner && { userId: owner.id, detail: password ? "password" : "passkey", ...from }
-								);
+								const owner = await signIn.owner(db, ctx);
+								return owner && { userId: owner.id, detail: signIn.detail, ...from };
 							});
 							return;
 						}

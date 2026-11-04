@@ -9,7 +9,7 @@ import { SignInDivider } from "#/components/sign-in-divider";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
-import { flowSearch, inFlow, onItsWay } from "#/lib/oauth-flow";
+import { flowSearch, inFlow, onItsWay, owesACode } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
 import { getAuthOptions, getSession } from "#/lib/session";
 import { signInRefusal } from "#/lib/sign-in-refusal";
@@ -63,6 +63,13 @@ function SignInForm() {
 				return;
 			}
 			if (onItsWay(result.data)) return;
+			if (owesACode(result.data)) {
+				await router.navigate({
+					to: "/two-factor",
+					search: { redirect: search.redirect, ...flowSearch(search) },
+				});
+				return;
+			}
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : "Something went wrong");
 			return;

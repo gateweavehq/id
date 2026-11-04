@@ -55,7 +55,7 @@ So signing up has three steps, and only the last two touch the database's accoun
    the account its first password.
 
 Better Auth's `email-otp` plugin does steps 1 and 2. It is also a way to sign in, which ID does not
-want, because signing in with only a mailbox would skip the password and, later, two-factor.
+want, because signing in with only a mailbox would skip the password and two-factor.
 `apps/web/src/server/auth/sign-up.ts` holds it to signing up:
 
 - **A code never opens an account that exists.** An existing address gets an email that says so, with
@@ -125,6 +125,61 @@ to everything else a person uses, so ID differs in these places:
 A passkey is a way to sign in like any other: someone whose only one is a passkey is not sent to choose a
 password on the way to an app, and is still subject to "Who may sign in", after which they carry on to
 it as they would after a password.
+
+## Two-factor sign-in
+
+Someone who turns this on is asked for a code from an authenticator app every time they sign in with a
+password. A passkey with user verification is already two factors, and GitHub has its own sign-in, so
+neither asks. That is also why only someone with a password is offered it: it would protect nothing else
+they have. The account page says what it covers, since a person choosing it should know.
+
+Better Auth's two-factor plugin does the TOTP. ID differs from what it does by default in these places:
+
+- **It runs before the provider.** Hooks run in plugin order, and the provider's carries on to the app when
+  it sees a session being set. The plugin's is what takes the session away while a code is owed. In the
+  other order a password alone would make a code for the app, which `test/two-factor.test.ts` checks by
+  counting codes in the database, because the response alone would not show it.
+- **A code works once.** The plugin takes one for as long as it is valid, a minute and a half with the
+  step either side, so anyone who saw it could use it again, and RFC 6238 says a verifier must not.
+  `RateLimiter` holds each person's code for two minutes, and it is claimed before it is checked, because
+  checking first would let two requests with one code both through. A wrong code claimed this way harms
+  nothing: it gets the same answer as any wrong code, and a repeat of it costs no attempt.
+- **No device is remembered.** The plugin offers 30 days without a code, which is a password alone for 30
+  days.
+- **Nothing goes by email.** A mailbox already resets a password, so one mailbox would be both factors.
+  For the same reason a reset by email leaves two-factor on, and the next sign-in asks.
+- **The key is shown once.** The plugin's `get-totp-uri` would show it again to anyone with the password
+  and a session, and that is a second authenticator the person never hears of.
+
+Recovery codes are encrypted, not hashed as you might expect. The plugin compares them after decrypting,
+and the authenticator key beside them has to be readable and guards the same thing, so hashing them would
+add little. Both are encrypted with `BETTER_AUTH_SECRET`, like the signing keys, so replacing that secret
+outright makes them unreadable, and everyone with two-factor on could then not sign in with a password
+until `two-factor:remove` is run for them. They have one case and nothing that looks like something else,
+since they may be read off paper, at some cost in length: about 50 bits each, against the limits below.
+
+Guessing is held down at three levels: three tries per 10 seconds from one client address, through the
+durable limiter; five tries at one challenge before the password is wanted again; and ten wrong codes in a
+row, across challenges, lock out codes for that person for 15 minutes. A challenge lasts 10 minutes, and
+is not a session: nothing that needs one accepts it.
+
+Turning it on or off replaces the session, which is how the plugin does it. Apps signed in from the old
+session get a back-channel logout, and the page says they will ask the person to sign in again. Replacing
+recovery codes does not.
+
+**Someone who has lost their authenticator** has a recovery code, then a passkey or GitHub if they added
+one. Someone with none of those needs whoever runs the deployment, on purpose:
+
+```sh
+pnpm --filter @gateweave/id-web two-factor:remove --env cloud --email someone@example.com
+```
+
+Whoever runs it has to be sure who is asking, which ID cannot help with, and the person's activity says it
+was done for them. Their sessions stay, since they lost a device and nobody said someone else has it.
+
+**Apps cannot be told how someone signed in.** The provider strips `amr` from custom claims and always sends
+`acr: "0"`, so no app can require a second factor through its tokens. A rule that does has to live in ID's
+own check at authorization.
 
 ## Who may sign in
 
@@ -218,7 +273,7 @@ app or breaks every integration, so each is decided here and not left to a defau
 set. The issuer is the origin of the first. It is never taken from a request, whose Host header belongs
 to whoever sent it. Without both, discovery and every provider path answer 404, so a deployment that
 has not set them up has no provider rather than a wrong one. The secret stands alone, and is not derived
-from `BETTER_AUTH_SECRET`, so that rotating the session secret leaves every subject where it is. A
+from `BETTER_AUTH_SECRET`, so that replacing the session secret leaves every subject where it is. A
 Worker's secrets cannot be read back through Cloudflare's API, and deleting the Worker deletes them, so
 keep a copy of this one somewhere else when you generate it.
 
@@ -322,16 +377,18 @@ for why this replaced a shared session.
 An identity provider has to be able to answer who signed in to what, and who changed what. `audit_event`
 holds it, in D1.
 
-- **Signing in:** `account_created` and `sign_in`, with how (`password`, `code`, `passkey`, `github`),
-  and `sign_in_failed`, for a wrong password or a passkey that did not hold up, against the account it
-  was for.
+- **Signing in:** `account_created` and `sign_in`, with how (`password`, `code`, `passkey`, `github`,
+  `totp`, `recovery_code`), and `sign_in_failed`, for a wrong password, a passkey that did not hold up or a
+  wrong code, against the account it was for. `two_factor_asked` is a right password with a code still
+  owed, which is not someone signing in, though someone who did not enter it will want to know.
 - **Apps:** `app_sign_in` when an app exchanges a code, the moment it learns who someone is, `refused`
   by the check at authorization or on refresh, `consent_granted`, `consent_denied`, and `token_revoked`
   when an app revokes a token. That last one names no person: an app's server is asking, and tokens are
   stored hashed.
 - **Changes to an account:** `password_changed` (`first`, `changed`, `reset` or `removed`), `passkey_added`,
-  `passkey_removed`, `provider_linked`, `provider_unlinked`, and `sessions_revoked` for someone ending a
-  session elsewhere.
+  `passkey_removed`, `two_factor_enabled`, `two_factor_disabled` (`operator` when `two-factor:remove` did
+  it), `recovery_codes_replaced`, `provider_linked`, `provider_unlinked`, and `sessions_revoked` for
+  someone ending a session elsewhere.
 - **The deployment:** `app_added`, from `apps:add`. Who ran it is between them and Cloudflare.
 
 Each row has the time, and where it applies the account, the app's own id, the IP address and a device
@@ -397,6 +454,16 @@ Domains of one zone: discovery, the code exchange and the JWKS from Track to ID,
 on `/no-access`, and signing out of ID ending Track's session through back-channel logout, which proves
 that round trip to a product's own endpoint. The same day Agents' staging did all of that too, and the
 button then signed someone in with no password while ID's session lasted.
+
+On 2026-11-04 the same held on production, before the move to Better Auth 1.7.16: one sign-in through
+Track's button, then Agents' with no password, each with its own session and no provider tokens kept,
+signing out of ID ending both, signing out of Track leaving ID alone, and a refused person reaching
+`/no-access` from each.
+
+`apps/web/test/two-factor.test.ts` holds two-factor sign-in against an authenticator written from RFC 6238
+rather than with the library ID uses, so that a pass says an authenticator app can use what ID hands out,
+and not only that the library agrees with itself. `apps/web/e2e/two-factor.spec.ts` drives the pages,
+including on the way to an app.
 
 Still unproven:
 

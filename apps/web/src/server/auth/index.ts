@@ -1,7 +1,7 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { createDb } from "../db";
 import { mailer } from "../email";
-import { allowSignUpCode, authRateLimits } from "../rate-limit";
+import { allowSignUpCode, authRateLimits, firstUseOfCode } from "../rate-limit";
 import { createAuth } from "./config";
 
 export const db = createDb(env.DB);
@@ -49,6 +49,7 @@ function buildAuth() {
 		runInBackground: waitUntil,
 		rateLimitStorage: authRateLimits,
 		allowSignUpCode,
+		firstUseOfCode,
 		turnstileSecretKey: turnstile?.secretKey,
 		checkBreachedPasswords: env.CHECK_BREACHED_PASSWORDS === "1",
 		oidc,
