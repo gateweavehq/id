@@ -219,7 +219,9 @@ app or breaks every integration, so each is decided here and not left to a defau
 set. The issuer is the origin of the first. It is never taken from a request, whose Host header belongs
 to whoever sent it. Without both, discovery and every provider path answer 404, so a deployment that
 has not set them up has no provider rather than a wrong one. The secret stands alone, and is not derived
-from `BETTER_AUTH_SECRET`, so that rotating the session secret leaves every subject where it is.
+from `BETTER_AUTH_SECRET`, so that rotating the session secret leaves every subject where it is. A
+Worker's secrets cannot be read back through Cloudflare's API, and deleting the Worker deletes them, so
+keep a copy of this one somewhere else when you generate it.
 
 Other rules:
 
@@ -259,8 +261,8 @@ only run inside the Worker, which no route offers:
 
 ```sh
 pnpm --filter @gateweave/id-web apps:add --env staging --app track --name "Gateweave Track" \
-  --redirect-uri https://track-staging.gateweave.com/api/auth/oauth2/callback/gateweave-id \
-  --backchannel-logout-uri https://track-staging.gateweave.com/api/auth/backchannel-logout
+  --redirect-uri https://track-staging.gateweave.com/api/auth/callback/oidc \
+  --backchannel-logout-uri https://track-staging.gateweave.com/api/auth/backchannel-logout/oidc
 ```
 
 It writes the row with `wrangler d1 execute`, keeps only a hash of the secret, and prints the secret once.
@@ -394,7 +396,8 @@ by itself, so the list a person chooses from is the one part no test has seen.
 On 2026-11-04 Track's staging signed a browser in through ID's staging, both deployed Workers on Custom
 Domains of one zone: discovery, the code exchange and the JWKS from Track to ID, a refused person landing
 on `/no-access`, and signing out of ID ending Track's session through back-channel logout, which proves
-that round trip to a product's own endpoint.
+that round trip to a product's own endpoint. The same day Agents' staging did all of that too, and the
+button then signed someone in with no password while ID's session lasted.
 
 Still unproven:
 
