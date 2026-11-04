@@ -21,9 +21,17 @@ export default defineConfig(({ command }) => ({
 			persistState: process.env.ID_STATE_DIR ? { path: process.env.ID_STATE_DIR } : true,
 			config: (config) => {
 				// The browser tests' build has email on, because signing up takes a code (see
-				// e2e/build.mjs). Nothing is sent: each message is saved to a file.
+				// e2e/build.mjs). Nothing is sent: each message is saved to a file. It has GitHub on
+				// too, and those tests stop the browser at GitHub's door.
 				const e2e = process.env.ID_E2E
-					? { vars: { ...config.vars, EMAIL_FROM: "Gateweave ID <id@example.com>" } }
+					? {
+							vars: {
+								...config.vars,
+								EMAIL_FROM: "Gateweave ID <id@example.com>",
+								GITHUB_CLIENT_ID: "client-for-browser-tests",
+								GITHUB_CLIENT_SECRET: "secret-for-browser-tests",
+							},
+						}
 					: {};
 				if (command !== "serve") return e2e;
 				// In dev only: `secrets.required` would drop the optional settings in .dev.vars.

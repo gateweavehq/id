@@ -60,6 +60,54 @@ function siteverify(host: string, body: string): Response {
 	}
 }
 
+/** Who the stand-in for GitHub says someone is. */
+export interface GitHubPerson {
+	id: number;
+	login: string;
+	name?: string | null;
+	/** The address on their public profile. */
+	email?: string | null;
+	/** The addresses GitHub lists for them, or null when it will not answer. */
+	emails: { email: string; primary: boolean; verified: boolean }[] | null;
+}
+
+/** The code GitHub would send back to ID's callback once this person agrees. */
+export function gitHubCode(person: GitHubPerson): string {
+	return Buffer.from(JSON.stringify(person)).toString("base64url");
+}
+
+const GITHUB_CLIENT = { id: "github-client-for-tests", secret: "github-secret-for-tests" };
+
+/** GitHub's answer to one request of an OAuth sign-in, or null if the request is not for GitHub. */
+async function gitHub(request: Request): Promise<Response | null> {
+	const url = new URL(request.url);
+	if (url.href === "https://github.com/login/oauth/access_token") {
+		const form = new URLSearchParams(await request.text());
+		if (form.get("client_secret") !== GITHUB_CLIENT.secret) {
+			return Response.json({ error: "incorrect_client_credentials" });
+		}
+		// The token is the code again, so that the next requests know who this is.
+		return Response.json({
+			access_token: form.get("code"),
+			token_type: "bearer",
+			scope: "user:email",
+		});
+	}
+	if (url.host !== "api.github.com") return null;
+	const token = (request.headers.get("authorization") ?? "").replace("Bearer ", "");
+	const person = JSON.parse(Buffer.from(token, "base64url").toString()) as GitHubPerson;
+	if (url.pathname === "/user") {
+		return Response.json({
+			id: person.id,
+			login: person.login,
+			name: person.name ?? null,
+			email: person.email ?? null,
+			avatar_url: `https://avatars.test/${person.id}`,
+		});
+	}
+	return person.emails ? Response.json(person.emails) : new Response("Forbidden", { status: 403 });
+}
+
 // Stands in for Cloudflare Email Service behind the EMAIL binding: `send` keeps each message,
 // and a fetch lists them.
 const OUTBOX = `
@@ -94,8 +142,8 @@ function builtModules(): V4ModuleDefinition[] {
  * Every outbound request fails, the way a deployed Worker's request to its own hostname does.
  * ID needs no outside service for sign-in, so code that only works because local dev can reach
  * itself fails here instead of in production. Email is on unless `email` is false, and lands in
- * `emails()`. With `turnstile`, Siteverify is the one outside service that answers: see
- * `TURNSTILE_TOKENS`.
+ * `emails()`. With `turnstile`, Siteverify answers: see `TURNSTILE_TOKENS`. With `github`, GitHub
+ * does: see `gitHubCode`.
  *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
@@ -106,7 +154,8 @@ export async function startId(
 		isolates = 1,
 		email = true,
 		turnstile = false,
-	}: { isolates?: number; email?: boolean; turnstile?: boolean } = {},
+		github = false,
+	}: { isolates?: number; email?: boolean; turnstile?: boolean; github?: boolean } = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
 	const outbound: string[] = [];
@@ -141,6 +190,12 @@ export async function startId(
 									TURNSTILE_SECRET_KEY: "turnstile-secret-for-tests",
 								}
 							: {}),
+						...(github
+							? {
+									GITHUB_CLIENT_ID: GITHUB_CLIENT.id,
+									GITHUB_CLIENT_SECRET: GITHUB_CLIENT.secret,
+								}
+							: {}),
 					},
 					serviceBindings: { EMAIL: "outbox" },
 					d1Databases: { DB: "id-test" },
@@ -153,6 +208,8 @@ export async function startId(
 						if (turnstile && request.url === SITEVERIFY) {
 							return siteverify(new URL(origin).hostname, await request.text());
 						}
+						const answer = github ? await gitHub(request) : null;
+						if (answer) return answer;
 						return new Response("Outbound requests are blocked in this test", { status: 502 });
 					},
 				})),
