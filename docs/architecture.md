@@ -316,6 +316,50 @@ for why this replaced a shared session.
 - Sign-ins, refusals, consents and admin changes go to an audit log from the first release. Exporting
   it is an `ee/` feature; recording it is not.
 
+## Audit log
+
+An identity provider has to be able to answer who signed in to what, and who changed what. `audit_event`
+holds it, in D1.
+
+- **Signing in:** `account_created` and `sign_in`, with how (`password`, `code`, `passkey`, `github`),
+  and `sign_in_failed`, for a wrong password or a passkey that did not hold up, against the account it
+  was for.
+- **Apps:** `app_sign_in` when an app exchanges a code, the moment it learns who someone is, `refused`
+  by the check at authorization or on refresh, `consent_granted`, `consent_denied`, and `token_revoked`
+  when an app revokes a token. That last one names no person: an app's server is asking, and tokens are
+  stored hashed.
+- **Changes to an account:** `password_changed` (`first`, `changed`, `reset` or `removed`), `passkey_added`,
+  `passkey_removed`, `provider_linked`, `provider_unlinked`, and `sessions_revoked` for someone ending a
+  session elsewhere.
+- **The deployment:** `app_added`, from `apps:add`. Who ran it is between them and Cloudflare.
+
+Each row has the time, and where it applies the account, the app's own id, the IP address and a device
+name such as "Chrome on Windows". Workspaces will add a workspace and an actor, and their admins will
+see their workspace's events.
+
+Not recorded: signing out, a refresh that changes nothing, and a refresh token reused, which the provider
+answers and revokes with no hook to hear it. A request stopped by the rate limit or Turnstile never gets
+this far, which is what bounds the rows a person's account can collect.
+
+**This is personal data**, so what it keeps is decided on purpose:
+
+- **Ninety days.** The daily cron deletes older rows. That is long enough to look into something noticed
+  late, and it is a constant, `AUDIT_RETENTION_DAYS`, because a promise about personal data should not
+  vary by accident.
+- **No addresses.** The account's id says who. A failed sign-in for an address with no account writes
+  nothing at all: what someone typed may be a password in the wrong field, and there is no end to
+  addresses with no account for a stranger to send.
+- **No foreign keys.** A log someone can empty by deleting what it talks about is no log. Rows outlive
+  an account until their ninety days are up. ID cannot delete an account yet; a privacy policy has to
+  state this when it can.
+
+A person sees their last 50 events on their account page, and nobody can read anyone else's.
+
+Every write happens after the response. A failed sign-in writes a row only for an address with an
+account, so a response that waited for the write would say which addresses have one, as sending email
+in the background already avoids. A write that fails stops nothing, and logs
+`audit: could not record <type>` with the kind of error, and nothing about whose it was.
+
 ## What has been proven
 
 A throwaway Worker on workerd, driven by `oauth4webapi` and by Chromium's WebAuthn, checked these on

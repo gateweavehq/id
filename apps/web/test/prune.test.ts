@@ -40,7 +40,7 @@ function addSession(rowId: string, expiresAt: number) {
 }
 
 async function has(
-	table: "session" | "verification" | "oauth_access_token" | "oauth_refresh_token",
+	table: "session" | "verification" | "oauth_access_token" | "oauth_refresh_token" | "audit_event",
 	rowId: string,
 ) {
 	const row = await id.db.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(rowId).first();
@@ -96,6 +96,17 @@ describe("the daily cron", () => {
 		expect(await has("oauth_access_token", "live-access")).toBe(true);
 		expect(await has("oauth_refresh_token", "expired-refresh")).toBe(false);
 		expect(await has("oauth_refresh_token", "live-refresh")).toBe(true);
+	});
+
+	it("deletes audit events past their age, and leaves the rest", async () => {
+		const addEvent = (rowId: string, daysAgo: number) =>
+			id.db
+				.prepare("INSERT INTO audit_event (id, at, type) VALUES (?, ?, 'sign_in')")
+				.bind(rowId, Date.now() - daysAgo * 24 * HOUR);
+		await id.db.batch([addEvent("too-old", 91), addEvent("old-enough", 89)]);
+		await id.runCron();
+		expect(await has("audit_event", "too-old")).toBe(false);
+		expect(await has("audit_event", "old-enough")).toBe(true);
 	});
 
 	it("gets through more than one batch", async () => {

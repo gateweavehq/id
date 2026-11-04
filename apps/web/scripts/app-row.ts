@@ -68,6 +68,12 @@ export function insertStatement(row: ReturnType<typeof appRow>["row"]): string {
 	return `INSERT INTO "oauth_client" (${columns}) VALUES (${values});`;
 }
 
+/** The audit log's line about this. Whoever runs the script is known to Cloudflare, not to ID. */
+export function appAddedStatement(app: string): string {
+	const values = [crypto.randomUUID(), Date.now(), "app_added", app].map(sqlValue).join(", ");
+	return `INSERT INTO "audit_event" ("id", "at", "type", "app") VALUES (${values});`;
+}
+
 /**
  * What an app may name as where to send someone back. An exact https URL, or plain http only on this
  * machine. A code sent elsewhere signs in whoever receives it.

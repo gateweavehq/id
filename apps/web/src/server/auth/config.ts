@@ -9,6 +9,7 @@ import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { passwordResetEmail } from "../email/templates";
+import { auditDatabaseHooks, auditLog, auditRecorder, whereFrom } from "./audit";
 import { breachedPasswords } from "./breached-passwords";
 import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
@@ -68,6 +69,8 @@ const NO_TOKENS = {
  */
 export function createAuth(config: AuthConfig) {
 	const { mailer } = config;
+	const record = auditRecorder(config.db, config.runInBackground);
+	const audit = auditDatabaseHooks(record);
 
 	return betterAuth({
 		secret: config.secret,
@@ -106,6 +109,13 @@ export function createAuth(config: AuthConfig) {
 				},
 				// A reset is how someone takes an account back, so it ends every other session.
 				revokeSessionsOnPasswordReset: true,
+				onPasswordReset: async ({ user }, request) => {
+					record("password_changed", {
+						userId: user.id,
+						detail: "reset",
+						...whereFrom(request?.headers),
+					});
+				},
 			}),
 		},
 		socialProviders: config.github
@@ -136,12 +146,18 @@ export function createAuth(config: AuthConfig) {
 							});
 						}
 					},
+					after: audit.user.afterCreate,
 				},
 			},
 			account: {
-				create: { before: async (account) => ({ data: { ...account, ...NO_TOKENS } }) },
+				create: {
+					before: async (account) => ({ data: { ...account, ...NO_TOKENS } }),
+					after: audit.account.afterCreate,
+				},
 				update: { before: async (account) => ({ data: { ...account, ...NO_TOKENS } }) },
+				delete: { after: audit.account.afterDelete },
 			},
+			session: { create: { after: audit.session.afterCreate } },
 		},
 		hooks: signUpHooks(config.allowSignUpCode),
 		plugins: [
@@ -166,7 +182,8 @@ export function createAuth(config: AuthConfig) {
 						githubSignIn: Boolean(config.github),
 					})
 				: []),
-			...(config.oidc ? oidcPlugins(config.db, config.oidc) : []),
+			auditLog(config.db, record),
+			...(config.oidc ? oidcPlugins(config.db, config.oidc, record) : []),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.
 			tanstackStartCookies(),
 		],

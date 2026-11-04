@@ -98,6 +98,17 @@ async function sessionOf(client: string, response: Response) {
 	} | null;
 }
 
+/** The row `/unlink-account` asks for, which a page gets from the same list. */
+async function accountRow(client: string, cookie: string, providerId: string): Promise<string> {
+	const reply = await id.fetch(`${origin}/api/auth/list-accounts`, {
+		headers: { "cf-connecting-ip": client, cookie },
+	});
+	const accounts = (await reply.json()) as { id: string; providerId: string }[];
+	const account = accounts.find((candidate) => candidate.providerId === providerId);
+	if (!account) throw new Error(`no ${providerId} account`);
+	return account.id;
+}
+
 function userCount(email: string) {
 	return id.db
 		.prepare("SELECT count(*) AS n FROM user WHERE email = ?")
@@ -267,6 +278,93 @@ describe("someone new", () => {
 			password: PASSWORD,
 		});
 		expect(signedIn.status).toBe(200);
+	});
+});
+
+describe("the audit log", () => {
+	it("records a new account, connecting GitHub and signing in with it, and only once", async () => {
+		const someone = person();
+		const first = await signInAs(someone);
+		const session = await sessionOf(first.client, first.response);
+		const userId = session?.user.id ?? "";
+		await id.auditEventRecorded(userId, {
+			type: "account_created",
+			detail: "github",
+			ip: first.client,
+		});
+		await id.auditEventRecorded(userId, {
+			type: "provider_linked",
+			detail: "github",
+			ip: first.client,
+		});
+		await id.auditEventRecorded(userId, { type: "sign_in", detail: "github", ip: first.client });
+
+		const second = await signInAs(someone);
+		await id.auditEventRecorded(userId, { type: "sign_in", detail: "github", ip: second.client });
+		const events = await id.auditEvents(userId);
+		expect(events.filter(({ type }) => type === "provider_linked").length).toBe(1);
+		expect(events.filter(({ type }) => type === "account_created").length).toBe(1);
+	});
+
+	it("records disconnecting GitHub", async () => {
+		const someone = person();
+		const { response, client } = await signInAs(someone);
+		const cookie = cookieOf(response);
+		const session = await sessionOf(client, response);
+		await post("/account/first-password", client, { newPassword: PASSWORD }, cookie);
+		const unlinked = await post(
+			"/unlink-account",
+			client,
+			{ accountId: await accountRow(client, cookie, "github") },
+			cookie,
+		);
+		expect(unlinked.status).toBe(200);
+		await id.auditEventRecorded(session?.user.id ?? "", {
+			type: "provider_unlinked",
+			detail: "github",
+			ip: client,
+		});
+	});
+
+	it("records removing the password, which is not disconnecting a provider", async () => {
+		const someone = person();
+		const { response, client } = await signInAs(someone);
+		const cookie = cookieOf(response);
+		const session = await sessionOf(client, response);
+		const userId = session?.user.id ?? "";
+		await post("/account/first-password", client, { newPassword: PASSWORD }, cookie);
+		const removed = await post(
+			"/unlink-account",
+			client,
+			{ accountId: await accountRow(client, cookie, "credential") },
+			cookie,
+		);
+		expect(removed.status).toBe(200);
+		await id.auditEventRecorded(userId, {
+			type: "password_changed",
+			detail: "removed",
+			ip: client,
+		});
+		const events = await id.auditEvents(userId);
+		expect(events.map(({ type }) => type)).not.toContain("provider_unlinked");
+	});
+
+	it("records nothing when an unlink is refused", async () => {
+		const someone = person();
+		const { response, client } = await signInAs(someone);
+		const cookie = cookieOf(response);
+		const session = await sessionOf(client, response);
+		const refused = await post(
+			"/unlink-account",
+			client,
+			{ accountId: await accountRow(client, cookie, "github") },
+			cookie,
+		);
+		expect(refused.status).toBe(400);
+		// A later event that is written after this one was would show it, had there been one.
+		await id.auditEventRecorded(session?.user.id ?? "", { type: "sign_in", detail: "github" });
+		const events = await id.auditEvents(session?.user.id ?? "");
+		expect(events.map(({ type }) => type)).not.toContain("provider_unlinked");
 	});
 });
 
