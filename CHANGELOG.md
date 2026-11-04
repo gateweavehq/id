@@ -7,6 +7,24 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.3.0] - 2026-11-05
+
+### Added
+
+- **Workspaces.** Someone signed in can make a workspace, rename it, invite people by email, change their
+  roles, remove them, leave it and delete it, under `/workspaces`. Accepting an invitation needs a session
+  with that verified address, and someone with no account signs up first, which proves it. A workspace
+  always keeps an owner, down to database triggers that hold however a row changes. Someone outside a
+  workspace gets the same answer as for one that does not exist. Each change goes in the audit log, with who
+  did it and to whom. Apps do not use workspaces yet, so this changes nobody's sign-in. (#25)
+
+### Upgrading
+
+A deploy applies two migrations, `0005_workspaces` and `0006_workspace_keeps_an_owner`. They only add
+tables, nullable columns, indexes and triggers, so the running code keeps working until the new code
+arrives. There are no new settings. A deployment that sends no email still has workspaces, but cannot invite
+anyone yet.
+
 ## [0.2.1] - 2026-11-04
 
 ### Fixed
