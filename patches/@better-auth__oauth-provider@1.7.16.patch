@@ -1,13 +1,51 @@
 diff --git a/dist/authorize-BnSO_Slc.mjs b/dist/authorize-BnSO_Slc.mjs
-index ad180217ca750e4dcba1992ebc9a588b1d80a196..d0bd03481f8e165429a60d3128b7d65d47ec10c5 100644
+index ad180217ca750e4dcba1992ebc9a588b1d80a196..2d9612dce50e7e91195693dcd5b904ff1b554fbd 100644
 --- a/dist/authorize-BnSO_Slc.mjs
 +++ b/dist/authorize-BnSO_Slc.mjs
-@@ -2911,7 +2911,7 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
- 				},
- 				body: new URLSearchParams({ logout_token: token }),
- 				signal: AbortSignal.timeout(BACKCHANNEL_DISPATCH_TIMEOUT_MS),
--				redirect: "error"
-+				redirect: "manual"
+@@ -2746,6 +2746,8 @@ const BACKCHANNEL_LOGOUT_EVENT_URI = "http://schemas.openid.net/event/backchanne
+ const LOGOUT_TOKEN_JWT_TYP = "logout+jwt";
+ const LOGOUT_TOKEN_LIFETIME_SECONDS = 120;
+ const BACKCHANNEL_DISPATCH_TIMEOUT_MS = 5e3;
++const BACKCHANNEL_DISPATCH_ATTEMPTS = 3;
++const BACKCHANNEL_DISPATCH_RETRY_DELAY_MS = 2e3;
+ /**
+ * Signs a Back-Channel Logout Token per OIDC Back-Channel Logout 1.0 §2.4.
+ *
+@@ -2903,17 +2905,26 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
+ 				exp,
+ 				jti
  			});
- 			if (response.status !== 200 && response.status !== 204) logger.warn(`back-channel logout to client ${client.clientId} returned ${response.status}`);
+-			const response = await fetch(client.backchannelLogoutUri, {
+-				method: "POST",
+-				headers: {
+-					"Content-Type": "application/x-www-form-urlencoded",
+-					Accept: "application/json"
+-				},
+-				body: new URLSearchParams({ logout_token: token }),
+-				signal: AbortSignal.timeout(BACKCHANNEL_DISPATCH_TIMEOUT_MS),
+-				redirect: "error"
+-			});
+-			if (response.status !== 200 && response.status !== 204) logger.warn(`back-channel logout to client ${client.clientId} returned ${response.status}`);
++			for (let attempt = 1; attempt <= BACKCHANNEL_DISPATCH_ATTEMPTS; attempt++) {
++				if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, BACKCHANNEL_DISPATCH_RETRY_DELAY_MS));
++				try {
++					const response = await fetch(client.backchannelLogoutUri, {
++						method: "POST",
++						headers: {
++							"Content-Type": "application/x-www-form-urlencoded",
++							Accept: "application/json"
++						},
++						body: new URLSearchParams({ logout_token: token }),
++						signal: AbortSignal.timeout(BACKCHANNEL_DISPATCH_TIMEOUT_MS),
++						redirect: "manual"
++					});
++					if (response.status === 200 || response.status === 204) return;
++					logger.warn(`back-channel logout to client ${client.clientId} returned ${response.status}`);
++					if (response.status < 500) return;
++				} catch (error) {
++					logger.warn(`back-channel logout to client ${client.clientId} failed`, error);
++				}
++			}
  		} catch (error) {
+ 			logger.warn(`back-channel logout to client ${client.clientId} failed`, error);
+ 		}

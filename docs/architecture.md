@@ -326,11 +326,20 @@ the provider reads fails there.
 
 ## A patched dependency
 
-`@better-auth/oauth-provider` sends back-channel logouts with `redirect: "error"`, which Workers refuse
-outright, so every one of them failed with only a warning in the log. `patches/` changes that word to
-`"manual"`. The provider treats anything but 200 or 204 as a failure, so a redirect still is not followed.
-The same line is in 1.7.17. pnpm stops an install when a patch no longer has its version, so an upgrade
-has to look at this again: drop the patch if upstream has fixed it, otherwise move it.
+`patches/` changes two things in how `@better-auth/oauth-provider` sends back-channel logouts. pnpm stops an
+install when a patch no longer has its version, so an upgrade has to look at both again: drop what upstream
+has fixed, and move the rest.
+
+- **`redirect: "error"`, which Workers refuse outright,** so every logout failed with only a warning in the
+  log. It is `"manual"` now. The provider treats anything but 200 or 204 as a failure, so a redirect still
+  is not followed. The same line is in 1.7.17.
+- **One try, of five seconds.** Track once took longer than that on production, for a reason its logs do not
+  show, and whoever had signed out of ID stayed signed in to it. An app now gets three tries, two seconds
+  apart, when the answer is a failure of the app's (5xx) or no answer at all, and all of them fit in the 30
+  seconds Workers give work after a response. That is the recoverable case the specification allows sending
+  again for (section 2.5). A 4xx would only repeat. The token is the same each time, and a person already
+  signed out counts as a success (section 2.7). An app down for longer than that still misses it, and the
+  person stays signed in there until that session runs out.
 
 ## Products as clients
 
@@ -344,7 +353,9 @@ for why this replaced a shared session.
   `trustedProviders`, which skips the first of those checks.
 - **Signing out everywhere** is back-channel logout: ID posts a signed `logout+jwt` to the product's
   `backchannel_logout_uri`. Better Auth sends it. The receiving endpoint is the product's to build,
-  since `generic-oauth` has none.
+  since `generic-oauth` has none. It has to finish even when ID stops waiting for the answer, which on
+  Workers takes `waitUntil`, or that request is cancelled along with the logout. And when it cannot fetch
+  ID's keys at that moment it answers 503, not 400, so that ID tries again.
 
 ## Security baseline
 

@@ -963,6 +963,51 @@ describe("signing out", () => {
 			"http://schemas.openid.net/event/backchannel-logout",
 		]);
 	});
+
+	describe("to an app that does not take it the first time", () => {
+		/** Signs someone out of an app whose logout address answers these in turn. */
+		async function signOutWith(answers: (number | "no answer")[]) {
+			const app = await newApp();
+			const logoutUri = `https://${app.host}/logout`;
+			id.logoutAnswers.set(logoutUri, answers);
+			const person = await newPerson();
+			await signInToApp(app, person);
+			const out = await api("/sign-out", {
+				client: person.client,
+				cookie: person.cookie,
+				body: {},
+			});
+			expect(out.status).toBe(200);
+			return () => id.outboundBodies.filter((request) => request.url === logoutUri);
+		}
+
+		it("tries again when the app has a problem, with the same token", async () => {
+			const deliveries = await signOutWith([503]);
+			await expect.poll(() => deliveries().length, { timeout: 10_000 }).toBe(2);
+			expect(deliveries()[1]?.body).toBe(deliveries()[0]?.body);
+			await new Promise((resolve) => setTimeout(resolve, 2500));
+			expect(deliveries()).toHaveLength(2);
+		});
+
+		it("tries again when the app does not answer in time", async () => {
+			const deliveries = await signOutWith(["no answer"]);
+			await expect.poll(() => deliveries().length, { timeout: 15_000 }).toBe(2);
+		}, 20_000);
+
+		it("gives up after three tries", async () => {
+			const deliveries = await signOutWith([503, 503, 503]);
+			await expect.poll(() => deliveries().length, { timeout: 15_000 }).toBe(3);
+			await new Promise((resolve) => setTimeout(resolve, 2500));
+			expect(deliveries()).toHaveLength(3);
+		}, 25_000);
+
+		it("does not try again when the app refuses it, which would only repeat", async () => {
+			const deliveries = await signOutWith([400]);
+			await expect.poll(() => deliveries().length, { timeout: 10_000 }).toBe(1);
+			await new Promise((resolve) => setTimeout(resolve, 2500));
+			expect(deliveries()).toHaveLength(1);
+		});
+	});
 });
 
 describe("signing keys", () => {
