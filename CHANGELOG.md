@@ -7,6 +7,18 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.2.1] - 2026-11-04
+
+### Fixed
+
+- **Signing out of ID could leave someone signed in to an app.** An app had one try of five seconds to take
+  a back-channel logout, and on production Track once took longer. An app now gets three tries, two seconds
+  apart, when it answers with a server error or not at all. An app refusing the logout still gets one. (#21)
+
+### Upgrading
+
+Nothing to do. No migration and no new settings.
+
 ## [0.2.0] - 2026-11-04
 
 ### Added
