@@ -466,15 +466,19 @@ on `/no-access`, and signing out of ID ending Track's session through back-chann
 that round trip to a product's own endpoint. The same day Agents' staging did all of that too, and the
 button then signed someone in with no password while ID's session lasted.
 
-On 2026-11-04 the same held on production, before the move to Better Auth 1.7.16: one sign-in through
-Track's button, then Agents' with no password, each with its own session and no provider tokens kept,
-signing out of ID ending both, signing out of Track leaving ID alone, and a refused person reaching
-`/no-access` from each.
+On 2026-11-04 the same held on production: one sign-in through Track's button, then Agents' with no
+password, each with its own session and no provider tokens kept, signing out of ID ending both, signing out
+of Track leaving ID alone, and a refused person reaching `/no-access` from each. One run in between found
+signing out of ID leaving Track's session in place (see "A patched dependency"), and this was run again and
+held on ID 0.2.1, Track 0.26.2 and Agents 0.12.2, all on Better Auth 1.7.16.
 
 `apps/web/test/two-factor.test.ts` holds two-factor sign-in against an authenticator written from RFC 6238
 rather than with the library ID uses, so that a pass says an authenticator app can use what ID hands out,
 and not only that the library agrees with itself. `apps/web/e2e/two-factor.spec.ts` drives the pages,
-including on the way to an app.
+including on the way to an app. On 2026-11-04 it held on staging and on production, through Track's button:
+turning it on ending Track's session, a right password stopping at `/two-factor` with no session in Track, a
+code going on to Track, the same code refused a second time within its window, a recovery code in capitals
+working, and turning it off leaving no keys behind.
 
 Still unproven:
 
