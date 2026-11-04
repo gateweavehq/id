@@ -280,6 +280,13 @@ export async function startId(
 		},
 		/** The D1 database, for setting up state the app has no endpoint for. */
 		db,
+		/** Runs what the Worker's daily cron runs, and resolves when it has finished. */
+		async runCron() {
+			const worker = (await mf.getWorker(names[0])) as unknown as {
+				scheduled(options: { cron: string; scheduledTime: Date }): Promise<unknown>;
+			};
+			await worker.scheduled({ cron: "17 3 * * *", scheduledTime: new Date() });
+		},
 		dispose: () => mf.dispose(),
 	};
 }
