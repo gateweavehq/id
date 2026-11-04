@@ -5,6 +5,7 @@ import { jwt } from "better-auth/plugins/jwt";
 import { eq } from "drizzle-orm";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { hasPasskey } from "./passkeys";
 import { maySignIn } from "./who-may-sign-in";
 
 export interface OidcConfig {
@@ -58,7 +59,7 @@ async function canSignInAgain(db: Database, userId: string): Promise<boolean> {
 		.where(eq(schema.account.userId, userId))
 		.limit(1)
 		.get();
-	return account !== undefined;
+	return account !== undefined || hasPasskey(db, userId);
 }
 
 /**

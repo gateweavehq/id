@@ -57,6 +57,8 @@ function buildAuth() {
 
 export const oidcEnabled = Boolean(oidc);
 
+export const passkeysEnabled = Boolean(baseURL);
+
 export const githubEnabled = Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET);
 
 export const emailEnabled = Boolean(mailer);

@@ -171,7 +171,7 @@ function builtModules(): V4ModuleDefinition[] {
  * does: see `gitHubCode`. With `breachedPasswords`, Have I Been Pwned does: see `PWNED_PASSWORDS`.
  * The OIDC provider is on unless `oidc` is false, with the secret in `PAIRWISE_SECRET`. Apps answer
  * their back-channel logouts at any https address ending in `.apps.test`, and `outboundBodies` has
- * what they were sent.
+ * what they were sent. With `pinned` false it runs with no `BETTER_AUTH_URL`.
  *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
@@ -185,6 +185,7 @@ export async function startId(
 		github = false,
 		breachedPasswords = false,
 		oidc = true,
+		pinned = true,
 	}: {
 		isolates?: number;
 		email?: boolean;
@@ -192,6 +193,7 @@ export async function startId(
 		github?: boolean;
 		breachedPasswords?: boolean;
 		oidc?: boolean;
+		pinned?: boolean;
 	} = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
@@ -220,7 +222,7 @@ export async function startId(
 					compatibilityFlags: config.compatibility_flags,
 					bindings: {
 						BETTER_AUTH_SECRET: secret,
-						BETTER_AUTH_URL: origin,
+						...(pinned ? { BETTER_AUTH_URL: origin } : {}),
 						...(email ? { EMAIL_FROM: `${EMAIL_FROM.name} <${EMAIL_FROM.email}>` } : {}),
 						...(turnstile
 							? {

@@ -19,7 +19,8 @@ BETTER_AUTH_SECRET=
 # CHECK_BREACHED_PASSWORDS=
 
 # Optional: pins the app's URL. Leave it out to accept any host, for example from your phone. The
-# OIDC provider needs it, because its origin is the issuer.
+# OIDC provider needs it, because its origin is the issuer, and so do passkeys. Each passkey is bound
+# to this host for good: move to another and everyone's stop working.
 # BETTER_AUTH_URL=
 
 # Optional: with BETTER_AUTH_URL, turns on the OIDC provider. It gives each app its own id for each

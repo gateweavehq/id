@@ -1,10 +1,11 @@
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { AccountPasskeys } from "#/components/account-passkeys";
 import { AccountPassword } from "#/components/account-password";
 import { AccountProfile } from "#/components/account-profile";
 import { AccountSessions } from "#/components/account-sessions";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
-import { getSession, hasPassword } from "#/lib/session";
+import { getAuthOptions, getSession, hasPassword } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 
 export const Route = createFileRoute("/account")({
@@ -13,7 +14,10 @@ export const Route = createFileRoute("/account")({
 		if (!session) throw redirect({ to: "/login", search: { redirect: "/account" } });
 		return { session };
 	},
-	loader: async () => ({ hasPassword: await hasPassword() }),
+	loader: async () => {
+		const [password, options] = await Promise.all([hasPassword(), getAuthOptions()]);
+		return { hasPassword: password, passkeys: options.passkeys };
+	},
 	component: AccountPage,
 });
 
@@ -42,6 +46,7 @@ function AccountPage() {
 
 			<AccountProfile name={session.user.name} email={session.user.email} />
 			<AccountPassword email={session.user.email} hasPassword={data.hasPassword} />
+			{data.passkeys && <AccountPasskeys />}
 			{/* A changed password replaces this session, and with it what the list has to show. */}
 			<AccountSessions key={session.session.id} currentId={session.session.id} />
 		</main>

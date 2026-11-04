@@ -93,6 +93,40 @@ GitHub is a second way to prove an address, under the same rule: no account with
 - **A refusal comes back to `/login` as a code,** because it ends in a redirect. The page turns known
   codes into its own words and shows nothing from the URL, or a link could put any text on the page.
 
+## Passkeys
+
+Passkeys need no address first: the button on the sign-in page, or the browser's own offer under the
+email field. They are off on a deployment without `BETTER_AUTH_URL`, like the issuer, because each one
+is bound to that host for good and cannot be moved.
+
+Better Auth's passkey plugin does the WebAuthn. What it does by default falls short of being the way in
+to everything else a person uses, so ID differs in these places:
+
+- **The server demands user verification.** The plugin passes `requireUserVerification: false` to its
+  checks whatever its options say, so a stolen security key with no PIN would do. ID refuses a ceremony
+  that did not verify the person, and tells the browser `required` rather than `preferred`, or a browser
+  could skip the fingerprint reader and be refused with no way to put it right.
+- **The credentials are discoverable,** since there is no address to look someone up by first.
+- **The expected origin comes from settings.** The plugin would fall back to the request's `Origin`
+  header, which is what the check exists to test.
+- **A credential id is unique across all accounts,** as the specification asks. The plugin keeps a plain
+  index and looks passkeys up by that id alone.
+- **A new passkey is named from its authenticator or the device,** not by the person. The name the plugin
+  asks for would also replace the address in the operating system's list of passkeys, where people need
+  to tell their accounts apart.
+- **A registration cannot start a session.** The plugin offers `createSession`, but a passkey is added
+  from an account page, by someone already signed in.
+- **Removal goes through ID's own endpoint.** The plugin's would let someone remove their last way to
+  sign in. ID's is one conditional `DELETE`, so that removing two passkeys at once cannot get past the
+  rule. Another passkey counts, a password counts, and so does GitHub on a deployment that still has it.
+- **Adding and removing need a recent sign-in,** so that someone at an unlocked computer cannot make
+  themselves a way back in or take away the owner's.
+- **Names have a limit, and each step has a rate limit of its own.** The plugin has neither.
+
+A passkey is a way to sign in like any other: someone whose only one is a passkey is not sent to choose a
+password on the way to an app, and is still subject to "Who may sign in", after which they carry on to
+it as they would after a password.
+
 ## Who may sign in
 
 Three rules, in this order:
@@ -307,8 +341,18 @@ through real redirects: making an account on the way to an app, signing in, each
 a page that has been open too long. It found the router breaking signed queries, and passwords reaching
 the URL from forms sent before the page's script ran.
 
+`apps/web/test/passkeys.test.ts` holds what the server takes and refuses, with a software authenticator
+of its own that can sign what a real one never would. `apps/web/e2e/passkeys.spec.ts` drives the pages
+with Chromium's WebAuthn and a virtual authenticator, which found someone with only a passkey being asked
+for a password on the way to an app. That authenticator answers the browser's offer under the email field
+by itself, so the list a person chooses from is the one part no test has seen.
+
+On 2026-11-04 Track's staging signed a browser in through ID's staging, both deployed Workers on Custom
+Domains of one zone: discovery, the code exchange and the JWKS from Track to ID, a refused person landing
+on `/no-access`, and signing out of ID ending Track's session through back-channel logout, which proves
+that round trip to a product's own endpoint.
+
 Still unproven:
 
 - Cloudflare Access against a deployed ID.
-- The back-channel logout round trip to a product's own endpoint.
 - The OpenID conformance suite, which Pocket ID has passed and ID should too.

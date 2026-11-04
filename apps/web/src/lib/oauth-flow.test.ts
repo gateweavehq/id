@@ -51,14 +51,16 @@ describe("a page on the way to an app", () => {
 		expect(url.searchParams.getAll("acr_values")).toEqual(["a", "b"]);
 	});
 
-	it("asks no password of someone from GitHub on the way to an app, and of nobody with one", () => {
+	it("asks no password on the way to an app of anyone with a way to sign in", () => {
 		expect(welcomeIsDone(signed, ["github"])).toBe(true);
+		expect(welcomeIsDone(signed, ["passkey"])).toBe(true);
 		expect(welcomeIsDone(signed, ["credential"])).toBe(true);
 		expect(welcomeIsDone(signed, [])).toBe(false);
 	});
 
-	it("still offers a password to someone from GitHub who came here themselves", () => {
+	it("still offers a password to someone without one who came here themselves", () => {
 		expect(welcomeIsDone({}, ["github"])).toBe(false);
+		expect(welcomeIsDone({}, ["passkey"])).toBe(false);
 		expect(welcomeIsDone({}, [])).toBe(false);
 		expect(welcomeIsDone({}, ["credential"])).toBe(true);
 	});

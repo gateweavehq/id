@@ -5,6 +5,7 @@ import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
 import { LiveButton } from "#/components/live-button";
+import { SignInDivider } from "#/components/sign-in-divider";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
@@ -110,7 +111,12 @@ function SignUpPage() {
 				title="Create your account"
 				description="This server does not send email, so it cannot check an address. Ask whoever runs it for an invitation."
 			>
-				{options.github && <GitHubSignIn next={next} search={search} />}
+				{options.github && (
+					<>
+						<GitHubSignIn next={next} search={search} />
+						<SignInDivider />
+					</>
+				)}
 				<BackToSignIn search={search} />
 			</AuthPage>
 		);
@@ -188,7 +194,12 @@ function SignUpPage() {
 					<h1 className="text-xl font-semibold tracking-tight">Create your account</h1>
 				</div>
 
-				{options.github && <GitHubSignIn next={next} search={search} />}
+				{options.github && (
+					<>
+						<GitHubSignIn next={next} search={search} />
+						<SignInDivider />
+					</>
+				)}
 
 				<form onSubmit={onAskForCode} className="space-y-4">
 					<div className="space-y-2">

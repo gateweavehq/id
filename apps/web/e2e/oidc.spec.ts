@@ -2,6 +2,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import * as oauth from "oauth4webapi";
+import {
+	addAuthenticator,
+	addPasskey,
+	passkeySignIn,
+	signOut,
+	signUpWithoutAPassword,
+	withoutTheOfferInTheEmailField,
+} from "./authenticator";
 import { APP, PERSON } from "./fixtures";
 import { codeSentSince, watch } from "./helpers";
 
@@ -273,6 +281,91 @@ test.describe("asking whether an app may", () => {
 		expect(answer.get("error")).toBe("access_denied");
 		expect(answer.get("state")).toBe(state);
 		expect(answer.has("code")).toBe(false);
+		expect(problems).toEqual([]);
+	});
+});
+
+test.describe("signing in with a passkey on the way to an app", () => {
+	/** Someone with nothing but a passkey, signed in with it. */
+	async function personWithAPasskey(page: Page) {
+		const authenticator = await addAuthenticator(page);
+		const email = await signUpWithoutAPassword(page);
+		await page.goto("/account", { waitUntil: "networkidle" });
+		await addPasskey(page);
+		return { email, authenticator };
+	}
+
+	test("carries on to the app", async ({ page }) => {
+		const problems = await watch(page);
+		await withoutTheOfferInTheEmailField(page);
+		const { email } = await personWithAPasskey(page);
+		await signOut(page);
+
+		const flow = await goToSignIn(page);
+		await expect(page).toHaveURL(/\/login\?/);
+		await page.getByRole("button", { name: "Use a passkey" }).click();
+
+		const claims = await finish(page, flow);
+		expect(claims.email).toBe(email);
+		expect(problems).toEqual([]);
+	});
+
+	test("leaves the way to the provider's answer alone", async ({ page }) => {
+		await withoutTheOfferInTheEmailField(page);
+		await personWithAPasskey(page);
+		await signOut(page);
+		await holdBack(page, `${APP.redirectUri}*`);
+		const addresses = addressesOf(page);
+
+		await goToSignIn(page);
+		await page.getByRole("button", { name: "Use a passkey" }).click();
+		await expectBackAtTheApp(page);
+
+		expect(addresses.map((address) => address.pathname)).not.toContain("/account");
+	});
+
+	test("carries on to the app from the browser's offer in the email field", async ({ page }) => {
+		const problems = await watch(page);
+		const { email, authenticator } = await personWithAPasskey(page);
+		// So that signing out stays signed out. It goes on waiting for the offer that page made.
+		await authenticator.setAnswering(false);
+		await signOut(page);
+		await authenticator.setAnswering(true);
+
+		const signedIn = passkeySignIn(page);
+		const flow = await goToSignIn(page);
+		await signedIn;
+
+		const claims = await finish(page, flow);
+		expect(claims.email).toBe(email);
+		expect(problems).toEqual([]);
+	});
+
+	test("asks for no password when the app asked to see an account made", async ({ page }) => {
+		const problems = await watch(page);
+		await withoutTheOfferInTheEmailField(page);
+		const { email } = await personWithAPasskey(page);
+
+		const flow = await goToSignIn(page, { prompt: "create" });
+
+		const claims = await finish(page, flow);
+		expect(claims.email).toBe(email);
+		expect(problems).toEqual([]);
+	});
+
+	test("does not get past an app that refuses them", async ({ page }) => {
+		const problems = await watch(page);
+		await withoutTheOfferInTheEmailField(page);
+		await personWithAPasskey(page);
+		await signOut(page);
+
+		await goToSignIn(page, {}, "refusing");
+		await expect(page).toHaveURL(/\/login\?/);
+		await page.getByRole("button", { name: "Use a passkey" }).click();
+
+		await expect(page.getByRole("heading", { name: "You do not have access" })).toBeVisible();
+		await expect(page).toHaveURL(/\/no-access\?/);
+		expect(new URL(page.url()).searchParams.has("code")).toBe(false);
 		expect(problems).toEqual([]);
 	});
 });
