@@ -85,7 +85,8 @@ interface Person {
 
 let people = 0;
 
-async function newPerson(): Promise<Person> {
+/** Someone who has proved an address with a code, and done nothing else yet. */
+async function newPersonWithOnlyACode(): Promise<Person> {
 	const email = `person-${++people}@example.com`;
 	const client = newClient();
 	await api("/email-otp/send-verification-otp", { client, body: { email, type: "sign-in" } });
@@ -94,6 +95,20 @@ async function newPerson(): Promise<Person> {
 	expect(entered.status).toBe(200);
 	const { user } = (await entered.clone().json()) as { user: { id: string } };
 	return { email, client, cookie: cookieOf(entered), userId: user.id };
+}
+
+function choosePassword(person: Person, body: object = {}) {
+	return api("/account/first-password", {
+		client: person.client,
+		cookie: person.cookie,
+		body: { newPassword: "a-long-password-for-tests", ...body },
+	});
+}
+
+async function newPerson(): Promise<Person> {
+	const person = await newPersonWithOnlyACode();
+	expect((await choosePassword(person)).status).toBe(200);
+	return person;
 }
 
 let apps = 0;
@@ -449,6 +464,101 @@ describe("who may sign in", () => {
 			expect(text).not.toContain("code=");
 			expect(text).not.toContain(app.redirectUri);
 		}
+	});
+});
+
+describe("someone who has only proved an address", () => {
+	/** The signed query of the page someone was sent to, which a page sends back with every POST. */
+	function signedQuery({ location }: Authorized): string {
+		return location.search.slice(1);
+	}
+
+	async function carryOn(person: Person, authorized: Authorized) {
+		const response = await api("/oauth2/continue", {
+			client: person.client,
+			cookie: person.cookie,
+			body: { created: true, oauth_query: signedQuery(authorized) },
+		});
+		expect(response.status).toBe(200);
+		const { url } = (await response.json()) as { url: string };
+		return new URL(url, origin);
+	}
+
+	it("chooses a password before the app hears of them", async () => {
+		const app = await newApp();
+		const { location } = await authorize(app, await newPersonWithOnlyACode());
+		expect(location.pathname).toBe("/welcome");
+		expect(location.searchParams.has("code")).toBe(false);
+	});
+
+	it("is not sent there by an app that asked to show nothing", async () => {
+		const app = await newApp();
+		const { location } = await authorize(app, await newPersonWithOnlyACode(), { prompt: "none" });
+		expect(location.host).toBe(app.host);
+		expect(location.searchParams.get("error")).toBe("interaction_required");
+		expect(location.searchParams.has("code")).toBe(false);
+	});
+
+	it("cannot just say they are done", async () => {
+		const app = await newApp();
+		const person = await newPersonWithOnlyACode();
+		const next = await carryOn(person, await authorize(app, person));
+		expect(next.pathname).toBe("/welcome");
+		expect(next.searchParams.has("code")).toBe(false);
+	});
+
+	it("reaches the app once they have a password", async () => {
+		const app = await newApp();
+		const person = await newPersonWithOnlyACode();
+		const authorized = await authorize(app, person);
+
+		const chosen = await choosePassword(person, { oauth_query: signedQuery(authorized) });
+		expect(chosen.status).toBe(200);
+
+		const location = await carryOn(person, authorized);
+		expect(location.host).toBe(app.host);
+		const { claims } = await exchange(app, { ...authorized, location });
+		expect(claims.email).toBe(person.email);
+	});
+
+	it("sets no password from a page that has run out", async () => {
+		const app = await newApp();
+		const person = await newPersonWithOnlyACode();
+		const stale = new URLSearchParams(signedQuery(await authorize(app, person)));
+		stale.set("exp", "1");
+
+		const chosen = await choosePassword(person, { oauth_query: stale.toString() });
+		expect(chosen.status).toBe(400);
+		expect(await chosen.json()).toMatchObject({ error: "invalid_signature" });
+		// Nothing happened, so the next page they get, once they start again, can still ask.
+		expect((await authorize(app, person)).location.pathname).toBe("/welcome");
+	});
+});
+
+describe("an app asking for an account to be made", () => {
+	it("sends someone who is not signed in to the page that sends them to sign up", async () => {
+		const app = await newApp();
+		const { location } = await authorize(app, null, { prompt: "create" });
+		expect(location.pathname).toBe("/welcome");
+		expect(location.searchParams.get("prompt")).toBe("create");
+	});
+
+	it("lets someone with an account through once told they are done", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const authorized = await authorize(app, person, { prompt: "create" });
+		expect(authorized.location.pathname).toBe("/welcome");
+
+		const response = await api("/oauth2/continue", {
+			client: person.client,
+			cookie: person.cookie,
+			body: { created: true, oauth_query: authorized.location.search.slice(1) },
+		});
+		const { url } = (await response.json()) as { url: string };
+		const location = new URL(url, origin);
+		expect(location.host).toBe(app.host);
+		const { claims } = await exchange(app, { ...authorized, location });
+		expect(claims.email).toBe(person.email);
 	});
 });
 

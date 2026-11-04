@@ -20,7 +20,7 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await page.getByRole("button", { name: "Send me a code" }).click();
 		await expect(page.getByRole("heading", { name: "Enter the code" })).toBeVisible();
 
-		await page.getByLabel("Code").fill(await codeSentSince(since));
+		await page.getByLabel("Code").fill(await codeSentSince(since, email));
 		await page.getByRole("button", { name: "Create account" }).click();
 		await expect(page.getByRole("heading", { name: "Choose a password" })).toBeVisible();
 

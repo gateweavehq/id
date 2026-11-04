@@ -126,6 +126,48 @@ ends at the next expiry of a short-lived access token rather than at some later 
 on them would let any workspace's admin receive a member's address silently. The screen names the app,
 the workspace that owns it and the host it sends people back to.
 
+## Signing in to an app
+
+An app sends someone to the authorization endpoint, and the provider decides where they go next. Each
+page it sends them to gets the app's request in its query, signed, and the auth client's
+`oauthProviderClient` sends that query back with every POST from the page. The provider's answer says
+where to go, and the auth client goes there. So the pages have three duties, all in `lib/oauth-flow.ts`
+and `lib/search.ts`:
+
+- **Keep the query as it is.** The signature covers each value. The router's default reads values as
+  JSON and writes one value per name, so `state=1e5` came back as `100000` and the repeated `ba_param`
+  as a JSON array, and it rewrites the URL to match. So `router.tsx` parses queries as plain text, and
+  these pages validate with `z.looseObject`, since `z.object` would strip the request out of the URL.
+- **Take it along.** Links between `/login` and `/signup` carry it, and so does GitHub's way back when
+  someone is refused. A session is no reason to leave these pages either: someone signed in only reaches
+  them when the app asked, with `prompt=login` or `max_age`.
+- **Do not navigate.** The auth client is already on its way, and a second navigation would cancel it.
+
+| Page         | When the provider sends someone there                                               |
+| ------------ | ----------------------------------------------------------------------------------- |
+| `/login`     | Nobody is signed in, or the app asked them to sign in again.                        |
+| `/welcome`   | They have only proved an address, so have nothing to sign in with next time. Or the |
+|              | app sent `prompt=create`: signed out, this page passes them to `/signup`; signed in |
+|              | with a way to sign in, it tells the provider they are done.                         |
+| `/consent`   | The app sent `prompt=consent`. Workspace apps will always come here.                |
+| `/no-access` | The check above refused them. They can use another account, or go back to the app,  |
+|              | which gets `access_denied`.                                                         |
+
+The check does not depend on any of this. A page that sends the wrong thing gets a bad signature, and
+a person who skips a page runs into the same checks at the next one.
+
+**The signature runs out after 10 minutes,** which an open page can outlive. No retry can help then,
+so the provider's error becomes a "Start again" link, which asks for the app's request afresh.
+
+**Resetting a password leaves the flow.** The link arrives by email, often in another tab or on another
+device, so it ends at the account page. The way back is the tab the person left: the app asks again, and
+now they pass straight through. The email saying an address already has an account does the same.
+
+**A form cannot be sent before the page's script runs.** Sent that early, the browser would submit it
+itself as a GET, with the password in the URL, where history and logs keep it. Pages reached by a full
+navigation, which all of these are, have that moment on every load, so `LiveButton` arrives disabled.
+A browser will not submit a form whose default button is disabled, not even with Enter.
+
 ## Tokens
 
 These values are permanent once real apps depend on them. Changing one signs everybody out of every
@@ -259,6 +301,11 @@ A throwaway Worker on workerd, driven by `oauth4webapi` and by Chromium's WebAut
 through discovery and the JWKS. It found two things the throwaway Worker had not: back-channel logout
 never worked on Workers (see "A patched dependency"), and naming the userinfo endpoint as a `resource`
 got a JWT with the real user id.
+
+`apps/web/e2e/oidc.spec.ts` drives the pages in Chromium with `oauth4webapi` as the app's server,
+through real redirects: making an account on the way to an app, signing in, each `prompt`, refusal, and
+a page that has been open too long. It found the router breaking signed queries, and passwords reaching
+the URL from forms sent before the page's script ran.
 
 Still unproven:
 

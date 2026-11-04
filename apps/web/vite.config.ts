@@ -27,6 +27,8 @@ export default defineConfig(({ command }) => ({
 					? {
 							vars: {
 								...config.vars,
+								BETTER_AUTH_URL: "http://localhost:4732",
+								OIDC_PAIRWISE_SECRET: "pairwise-secret-for-browser-tests-only",
 								EMAIL_FROM: "Gateweave ID <id@example.com>",
 								GITHUB_CLIENT_ID: "client-for-browser-tests",
 								GITHUB_CLIENT_SECRET: "secret-for-browser-tests",

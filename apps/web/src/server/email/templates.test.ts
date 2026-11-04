@@ -14,11 +14,17 @@ describe("passwordResetEmail", () => {
 
 describe("signUpCodeEmail", () => {
 	it("shows the code in every part and says how long it works", () => {
-		const email = signUpCodeEmail({ code: "123456", minutes: 10 });
+		const email = signUpCodeEmail({ code: "123456", minutes: 10, email: "a@example.com" });
 		expect(email.subject).toBe("123456 is your Gateweave ID code");
 		expect(email.text).toContain("123456");
 		expect(email.text).toContain("10 minutes");
 		expect(email.html).toContain("123456");
+	});
+
+	it("says which address the account is for, safely", () => {
+		const email = signUpCodeEmail({ code: "123456", minutes: 10, email: "a<b>@example.com" });
+		expect(email.text).toContain("a<b>@example.com");
+		expect(email.html).toContain("a&lt;b&gt;@example.com");
 	});
 });
 

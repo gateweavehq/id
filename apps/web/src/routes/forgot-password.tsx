@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
-import { Button } from "#/components/ui/button";
+import { LiveButton } from "#/components/live-button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
@@ -99,9 +99,9 @@ function ForgotPasswordPage() {
 						{error}
 					</p>
 				)}
-				<Button type="submit" className="w-full" disabled={pending}>
+				<LiveButton type="submit" className="w-full" disabled={pending}>
 					Send reset link
-				</Button>
+				</LiveButton>
 			</form>
 			<BackToSignIn />
 		</AuthPage>

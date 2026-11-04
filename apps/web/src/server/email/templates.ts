@@ -18,11 +18,22 @@ export function passwordResetEmail({ url }: { url: string }): Message {
 	});
 }
 
-export function signUpCodeEmail({ code, minutes }: { code: string; minutes: number }): Message {
+export function signUpCodeEmail({
+	code,
+	minutes,
+	email,
+}: {
+	code: string;
+	minutes: number;
+	/** Whoever reads several addresses in one inbox should know which one this is about. */
+	email: string;
+}): Message {
 	return compose({
 		subject: `${code} is your ${PRODUCT} code`,
 		heading: "Finish creating your account",
-		body: [`Enter this code to create your ${PRODUCT} account. It works for ${minutes} minutes.`],
+		body: [
+			`Enter this code to create your ${PRODUCT} account for ${email}. It works for ${minutes} minutes.`,
+		],
 		code,
 		footer: "If you did not ask for this, ignore this email. Without the code, nothing happens.",
 	});

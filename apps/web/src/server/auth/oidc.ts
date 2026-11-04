@@ -51,6 +51,16 @@ async function appBeingAuthorized(db: Database): Promise<string | undefined> {
 	return appIn(client?.metadata);
 }
 
+async function canSignInAgain(db: Database, userId: string): Promise<boolean> {
+	const account = await db
+		.select({ id: schema.account.id })
+		.from(schema.account)
+		.where(eq(schema.account.userId, userId))
+		.limit(1)
+		.get();
+	return account !== undefined;
+}
+
 /**
  * `resource` asks for a JWT access token, whose subject is the person's real id whatever the app's
  * subject type. No API is registered here, but the provider always accepts its own userinfo endpoint
@@ -134,6 +144,12 @@ export function oidcPlugins(db: Database, { issuer, pairwiseSecret }: OidcConfig
 					});
 				}
 				return {};
+			},
+			signup: {
+				page: "/welcome",
+				// A sign-up code proves an address and leaves nothing to sign in with next time, so someone
+				// who has only that chooses a password before any app hears of them.
+				shouldRedirect: async ({ user }) => !(await canSignInAgain(db, user.id)),
 			},
 			postLogin: {
 				page: "/no-access",

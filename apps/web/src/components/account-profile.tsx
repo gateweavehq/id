@@ -1,6 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
-import { Button } from "#/components/ui/button";
+import { LiveButton } from "#/components/live-button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
@@ -58,9 +58,9 @@ export function AccountProfile({ name, email }: { name: string; email: string })
 						Saved.
 					</p>
 				)}
-				<Button type="submit" variant="outline" size="sm" disabled={pending}>
+				<LiveButton type="submit" variant="outline" size="sm" disabled={pending}>
 					Save
-				</Button>
+				</LiveButton>
 			</form>
 		</section>
 	);
