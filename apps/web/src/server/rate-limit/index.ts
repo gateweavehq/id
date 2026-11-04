@@ -31,6 +31,9 @@ export const SIGN_UP_CODES_PER_ADDRESS: Rule[] = [
 	{ window: 24 * 60 * 60, max: 10 },
 ];
 
+/** Longer than an authenticator's code stays good: its own 30 seconds and one step either side. */
+export const CODE_CLAIM: Rule[] = [{ window: 120, max: 1 }];
+
 const local = new LocalLimiter();
 
 /**
@@ -76,6 +79,12 @@ export function limitRecipients(mailer: Mailer | undefined): Mailer | undefined 
 /** Whether an address may be sent another sign-up code, however many clients ask for one. */
 export async function allowSignUpCode(email: string): Promise<boolean> {
 	const { allowed } = await consumeDurably(`sign-up-code:${email}`, SIGN_UP_CODES_PER_ADDRESS);
+	return allowed;
+}
+
+/** Whether this code has not been offered for this person since it became good. */
+export async function firstUseOfCode(key: string): Promise<boolean> {
+	const { allowed } = await consumeDurably(`totp-code:${key}`, CODE_CLAIM);
 	return allowed;
 }
 

@@ -8,7 +8,9 @@ export const getSession = createServerFn({ method: "GET" }).handler(async () => 
 	// This ends up in the page. The cookie keeps the token out of reach of scripts, and no page needs
 	// it.
 	const { token: _token, ...session } = result.session;
-	return { user: result.user, session };
+	// The two-factor plugin adds this, and the list of plugins is too conditional for its type to show.
+	const user = result.user as typeof result.user & { twoFactorEnabled?: boolean | null };
+	return { user, session };
 });
 
 export const getAuthOptions = createServerFn({ method: "GET" }).handler(async () => {

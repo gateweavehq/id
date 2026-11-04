@@ -32,6 +32,17 @@ describe("describeActivity", () => {
 		expect(describeActivity(activity({ type: "sign_in", detail }))).toBe(words);
 	});
 
+	it("says what two-factor sign-in did, and that an operator's change was not the person's", () => {
+		const event = { id: "1", at: "2026-11-04", app: null, ip: null, device: null };
+		const words = (type: string, detail: string | null = null) =>
+			describeActivity({ ...event, type, detail });
+		expect(words("sign_in", "totp")).toBe("Signed in with an authenticator app");
+		expect(words("sign_in", "recovery_code")).toBe("Signed in with a recovery code");
+		expect(words("sign_in_failed", "totp")).toBe("A sign-in with an authenticator app failed");
+		expect(words("two_factor_disabled")).toBe("Turned off two-factor sign-in");
+		expect(words("two_factor_disabled", "operator")).toContain("for you");
+	});
+
 	it("says which way of signing in failed", () => {
 		expect(describeActivity(activity({ type: "sign_in_failed", detail: "passkey" }))).toBe(
 			"A sign-in with a passkey failed",

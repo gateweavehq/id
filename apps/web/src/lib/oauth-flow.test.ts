@@ -5,6 +5,7 @@ import {
 	inFlow,
 	linkExpired,
 	onItsWay,
+	owesACode,
 	restartHref,
 	welcomeIsDone,
 } from "./oauth-flow";
@@ -19,6 +20,16 @@ const signed = {
 	ba_param: ["client_id", "state", "scope"],
 	sig: "abc",
 };
+
+describe("a right password", () => {
+	it("is known to leave a code owed only when the server says so", () => {
+		expect(owesACode({ twoFactorRedirect: true, twoFactorMethods: ["totp"] })).toBe(true);
+		expect(owesACode({ twoFactorRedirect: false })).toBe(false);
+		expect(owesACode({ twoFactorRedirect: "true" })).toBe(false);
+		expect(owesACode({ redirect: true, url: "/account" })).toBe(false);
+		expect(owesACode(null)).toBe(false);
+	});
+});
 
 describe("a page on the way to an app", () => {
 	it("is known by its signature", () => {

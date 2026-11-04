@@ -3,6 +3,7 @@ export const AUDIT_EVENT_TYPES = [
 	"account_created",
 	"sign_in",
 	"sign_in_failed",
+	"two_factor_asked",
 	"app_sign_in",
 	"refused",
 	"consent_granted",
@@ -12,6 +13,9 @@ export const AUDIT_EVENT_TYPES = [
 	"password_changed",
 	"passkey_added",
 	"passkey_removed",
+	"two_factor_enabled",
+	"two_factor_disabled",
+	"recovery_codes_replaced",
 	"provider_linked",
 	"provider_unlinked",
 	"app_added",
@@ -36,6 +40,8 @@ const SIGNED_IN_WITH: Record<string, string> = {
 	passkey: "a passkey",
 	github: "GitHub",
 	code: "a code sent by email",
+	totp: "an authenticator app",
+	recovery_code: "a recovery code",
 };
 
 /** A person's own event, in their words. A type this build has not heard of says so plainly. */
@@ -52,6 +58,8 @@ export function describeActivity({ type, app, detail }: AuditActivity): string {
 			return detail && SIGNED_IN_WITH[detail]
 				? `A sign-in with ${SIGNED_IN_WITH[detail]} failed`
 				: "A sign-in failed";
+		case "two_factor_asked":
+			return "Entered the right password, and was asked for a code";
 		case "app_sign_in":
 			return `Signed in to ${theApp}`;
 		case "refused":
@@ -71,6 +79,14 @@ export function describeActivity({ type, app, detail }: AuditActivity): string {
 			return "Added a passkey";
 		case "passkey_removed":
 			return "Removed a passkey";
+		case "two_factor_enabled":
+			return "Turned on two-factor sign-in";
+		case "two_factor_disabled":
+			return detail === "operator"
+				? "Two-factor sign-in was turned off for you, at your request"
+				: "Turned off two-factor sign-in";
+		case "recovery_codes_replaced":
+			return "Replaced the recovery codes";
 		case "provider_linked":
 			return `Connected ${detail === "github" ? "GitHub" : (detail ?? "a sign-in provider")}`;
 		case "provider_unlinked":

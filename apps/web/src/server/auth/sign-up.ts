@@ -24,7 +24,7 @@ const CODE_LIFETIME_SECONDS = 10 * 60;
 /**
  * What this server does not offer. Password-first sign-up and link verification are the attack
  * itself, and the rest of the email-otp plugin would give anyone with a mailbox a way around the
- * password and, later, two-factor.
+ * password and two-factor.
  */
 export const CLOSED_PATHS = [
 	"/sign-up/email",

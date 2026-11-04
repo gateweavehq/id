@@ -54,7 +54,7 @@ export function appRow(app: NewApp, now = new Date()) {
 	return { row, clientId, clientSecret: `${CLIENT_SECRET_PREFIX}${secret}` };
 }
 
-function sqlValue(value: string | number | null): string {
+export function sqlValue(value: string | number | null): string {
 	if (value === null) return "NULL";
 	if (typeof value === "number") return String(value);
 	return `'${value.replaceAll("'", "''")}'`;

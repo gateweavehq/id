@@ -35,6 +35,24 @@ it("limits sign-in attempts from one client", async () => {
 	expect(await signIn({ "cf-connecting-ip": "203.0.113.8" })).toBe(401);
 });
 
+it("limits tries at a two-factor code from one client, across isolates", async () => {
+	const statuses = [];
+	for (const isolate of [0, 1, 0, 1]) {
+		const response = await id.fetchIn(isolate, `${origin}/api/auth/two-factor/verify-totp`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin,
+				"cf-connecting-ip": "203.0.113.9",
+			},
+			body: JSON.stringify({ code: "123456" }),
+		});
+		statuses.push(response.status);
+	}
+	// No challenge, so each is refused whatever the code. The limit comes first all the same.
+	expect(statuses).toEqual([401, 401, 401, 429]);
+});
+
 it("tells clients apart by the address Cloudflare saw, not one they claim", async () => {
 	const statuses = [];
 	for (let attempt = 0; attempt < 4; attempt++) {

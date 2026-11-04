@@ -14,6 +14,7 @@ import { breachedPasswords } from "./breached-passwords";
 import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
+import { TWO_FACTOR_CLOSED_PATHS, twoFactorPlugins } from "./two-factor";
 
 export interface AuthConfig {
 	db: Database;
@@ -31,6 +32,8 @@ export interface AuthConfig {
 	rateLimitStorage?: BetterAuthRateLimitOptions["customStorage"];
 	/** Whether one address may be sent another sign-up code. Unlimited without it. */
 	allowSignUpCode?: ((email: string) => Promise<boolean>) | undefined;
+	/** Whether an authenticator's code is being offered for the first time. Unchecked without it. */
+	firstUseOfCode?: ((key: string) => Promise<boolean>) | undefined;
 	/** Puts Cloudflare Turnstile in front of the paths bots go for. Off without it. */
 	turnstileSecretKey?: string | undefined;
 	/** Refuses passwords known from breaches, by asking a service outside this deployment. */
@@ -70,14 +73,19 @@ const NO_TOKENS = {
 export function createAuth(config: AuthConfig) {
 	const { mailer } = config;
 	const record = auditRecorder(config.db, config.runInBackground);
-	const audit = auditDatabaseHooks(record);
+	const audit = auditDatabaseHooks(config.db, record);
 
 	return betterAuth({
 		secret: config.secret,
 		baseURL: config.baseURL,
 		database: drizzleAdapter(config.db, { provider: "sqlite", schema }),
 		telemetry: { enabled: false },
-		disabledPaths: [...CLOSED_PATHS, ...OIDC_CLOSED_PATHS, ...PASSKEY_CLOSED_PATHS],
+		disabledPaths: [
+			...CLOSED_PATHS,
+			...OIDC_CLOSED_PATHS,
+			...PASSKEY_CLOSED_PATHS,
+			...TWO_FACTOR_CLOSED_PATHS,
+		],
 		// Better Auth only turns its limiter on by itself when NODE_ENV is "production", which a
 		// Worker never sets. Its built-in rules allow 3 sign-ins per 10 seconds per client. It
 		// stays on in local dev too, so what works there works deployed.
@@ -148,6 +156,7 @@ export function createAuth(config: AuthConfig) {
 					},
 					after: audit.user.afterCreate,
 				},
+				update: { after: audit.user.afterUpdate },
 			},
 			account: {
 				create: {
@@ -182,6 +191,8 @@ export function createAuth(config: AuthConfig) {
 						githubSignIn: Boolean(config.github),
 					})
 				: []),
+			// Before the provider, which must not see a session that a code is still owed for.
+			...twoFactorPlugins({ record, firstUseOfCode: config.firstUseOfCode }),
 			auditLog(config.db, record),
 			...(config.oidc ? oidcPlugins(config.db, config.oidc, record) : []),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.
