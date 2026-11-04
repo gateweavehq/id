@@ -820,6 +820,55 @@ describe("removing a passkey", () => {
 	});
 });
 
+describe("the audit log", () => {
+	it("records adding a passkey, signing in with it and removing it", async () => {
+		const person = await newPersonWithAPassword();
+		const { authenticator, passkeyId } = await withPasskey(person);
+		await id.auditEventRecorded(person.userId, { type: "passkey_added", ip: person.client });
+
+		const { response, client } = await tryToSignIn(authenticator);
+		expect(response.status).toBe(200);
+		await id.auditEventRecorded(person.userId, {
+			type: "sign_in",
+			detail: "passkey",
+			ip: client,
+		});
+
+		const removed = await api("/account/remove-passkey", { ...person, body: { id: passkeyId } });
+		expect(removed.status).toBe(200);
+		await id.auditEventRecorded(person.userId, { type: "passkey_removed", ip: person.client });
+	});
+
+	it("records a failed sign-in against the passkey's owner", async () => {
+		const person = await newPersonWithAPassword();
+		const { authenticator } = await withPasskey(person);
+		const { response, client } = await tryToSignIn(authenticator, { userVerified: false });
+		expect(response.status).toBeGreaterThanOrEqual(400);
+		await id.auditEventRecorded(person.userId, {
+			type: "sign_in_failed",
+			detail: "passkey",
+			ip: client,
+		});
+	});
+
+	it("records no removal that was refused", async () => {
+		const person = await newPersonWithOnlyACode();
+		const { passkeyId } = await withPasskey(person);
+		const refused = await api("/account/remove-passkey", { ...person, body: { id: passkeyId } });
+		expect(refused.status).toBe(400);
+		// Something later, by the same path.
+		await api("/change-password", {
+			...person,
+			body: { currentPassword: "none", newPassword: "another-long-password" },
+		});
+		const { authenticator } = await withPasskey(person);
+		await tryToSignIn(authenticator);
+		await id.auditEventRecorded(person.userId, { type: "sign_in", detail: "passkey" });
+		const events = await id.auditEvents(person.userId);
+		expect(events.filter(({ type }) => type === "passkey_removed")).toEqual([]);
+	});
+});
+
 describe("how often", () => {
 	it("limits asking to sign in from one address", async () => {
 		const client = newClient();

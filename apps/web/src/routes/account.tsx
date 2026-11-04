@@ -1,4 +1,5 @@
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { AccountActivity } from "#/components/account-activity";
 import { AccountPasskeys } from "#/components/account-passkeys";
 import { AccountPassword } from "#/components/account-password";
 import { AccountProfile } from "#/components/account-profile";
@@ -49,6 +50,8 @@ function AccountPage() {
 			{data.passkeys && <AccountPasskeys />}
 			{/* A changed password replaces this session, and with it what the list has to show. */}
 			<AccountSessions key={session.session.id} currentId={session.session.id} />
+
+			<AccountActivity />
 		</main>
 	);
 }

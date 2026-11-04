@@ -30,6 +30,13 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
 	});
 
+	await test.step("see what has happened to the account", async () => {
+		const activity = page.getByRole("region", { name: "Recent activity" });
+		await expect(activity.getByText("Created this account")).toBeVisible();
+		await expect(activity.getByText("Signed in with a code sent by email")).toBeVisible();
+		await expect(activity.getByText("Added a password")).toBeVisible();
+	});
+
 	await test.step("change the name, and it stays", async () => {
 		await expect(page.getByLabel("Email")).toHaveValue(email);
 		await page.getByLabel("Name").fill("Ada King");

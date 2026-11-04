@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import * as oauth from "oauth4webapi";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { appRow, insertStatement } from "../scripts/app-row";
 import { PAIRWISE_SECRET, startId } from "./id-worker";
 
@@ -125,6 +125,8 @@ async function newApp(row: Record<string, string | number | null> = {}) {
 	});
 	await id.db.prepare(insertStatement({ ...made.row, ...row } as typeof made.row)).run();
 	return {
+		appId: `app-${apps}`,
+		name: `App ${apps}`,
 		host,
 		redirectUri,
 		clientId: made.clientId,
@@ -653,6 +655,155 @@ describe("refresh tokens", () => {
 		await expect(refresh(await newApp(), tokens.refresh_token)).rejects.toMatchObject({
 			error: "invalid_grant",
 		});
+	});
+});
+
+describe("the audit log", () => {
+	it("records an app learning who someone is, and not each time it refreshes", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const { tokens } = await signInToApp(app, person);
+		await id.auditEventRecorded(person.userId, { type: "app_sign_in", app: app.appId, ip: null });
+
+		await refresh(app, tokens.refresh_token);
+		// Something later, by the same path.
+		setEmailVerified(person, false);
+		await authorize(app, person);
+		await id.auditEventRecorded(person.userId, { type: "refused", app: app.appId });
+		const events = await id.auditEvents(person.userId);
+		expect(events.filter(({ type }) => type === "app_sign_in").length).toBe(1);
+	});
+
+	it("records someone being refused on the way to an app", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		await setEmailVerified(person, false);
+		expectRefused(await authorize(app, person), app);
+		await id.auditEventRecorded(person.userId, {
+			type: "refused",
+			app: app.appId,
+			detail: "authorization",
+			ip: person.client,
+		});
+		const events = await id.auditEvents(person.userId);
+		expect(events.filter(({ type }) => type === "app_sign_in")).toEqual([]);
+	});
+
+	it("records someone refused when an app refreshes their tokens", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const { tokens } = await signInToApp(app, person);
+		await setEmailVerified(person, false);
+		await expect(refresh(app, tokens.refresh_token)).rejects.toMatchObject({
+			error: "invalid_grant",
+		});
+		await id.auditEventRecorded(person.userId, {
+			type: "refused",
+			app: app.appId,
+			detail: "refresh_token",
+		});
+	});
+
+	it.each([
+		[true, "consent_granted"],
+		[false, "consent_denied"],
+	])("records the answer to asking for consent: %s", async (accept, type) => {
+		const app = await newApp({ skip_consent: 0 });
+		const person = await newPerson();
+		const asked = await authorize(app, person);
+		expect(asked.location.pathname).toBe("/consent");
+		const answered = await api("/oauth2/consent", {
+			client: person.client,
+			cookie: person.cookie,
+			body: { accept, oauth_query: asked.location.search.slice(1) },
+		});
+		expect(answered.status).toBe(200);
+		await id.auditEventRecorded(person.userId, { type, app: app.appId, ip: person.client });
+	});
+
+	it("records no revoking that was refused", async () => {
+		const app = await newApp();
+		const { tokens } = await signInToApp(app, await newPerson());
+		const refused = await oauth.revocationRequest(
+			as,
+			app.client,
+			oauth.ClientSecretBasic("not-its-secret"),
+			tokens.refresh_token ?? "",
+			fromApp,
+		);
+		expect(refused.status).toBeGreaterThanOrEqual(400);
+		// Something later, from the same app.
+		const accepted = await oauth.revocationRequest(
+			as,
+			app.client,
+			app.auth,
+			tokens.refresh_token ?? "",
+			fromApp,
+		);
+		expect(accepted.status).toBe(200);
+
+		const revoked = async () => {
+			const { results } = await id.db
+				.prepare("SELECT id FROM audit_event WHERE type = 'token_revoked' AND app = ?")
+				.bind(app.appId)
+				.all();
+			return results.length;
+		};
+		await vi.waitFor(async () => expect(await revoked()).toBeGreaterThan(0), { timeout: 5_000 });
+		expect(await revoked()).toBe(1);
+	});
+
+	it("records an app revoking a token, and keeps none of its secret", async () => {
+		const app = await newApp();
+		const { tokens } = await signInToApp(app, await newPerson());
+		const response = await oauth.revocationRequest(
+			as,
+			app.client,
+			app.auth,
+			tokens.refresh_token ?? "",
+			fromApp,
+		);
+		expect(response.status).toBe(200);
+		const revoked = () =>
+			id.db
+				.prepare("SELECT * FROM audit_event WHERE type = 'token_revoked' AND app = ?")
+				.bind(app.appId)
+				.first<Record<string, unknown>>();
+		await vi.waitFor(async () => expect(await revoked()).toMatchObject({ ip: APP_SERVER }), {
+			timeout: 5_000,
+		});
+		const row = JSON.stringify(await revoked());
+		expect(row).not.toContain(app.clientSecret);
+		expect(row).not.toContain(tokens.refresh_token ?? "");
+	});
+
+	it("shows someone's activity whatever another client's metadata holds", async () => {
+		await newApp({ metadata: "not json" });
+		const app = await newApp();
+		const person = await newPerson();
+		await signInToApp(app, person);
+		await id.auditEventRecorded(person.userId, { type: "app_sign_in" });
+		const response = await api("/account/activity", person);
+		expect(response.status).toBe(200);
+	});
+
+	it("names the app in someone's own activity, by its id once it has gone", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		await signInToApp(app, person);
+		await id.auditEventRecorded(person.userId, { type: "app_sign_in" });
+
+		const namesShown = async () => {
+			const response = await api("/account/activity", person);
+			const { events } = (await response.json()) as {
+				events: { type: string; app: string | null }[];
+			};
+			return events.find(({ type }) => type === "app_sign_in")?.app;
+		};
+		expect(await namesShown()).toBe(app.name);
+
+		await id.db.prepare("DELETE FROM oauth_client WHERE client_id = ?").bind(app.clientId).run();
+		expect(await namesShown()).toBe(app.appId);
 	});
 });
 

@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { appRow, insertStatement, problemWithRedirectUri } from "./app-row.ts";
+import { appAddedStatement, appRow, insertStatement, problemWithRedirectUri } from "./app-row.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -61,7 +61,7 @@ const { row, clientId, clientSecret } = appRow({
 const dir = mkdtempSync(join(tmpdir(), "gateweave-id-app-"));
 try {
 	const file = join(dir, "app.sql");
-	writeFileSync(file, insertStatement(row));
+	writeFileSync(file, `${insertStatement(row)}\n${appAddedStatement(app)}\n`);
 	const where = values.local
 		? ["--local", "--persist-to", ".wrangler/state"]
 		: ["--remote", ...(values.env ? ["--env", values.env] : [])];

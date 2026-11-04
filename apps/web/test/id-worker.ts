@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { get } from "node:http";
 import { join, resolve } from "node:path";
 import { convertV4MiniflareOptions, Miniflare, type V4ModuleDefinition } from "miniflare";
+import { expect, vi } from "vitest";
 
 const app = resolve(import.meta.dirname, "..");
 const serverDir = join(app, "dist/server");
@@ -10,6 +11,18 @@ const serverDir = join(app, "dist/server");
 interface BuiltConfig {
 	compatibility_date: string;
 	compatibility_flags?: string[];
+}
+
+/** A row of the audit log, as the database holds it. */
+export interface AuditEventRow {
+	id: string;
+	at: number;
+	type: string;
+	user_id: string | null;
+	app: string | null;
+	ip: string | null;
+	device: string | null;
+	detail: string | null;
 }
 
 /** One line the Worker wrote to its console. */
@@ -284,6 +297,14 @@ export async function startId(
 		await db.batch(statements.map((statement) => db.prepare(statement)));
 	}
 
+	async function auditEvents(userId: string): Promise<AuditEventRow[]> {
+		const { results } = await db
+			.prepare("SELECT * FROM audit_event WHERE user_id = ? ORDER BY at")
+			.bind(userId)
+			.all<AuditEventRow>();
+		return results;
+	}
+
 	/** A `fetch` that reaches one copy of the Worker directly. Redirects are returned. */
 	async function fetchIn(
 		isolate: number,
@@ -351,6 +372,17 @@ export async function startId(
 		},
 		/** The D1 database, for setting up state the app has no endpoint for. */
 		db,
+		/** What the audit log holds about someone, oldest first. */
+		auditEvents,
+		/** Waits for the audit log to hold this about someone: it is written after the response. */
+		async auditEventRecorded(userId: string, event: Partial<AuditEventRow>) {
+			await vi.waitFor(
+				async () => {
+					expect(await auditEvents(userId)).toContainEqual(expect.objectContaining(event));
+				},
+				{ timeout: 5_000 },
+			);
+		},
 		/** Runs what the Worker's daily cron runs, and resolves when it has finished. */
 		async runCron() {
 			const worker = (await mf.getWorker(names[0])) as unknown as {

@@ -1,10 +1,11 @@
 import { getOAuthProviderState, oauthProvider } from "@better-auth/oauth-provider";
 import type { BetterAuthPlugin } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins/jwt";
 import { eq } from "drizzle-orm";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { type RecordEvent, whereFrom } from "./audit";
 import { hasPasskey } from "./passkeys";
 import { maySignIn } from "./who-may-sign-in";
 
@@ -37,12 +38,7 @@ function appIn(metadata: unknown): string | undefined {
 	}
 }
 
-/** The app an authorization is for, from the provider's state. Undefined if it cannot be named. */
-async function appBeingAuthorized(db: Database): Promise<string | undefined> {
-	const state = await getOAuthProviderState();
-	// `query` is a serialized query string, not an object. Reading it wrongly gets nothing here, which
-	// must refuse rather than let everyone through.
-	const clientId = new URLSearchParams(state?.query ?? "").get("client_id");
+async function appOfClient(db: Database, clientId: string | null | undefined) {
 	if (!clientId) return undefined;
 	const client = await db
 		.select({ metadata: schema.oauthClient.metadata })
@@ -50,6 +46,14 @@ async function appBeingAuthorized(db: Database): Promise<string | undefined> {
 		.where(eq(schema.oauthClient.clientId, clientId))
 		.get();
 	return appIn(client?.metadata);
+}
+
+/** The app an authorization is for, from the provider's state. Undefined if it cannot be named. */
+async function appBeingAuthorized(db: Database): Promise<string | undefined> {
+	const state = await getOAuthProviderState();
+	// `query` is a serialized query string, not an object. Reading it wrongly gets nothing here, which
+	// must refuse rather than let everyone through.
+	return appOfClient(db, new URLSearchParams(state?.query ?? "").get("client_id"));
 }
 
 async function canSignInAgain(db: Database, userId: string): Promise<boolean> {
@@ -88,13 +92,66 @@ function refuseResources(): BetterAuthPlugin {
 	};
 }
 
+/** The client a request to revoke a token came from, by now checked by the provider. */
+function clientRevoking(headers: Headers | undefined, body: Record<string, unknown> | undefined) {
+	if (typeof body?.client_id === "string") return body.client_id;
+	const basic = /^Basic (.+)$/i.exec(headers?.get("authorization") ?? "")?.[1];
+	if (!basic) return undefined;
+	try {
+		// Only the part before the colon. The rest is the client's secret.
+		return decodeURIComponent(atob(basic).split(":")[0] ?? "");
+	} catch {
+		return undefined;
+	}
+}
+
+/** Records what the provider does at paths with no hook of its own. */
+function auditOfApps(db: Database, record: RecordEvent): BetterAuthPlugin {
+	return {
+		id: "audit-of-apps",
+		hooks: {
+			after: [
+				{
+					matcher: (ctx) => ctx.path === "/oauth2/consent" || ctx.path === "/oauth2/revoke",
+					handler: createAuthMiddleware(async (ctx) => {
+						// Not `instanceof`: the provider's refusals are a different class from Better Auth's.
+						if (isAPIError(ctx.context.returned)) return;
+						const from = whereFrom(ctx.headers);
+						if (ctx.path === "/oauth2/revoke") {
+							// No person: an app's server is asking, and the token it names is stored hashed.
+							const clientId = clientRevoking(ctx.headers, ctx.body);
+							record("token_revoked", async () => ({
+								app: await appOfClient(db, clientId),
+								...from,
+							}));
+							return;
+						}
+						const session = await getSessionFromCtx(ctx);
+						const clientId = new URLSearchParams(ctx.body?.oauth_query ?? "").get("client_id");
+						record(ctx.body?.accept === true ? "consent_granted" : "consent_denied", async () => ({
+							userId: session?.user.id,
+							app: await appOfClient(db, clientId),
+							...from,
+						}));
+					}),
+				},
+			],
+		},
+	};
+}
+
 /**
  * The OIDC provider and the signing keys under it. Why each value is what it is, and which can never
  * change, is in "Tokens" in docs/architecture.md.
  */
-export function oidcPlugins(db: Database, { issuer, pairwiseSecret }: OidcConfig) {
+export function oidcPlugins(
+	db: Database,
+	{ issuer, pairwiseSecret }: OidcConfig,
+	record: RecordEvent,
+) {
 	return [
 		refuseResources(),
+		auditOfApps(db, record),
 		jwt({
 			// Apps get tokens from the provider. A session has no business carrying a JWT as well.
 			disableSettingJwtHeader: true,
@@ -137,13 +194,18 @@ export function oidcPlugins(db: Database, { issuer, pairwiseSecret }: OidcConfig
 				}),
 			}),
 			// Authorization does not run on refresh, so without this a removed person keeps their access.
-			customTokenResponseFields: ({ user, metadata }) => {
-				if (!maySignIn({ user, app: appIn(metadata) })) {
+			customTokenResponseFields: ({ grantType, user, metadata }) => {
+				const app = appIn(metadata);
+				if (!maySignIn({ user, app })) {
+					record("refused", { userId: user?.id, app, detail: grantType });
 					throw new APIError("BAD_REQUEST", {
 						error: "invalid_grant",
 						error_description: "This person may not use this app",
 					});
 				}
+				// The moment an app learns who someone is. A refresh tells it nothing new. This request is
+				// the app's server, so it says nothing of where the person is.
+				if (grantType === "authorization_code") record("app_sign_in", { userId: user?.id, app });
 				return {};
 			},
 			signup: {
@@ -155,7 +217,17 @@ export function oidcPlugins(db: Database, { issuer, pairwiseSecret }: OidcConfig
 			postLogin: {
 				page: "/no-access",
 				// Runs on every path to a code, and again when someone continues past the page.
-				shouldRedirect: async ({ user }) => !maySignIn({ user, app: await appBeingAuthorized(db) }),
+				shouldRedirect: async ({ user, headers }) => {
+					const app = await appBeingAuthorized(db);
+					if (maySignIn({ user, app })) return false;
+					record("refused", {
+						userId: user.id,
+						app,
+						detail: "authorization",
+						...whereFrom(headers),
+					});
+					return true;
+				},
 				consentReferenceId: () => undefined,
 			},
 		}),
