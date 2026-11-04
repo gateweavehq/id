@@ -7,6 +7,33 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.2.0] - 2026-11-04
+
+### Added
+
+- **Two-factor sign-in.** Someone with a password can ask for a code from an authenticator app whenever
+  they sign in with it. Passkeys and GitHub do not ask. A code works once, no device is remembered, and
+  nothing goes by email, so a mailbox alone never gets past it. Ten recovery codes are shown once, with one
+  case and no look-alike characters. Turning it on or off signs apps out through back-channel logout. (#19)
+- **`two-factor:remove`,** for someone who has lost their authenticator, their recovery codes and every
+  other way in. Whoever runs it has to be sure who is asking, and the person's activity says it was done for
+  them. (#19)
+- **More in the activity list.** A right password with a code still owed, wrong codes, how someone got past
+  the code, turning two-factor on and off, and replacing recovery codes. (#19)
+
+### Changed
+
+- Updated Wrangler, the Cloudflare Vite plugin, Biome and the TanStack devtools. (#17)
+
+### Upgrading
+
+Apply migration `0004_two_factor` before deploying. It rebuilds nothing, and the previous version runs fine
+on it. There are no new settings.
+
+`BETTER_AUTH_SECRET` now also encrypts authenticator keys and recovery codes. Replacing it outright makes them
+unreadable, and people with two-factor on could not then sign in with a password until `two-factor:remove` is
+run for them.
+
 ## [0.1.1] - 2026-11-04
 
 ### Security
