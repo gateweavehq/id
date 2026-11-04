@@ -29,6 +29,9 @@ export interface SentEmail {
 /** The address ID sends from in tests. */
 export const EMAIL_FROM = { name: "Gateweave ID", email: "id@id.test" };
 
+/** The deployment's pairwise secret in tests. */
+export const PAIRWISE_SECRET = "pairwise-secret-for-tests-pairwise-secret";
+
 /** Cloudflare's published test site key, which is public. */
 export const TURNSTILE_SITE_KEY = "1x00000000000000000000AA";
 
@@ -165,6 +168,9 @@ function builtModules(): V4ModuleDefinition[] {
  * itself fails here instead of in production. Email is on unless `email` is false, and lands in
  * `emails()`. With `turnstile`, Siteverify answers: see `TURNSTILE_TOKENS`. With `github`, GitHub
  * does: see `gitHubCode`. With `breachedPasswords`, Have I Been Pwned does: see `PWNED_PASSWORDS`.
+ * The OIDC provider is on unless `oidc` is false, with the secret in `PAIRWISE_SECRET`. Apps answer
+ * their back-channel logouts at any https address ending in `.apps.test`, and `outboundBodies` has
+ * what they were sent.
  *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
@@ -177,16 +183,19 @@ export async function startId(
 		turnstile = false,
 		github = false,
 		breachedPasswords = false,
+		oidc = true,
 	}: {
 		isolates?: number;
 		email?: boolean;
 		turnstile?: boolean;
 		github?: boolean;
 		breachedPasswords?: boolean;
+		oidc?: boolean;
 	} = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
 	const outbound: string[] = [];
+	const outboundBodies: { url: string; body: string }[] = [];
 	const logs: WorkerLog[] = [];
 	const modules = builtModules();
 	const secret = randomBytes(32).toString("base64url");
@@ -225,6 +234,7 @@ export async function startId(
 								}
 							: {}),
 						...(breachedPasswords ? { CHECK_BREACHED_PASSWORDS: "1" } : {}),
+						...(oidc ? { OIDC_PAIRWISE_SECRET: PAIRWISE_SECRET } : {}),
 					},
 					serviceBindings: { EMAIL: "outbox" },
 					d1Databases: { DB: "id-test" },
@@ -241,6 +251,10 @@ export async function startId(
 						if (answer) return answer;
 						const range = /^https:\/\/api\.pwnedpasswords\.com\/range\/(.+)$/.exec(request.url);
 						if (breachedPasswords && range?.[1]) return pwnedRange(range[1]);
+						if (new URL(request.url).hostname.endsWith(".apps.test")) {
+							outboundBodies.push({ url: request.url, body: await request.text() });
+							return new Response(null, { status: 200 });
+						}
 						return new Response("Outbound requests are blocked in this test", { status: 502 });
 					},
 				})),
@@ -302,6 +316,8 @@ export async function startId(
 		fetchIn,
 		/** URLs the Worker tried to fetch from outside. */
 		outbound,
+		/** What the Worker sent to apps. */
+		outboundBodies,
 		/** Everything the Worker has logged so far, oldest first. */
 		logs,
 		/** Every email sent so far, oldest first. Email goes out after the response. */

@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as WelcomeRouteImport } from './routes/welcome'
+import { Route as DotwellKnownOpenidConfigurationRouteImport } from './routes/[.]well-known/openid-configuration'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,12 @@ const WelcomeRoute = WelcomeRouteImport.update({
   path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownOpenidConfigurationRoute =
+  DotwellKnownOpenidConfigurationRouteImport.update({
+    id: '/.well-known/openid-configuration',
+    path: '/.well-known/openid-configuration',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -67,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/welcome': typeof WelcomeRoute
+  '/.well-known/openid-configuration': typeof DotwellKnownOpenidConfigurationRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -77,6 +85,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/welcome': typeof WelcomeRoute
+  '/.well-known/openid-configuration': typeof DotwellKnownOpenidConfigurationRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -88,6 +97,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/welcome': typeof WelcomeRoute
+  '/.well-known/openid-configuration': typeof DotwellKnownOpenidConfigurationRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/welcome'
+    | '/.well-known/openid-configuration'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +121,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/welcome'
+    | '/.well-known/openid-configuration'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -120,6 +132,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/welcome'
+    | '/.well-known/openid-configuration'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -131,6 +144,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   WelcomeRoute: typeof WelcomeRoute
+  DotwellKnownOpenidConfigurationRoute: typeof DotwellKnownOpenidConfigurationRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -185,6 +199,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/openid-configuration': {
+      id: '/.well-known/openid-configuration'
+      path: '/.well-known/openid-configuration'
+      fullPath: '/.well-known/openid-configuration'
+      preLoaderRoute: typeof DotwellKnownOpenidConfigurationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -203,6 +224,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   WelcomeRoute: WelcomeRoute,
+  DotwellKnownOpenidConfigurationRoute: DotwellKnownOpenidConfigurationRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

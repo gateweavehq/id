@@ -8,6 +8,16 @@ export const db = createDb(env.DB);
 
 const baseURL = env.BETTER_AUTH_URL || undefined;
 
+/**
+ * The issuer is permanent and apps compare it, so it comes from settings and never from a request's
+ * Host header, which whoever sends the request controls. Both values have to be set on purpose, so
+ * a deployment that has not set them up has no provider rather than a wrong one.
+ */
+const oidc =
+	baseURL && env.OIDC_PAIRWISE_SECRET
+		? { issuer: new URL(baseURL).origin, pairwiseSecret: env.OIDC_PAIRWISE_SECRET }
+		: undefined;
+
 let instance: ReturnType<typeof buildAuth> | undefined;
 
 /**
@@ -41,8 +51,11 @@ function buildAuth() {
 		allowSignUpCode,
 		turnstileSecretKey: turnstile?.secretKey,
 		checkBreachedPasswords: env.CHECK_BREACHED_PASSWORDS === "1",
+		oidc,
 	});
 }
+
+export const oidcEnabled = Boolean(oidc);
 
 export const githubEnabled = Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET);
 

@@ -7,4 +7,8 @@ export const auth = createAuth({
 	db: createDb({} as D1Database),
 	secret: "schema-generation-only",
 	baseURL: "http://localhost:4730",
+	oidc: {
+		issuer: "http://localhost:4730",
+		pairwiseSecret: "schema-generation-only-schema-generation-only",
+	},
 });

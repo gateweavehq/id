@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { unstable_readConfig } from "wrangler";
+import { appRow, insertStatement } from "../scripts/app-row";
 import { startId } from "./id-worker";
 
 const origin = "https://id.test";
@@ -38,7 +39,10 @@ function addSession(rowId: string, expiresAt: number) {
 		.bind(rowId, "someone", `token-${rowId}`, expiresAt, Date.now(), Date.now());
 }
 
-async function has(table: "session" | "verification", rowId: string) {
+async function has(
+	table: "session" | "verification" | "oauth_access_token" | "oauth_refresh_token",
+	rowId: string,
+) {
 	const row = await id.db.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(rowId).first();
 	return row !== null;
 }
@@ -62,6 +66,36 @@ describe("the daily cron", () => {
 		await id.runCron();
 		expect(await has("verification", "expired-verification")).toBe(false);
 		expect(await has("verification", "live-verification")).toBe(true);
+	});
+
+	it("deletes expired tokens and leaves live ones", async () => {
+		const { row, clientId } = appRow({
+			app: "an-app",
+			name: "An app",
+			redirectUris: ["https://an-app.test/callback"],
+		});
+		const addToken = (
+			table: "oauth_access_token" | "oauth_refresh_token",
+			rowId: string,
+			at: number,
+		) =>
+			id.db
+				.prepare(
+					`INSERT INTO ${table} (id, token, client_id, user_id, expires_at, created_at, scopes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				)
+				.bind(rowId, `token-${rowId}`, clientId, "someone", at, Date.now(), "[]");
+		await id.db.batch([
+			id.db.prepare(insertStatement(row)),
+			addToken("oauth_access_token", "expired-access", Date.now() - HOUR),
+			addToken("oauth_access_token", "live-access", Date.now() + HOUR),
+			addToken("oauth_refresh_token", "expired-refresh", Date.now() - HOUR),
+			addToken("oauth_refresh_token", "live-refresh", Date.now() + HOUR),
+		]);
+		await id.runCron();
+		expect(await has("oauth_access_token", "expired-access")).toBe(false);
+		expect(await has("oauth_access_token", "live-access")).toBe(true);
+		expect(await has("oauth_refresh_token", "expired-refresh")).toBe(false);
+		expect(await has("oauth_refresh_token", "live-refresh")).toBe(true);
 	});
 
 	it("gets through more than one batch", async () => {

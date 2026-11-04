@@ -10,6 +10,7 @@ import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { passwordResetEmail } from "../email/templates";
 import { breachedPasswords } from "./breached-passwords";
+import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 
 export interface AuthConfig {
@@ -32,6 +33,8 @@ export interface AuthConfig {
 	turnstileSecretKey?: string | undefined;
 	/** Refuses passwords known from breaches, by asking a service outside this deployment. */
 	checkBreachedPasswords?: boolean | undefined;
+	/** Makes this deployment an OIDC provider. Apps cannot sign anyone in without it. */
+	oidc?: OidcConfig | undefined;
 }
 
 /**
@@ -60,8 +63,8 @@ const NO_TOKENS = {
  * Builds the Better Auth instance. Kept free of `cloudflare:workers` imports so the Better Auth
  * CLI can load it to generate the database schema.
  *
- * The OIDC provider, passkeys and workspaces are not here yet: each arrives with the migration
- * that creates its tables.
+ * Passkeys and workspaces are not here yet: each arrives with the migration that creates its
+ * tables.
  */
 export function createAuth(config: AuthConfig) {
 	const { mailer } = config;
@@ -71,7 +74,7 @@ export function createAuth(config: AuthConfig) {
 		baseURL: config.baseURL,
 		database: drizzleAdapter(config.db, { provider: "sqlite", schema }),
 		telemetry: { enabled: false },
-		disabledPaths: CLOSED_PATHS,
+		disabledPaths: [...CLOSED_PATHS, ...OIDC_CLOSED_PATHS],
 		// Better Auth only turns its limiter on by itself when NODE_ENV is "production", which a
 		// Worker never sets. Its built-in rules allow 3 sign-ins per 10 seconds per client. It
 		// stays on in local dev too, so what works there works deployed.
@@ -156,6 +159,7 @@ export function createAuth(config: AuthConfig) {
 			...(mailer ? [signUpCodes(mailer)] : []),
 			...(config.checkBreachedPasswords ? [breachedPasswords()] : []),
 			firstPassword(),
+			...(config.oidc ? oidcPlugins(config.db, config.oidc) : []),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.
 			tanstackStartCookies(),
 		],

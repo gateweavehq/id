@@ -18,8 +18,13 @@ BETTER_AUTH_SECRET=
 # password's SHA-1 to Have I Been Pwned, which never learns the password.
 # CHECK_BREACHED_PASSWORDS=
 
-# Optional: pins the app's URL. Leave it out to accept any host, for example from your phone.
+# Optional: pins the app's URL. Leave it out to accept any host, for example from your phone. The
+# OIDC provider needs it, because its origin is the issuer.
 # BETTER_AUTH_URL=
+
+# Optional: with BETTER_AUTH_URL, turns on the OIDC provider. It gives each app its own id for each
+# person. Generate with: openssl rand -base64 32. Never change it once an app has signed anyone in.
+# OIDC_PAIRWISE_SECRET=
 
 # Optional: turns on email, such as "Gateweave ID <id@example.com>". Sign-up codes and password reset
 # need it: without email, GitHub is the only way to an account. `pnpm dev:setup` turns it on locally,

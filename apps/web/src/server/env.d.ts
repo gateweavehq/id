@@ -2,8 +2,17 @@
 // wrangler.jsonc, which is what `wrangler types` generates the rest of `Cloudflare.Env` from.
 declare namespace Cloudflare {
 	interface Env {
-		/** Public URL of the app. Inferred from the request when unset. */
+		/**
+		 * Public URL of the app. Inferred from the request when unset. Its origin is the OIDC issuer,
+		 * which apps compare, so it cannot change once any app signs anyone in.
+		 */
 		BETTER_AUTH_URL?: string;
+		/**
+		 * Gives each app its own id for each person, so that two apps cannot match up their users.
+		 * With BETTER_AUTH_URL it turns on the OIDC provider. At least 32 characters. Rotating it
+		 * gives everybody a new id in every app, so it is generated once and kept for good.
+		 */
+		OIDC_PAIRWISE_SECRET?: string;
 		GITHUB_CLIENT_ID?: string;
 		GITHUB_CLIENT_SECRET?: string;
 		/**

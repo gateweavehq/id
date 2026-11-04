@@ -5,7 +5,14 @@ import { schema } from "./index";
 /** D1 runs one query at a time, so one long delete would hold up everyone signing in. */
 const BATCH = 1000;
 
-async function pruneTable(db: Database, table: typeof schema.session | typeof schema.verification) {
+async function pruneTable(
+	db: Database,
+	table:
+		| typeof schema.session
+		| typeof schema.verification
+		| typeof schema.oauthRefreshToken
+		| typeof schema.oauthAccessToken,
+) {
 	const now = new Date();
 	for (;;) {
 		const expired = db
@@ -19,11 +26,15 @@ async function pruneTable(db: Database, table: typeof schema.session | typeof sc
 }
 
 /**
- * Deletes sessions and verifications past their time. Better Auth removes one only when something
- * looks it up, so those nobody comes back for would otherwise stay forever: an abandoned sign-up's
- * code, a GitHub sign-in that was never finished, a device that was never used again.
+ * Deletes sessions, verifications and tokens past their time. Better Auth removes one only when
+ * something looks it up, so those nobody comes back for would otherwise stay forever: an abandoned
+ * sign-up's code, a GitHub sign-in that was never finished, a device that was never used again, and
+ * a row for every token an app was ever given.
  */
 export async function pruneExpired(db: Database): Promise<void> {
 	await pruneTable(db, schema.session);
 	await pruneTable(db, schema.verification);
+	// Refresh tokens first, because deleting one takes the access tokens made from it along.
+	await pruneTable(db, schema.oauthRefreshToken);
+	await pruneTable(db, schema.oauthAccessToken);
 }
