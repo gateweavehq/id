@@ -8,8 +8,8 @@ declare namespace Cloudflare {
 		GITHUB_CLIENT_SECRET?: string;
 		/**
 		 * Who email comes from, such as `Gateweave ID <id@example.com>`. The domain must be
-		 * onboarded to Cloudflare Email Sending. Email is off when unset, and then sign-up does not
-		 * ask for a verified address: set it on any deployment that people other than you use.
+		 * onboarded to Cloudflare Email Sending. Email is off when unset, and then there are no
+		 * sign-up codes and no password reset, which leaves GitHub as the only way to an account.
 		 */
 		EMAIL_FROM?: string;
 	}

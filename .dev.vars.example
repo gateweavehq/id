@@ -12,8 +12,8 @@ BETTER_AUTH_SECRET=
 # Optional: pins the app's URL. Leave it out to accept any host, for example from your phone.
 # BETTER_AUTH_URL=
 
-# Optional: turns on email, such as "Gateweave ID <id@example.com>". With email on, an address must
-# be verified before its owner can sign in, and a password can be reset. Turn it on for any
-# deployment that other people use. `pnpm dev:setup` turns it on locally, where nothing is sent:
-# each email is saved under apps/web/.wrangler/tmp/email, and its path is printed in the terminal.
+# Optional: turns on email, such as "Gateweave ID <id@example.com>". Sign-up codes and password reset
+# need it: without email, GitHub is the only way to an account. `pnpm dev:setup` turns it on locally,
+# where nothing is sent: each email is saved under apps/web/.wrangler/tmp/email, and its path is
+# printed in the terminal.
 # EMAIL_FROM=

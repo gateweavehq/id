@@ -1,7 +1,7 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { createDb } from "../db";
 import { mailer } from "../email";
-import { authRateLimits } from "../rate-limit";
+import { allowSignUpCode, authRateLimits } from "../rate-limit";
 import { createAuth } from "./config";
 
 export const db = createDb(env.DB);
@@ -32,6 +32,7 @@ function buildAuth() {
 		mailer,
 		runInBackground: waitUntil,
 		rateLimitStorage: authRateLimits,
+		allowSignUpCode,
 	});
 }
 

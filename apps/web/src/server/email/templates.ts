@@ -18,15 +18,32 @@ export function passwordResetEmail({ url }: { url: string }): Message {
 	});
 }
 
-export function verificationEmail({ url }: { url: string }): Message {
+export function signUpCodeEmail({ code, minutes }: { code: string; minutes: number }): Message {
 	return compose({
-		subject: `Verify your email for ${PRODUCT}`,
-		heading: "Verify your email",
+		subject: `${code} is your ${PRODUCT} code`,
+		heading: "Finish creating your account",
+		body: [`Enter this code to create your ${PRODUCT} account. It works for ${minutes} minutes.`],
+		code,
+		footer: "If you did not ask for this, ignore this email. Without the code, nothing happens.",
+	});
+}
+
+export function accountExistsEmail({
+	signInUrl,
+	resetUrl,
+}: {
+	signInUrl: string;
+	resetUrl: string;
+}): Message {
+	return compose({
+		subject: `You already have a ${PRODUCT} account`,
+		heading: "You already have an account",
 		body: [
-			`Confirm that this address is yours to finish setting up your ${PRODUCT} account. You cannot sign in until you do, and the apps you sign in to trust that you have. The link works for 24 hours.`,
+			`Someone tried to create a ${PRODUCT} account with this address, but it already has one, so there is no code to enter.`,
+			`Forgot your password? Choose a new one: ${resetUrl}`,
 		],
-		action: { label: "Verify email", url },
-		footer: `If you did not create a ${PRODUCT} account, ignore this email.`,
+		action: { label: "Sign in", url: signInUrl },
+		footer: "If this was not you, ignore this email. Nothing has changed.",
 	});
 }
 
@@ -34,19 +51,34 @@ function compose({
 	subject,
 	heading,
 	body,
+	code,
 	action,
 	footer,
 }: {
 	subject: string;
 	heading: string;
 	body: string[];
-	action: { label: string; url: string };
+	code?: string;
+	action?: { label: string; url: string };
 	footer: string;
 }): Message {
-	const text = [...body, `${action.label}: ${action.url}`, footer, `— ${PRODUCT}`].join("\n\n");
+	const text = [
+		...body,
+		...(code ? [code] : []),
+		...(action ? [`${action.label}: ${action.url}`] : []),
+		footer,
+		`— ${PRODUCT}`,
+	].join("\n\n");
 	const paragraphs = body
 		.map((line) => `<p style="margin:0 0 16px">${escapeHtml(line)}</p>`)
 		.join("");
+	const codeBlock = code
+		? `<p style="margin:24px 0;font-size:32px;font-weight:600;letter-spacing:6px;font-variant-numeric:tabular-nums">${escapeHtml(code)}</p>`
+		: "";
+	const button = action
+		? `<p style="margin:24px 0"><a href="${escapeHtml(action.url)}" style="display:inline-block;padding:10px 16px;background:#171717;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">${escapeHtml(action.label)}</a></p>
+<p style="margin:0 0 16px;font-size:13px;color:#525252">Or paste this link into your browser:<br><span style="word-break:break-all">${escapeHtml(action.url)}</span></p>`
+		: "";
 	const html = `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(subject)}</title></head>
@@ -55,8 +87,8 @@ function compose({
 <p style="margin:0 0 24px;font-size:13px;font-weight:600;color:#525252">${PRODUCT}</p>
 <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3">${escapeHtml(heading)}</h1>
 ${paragraphs}
-<p style="margin:24px 0"><a href="${escapeHtml(action.url)}" style="display:inline-block;padding:10px 16px;background:#171717;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">${escapeHtml(action.label)}</a></p>
-<p style="margin:0 0 16px;font-size:13px;color:#525252">Or paste this link into your browser:<br><span style="word-break:break-all">${escapeHtml(action.url)}</span></p>
+${codeBlock}
+${button}
 <p style="margin:24px 0 0;font-size:13px;color:#737373">${escapeHtml(footer)}</p>
 </div>
 </body>

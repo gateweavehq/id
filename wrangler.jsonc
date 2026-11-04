@@ -25,8 +25,8 @@
 		"RateLimiter": { "type": "durable-object", "storage": "sqlite" }
 	},
 	// Email through Cloudflare Email Service. Nothing is sent until EMAIL_FROM names a sender on a
-	// domain onboarded to Email Sending; without it, ID runs with email off, and then nobody's
-	// address can be verified.
+	// domain onboarded to Email Sending; without it, ID runs with email off, and then nobody can
+	// sign up with an address or reset a password.
 	"send_email": [{ "name": "EMAIL" }],
 	// Optional: BETTER_AUTH_URL, EMAIL_FROM, and GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET (see
 	// apps/web/src/server/env.d.ts).
