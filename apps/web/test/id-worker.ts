@@ -29,6 +29,37 @@ export interface SentEmail {
 /** The address ID sends from in tests. */
 export const EMAIL_FROM = { name: "Gateweave ID", email: "id@id.test" };
 
+/** Cloudflare's published test site key, which is public. */
+export const TURNSTILE_SITE_KEY = "1x00000000000000000000AA";
+
+const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
+/** How the stand-in for Turnstile's Siteverify answers a token. */
+export const TURNSTILE_TOKENS = {
+	good: "good-token",
+	otherAction: "token-from-another-action",
+	otherHost: "token-from-another-host",
+	refused: "refused-token",
+	unavailable: "token-while-siteverify-is-down",
+};
+
+function siteverify(host: string, body: string): Response {
+	const { response } = JSON.parse(body) as { response: string };
+	const passed = { success: true, action: "gateweave-id", hostname: host };
+	switch (response) {
+		case TURNSTILE_TOKENS.good:
+			return Response.json(passed);
+		case TURNSTILE_TOKENS.otherAction:
+			return Response.json({ ...passed, action: "something-else" });
+		case TURNSTILE_TOKENS.otherHost:
+			return Response.json({ ...passed, hostname: "elsewhere.test" });
+		case TURNSTILE_TOKENS.unavailable:
+			return new Response("Unavailable", { status: 503 });
+		default:
+			return Response.json({ success: false, "error-codes": ["invalid-input-response"] });
+	}
+}
+
 // Stands in for Cloudflare Email Service behind the EMAIL binding: `send` keeps each message,
 // and a fetch lists them.
 const OUTBOX = `
@@ -63,14 +94,19 @@ function builtModules(): V4ModuleDefinition[] {
  * Every outbound request fails, the way a deployed Worker's request to its own hostname does.
  * ID needs no outside service for sign-in, so code that only works because local dev can reach
  * itself fails here instead of in production. Email is on unless `email` is false, and lands in
- * `emails()`.
+ * `emails()`. With `turnstile`, Siteverify is the one outside service that answers: see
+ * `TURNSTILE_TOKENS`.
  *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
  */
 export async function startId(
 	origin: string,
-	{ isolates = 1, email = true }: { isolates?: number; email?: boolean } = {},
+	{
+		isolates = 1,
+		email = true,
+		turnstile = false,
+	}: { isolates?: number; email?: boolean; turnstile?: boolean } = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
 	const outbound: string[] = [];
@@ -99,6 +135,12 @@ export async function startId(
 						BETTER_AUTH_SECRET: secret,
 						BETTER_AUTH_URL: origin,
 						...(email ? { EMAIL_FROM: `${EMAIL_FROM.name} <${EMAIL_FROM.email}>` } : {}),
+						...(turnstile
+							? {
+									TURNSTILE_SITE_KEY,
+									TURNSTILE_SECRET_KEY: "turnstile-secret-for-tests",
+								}
+							: {}),
 					},
 					serviceBindings: { EMAIL: "outbox" },
 					d1Databases: { DB: "id-test" },
@@ -106,8 +148,11 @@ export async function startId(
 					durableObjects: {
 						RATE_LIMITER: { className: "RateLimiter", useSQLite: true, scriptName: names[0] },
 					},
-					outboundService: (request: Request) => {
+					outboundService: async (request: Request) => {
 						outbound.push(request.url);
+						if (turnstile && request.url === SITEVERIFY) {
+							return siteverify(new URL(origin).hostname, await request.text());
+						}
 						return new Response("Outbound requests are blocked in this test", { status: 502 });
 					},
 				})),

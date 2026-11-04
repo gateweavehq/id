@@ -8,6 +8,8 @@ export const OPTIONAL_SECRETS = [
 	"GITHUB_CLIENT_ID",
 	"GITHUB_CLIENT_SECRET",
 	"EMAIL_FROM",
+	"TURNSTILE_SITE_KEY",
+	"TURNSTILE_SECRET_KEY",
 ] as const;
 
 /** What local dev loads from .dev.vars: the required secrets, and the optional ones it sets. */

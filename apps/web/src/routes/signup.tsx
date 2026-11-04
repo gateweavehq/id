@@ -10,6 +10,7 @@ import { authClient } from "#/lib/auth-client";
 import { safeRedirect } from "#/lib/redirect";
 import { getAuthOptions, getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
+import { useTurnstile } from "#/lib/turnstile";
 
 const signUpSearch = z.object({
 	/** Where to go once the account is set up. */
@@ -37,10 +38,21 @@ function SignUpPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	const turnstile = useTurnstile(options.turnstileSiteKey);
 	useDocumentTitle("Create your account");
 
-	async function sendCode(email: string) {
-		return authClient.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
+	/** Sends a code, and returns what went wrong if it did. */
+	async function sendCode(email: string): Promise<string | null> {
+		try {
+			const result = await authClient.emailOtp.sendVerificationOtp({
+				email,
+				type: "sign-in",
+				fetchOptions: { headers: await turnstile.check() },
+			});
+			return result.error ? (result.error.message ?? "Something went wrong") : null;
+		} catch (caught) {
+			return caught instanceof Error ? caught.message : "Something went wrong";
+		}
 	}
 
 	async function onAskForCode(event: FormEvent<HTMLFormElement>) {
@@ -50,10 +62,10 @@ function SignUpPage() {
 		const name = String(form.get("name")).trim();
 		setPending(true);
 		setError(null);
-		const result = await sendCode(email);
+		const failure = await sendCode(email);
 		setPending(false);
-		if (result.error) {
-			setError(result.error.message ?? "Something went wrong");
+		if (failure) {
+			setError(failure);
 			return;
 		}
 		setPerson({ name, email });
@@ -81,8 +93,8 @@ function SignUpPage() {
 		if (!person) return;
 		setError(null);
 		setNotice(null);
-		const result = await sendCode(person.email);
-		if (result.error) setError(result.error.message ?? "Something went wrong");
+		const failure = await sendCode(person.email);
+		if (failure) setError(failure);
 		else setNotice("A new code is on its way. The last one no longer works.");
 	}
 
@@ -124,6 +136,7 @@ function SignUpPage() {
 							required
 						/>
 					</div>
+					{turnstile.element}
 					{error && (
 						<p role="alert" className="text-sm text-destructive">
 							{error}
@@ -187,6 +200,7 @@ function SignUpPage() {
 							required
 						/>
 					</div>
+					{turnstile.element}
 					{error && (
 						<p role="alert" className="text-sm text-destructive">
 							{error}

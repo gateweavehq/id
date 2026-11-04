@@ -8,6 +8,7 @@ import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { safeRedirect } from "#/lib/redirect";
 import { getAuthOptions, getSession } from "#/lib/session";
+import { useTurnstile } from "#/lib/turnstile";
 
 const loginSearch = z.object({
 	/** Where to go once signed in. */
@@ -32,20 +33,28 @@ function SignInForm() {
 	const router = useRouter();
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	const turnstile = useTurnstile(options.turnstileSiteKey);
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget);
 		setPending(true);
 		setError(null);
-		const result = await authClient.signIn.email({
-			email: String(form.get("email")),
-			password: String(form.get("password")),
-		});
-		setPending(false);
-		if (result.error) {
-			setError(result.error.message ?? "Something went wrong");
+		try {
+			const result = await authClient.signIn.email({
+				email: String(form.get("email")),
+				password: String(form.get("password")),
+				fetchOptions: { headers: await turnstile.check() },
+			});
+			if (result.error) {
+				setError(result.error.message ?? "Something went wrong");
+				return;
+			}
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : "Something went wrong");
 			return;
+		} finally {
+			setPending(false);
 		}
 		await router.invalidate();
 		await router.navigate({ href: next });
@@ -93,6 +102,7 @@ function SignInForm() {
 							required
 						/>
 					</div>
+					{turnstile.element}
 					{error && (
 						<p role="alert" className="text-sm text-destructive">
 							{error}

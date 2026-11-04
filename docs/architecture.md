@@ -153,7 +153,14 @@ for why this replaced a shared session.
 - The session cookie stays on ID's own host. Nothing is shared on a parent domain.
 - The passkey `rpID` is ID's own host, for the same reason. Changing it invalidates every passkey, so
   it counts as a permanent value too.
-- Sign-in and consent pages send a strict Content Security Policy and `frame-ancestors 'none'`.
+- Every page sends a Content Security Policy with a new script nonce per response, `frame-ancestors
+  'none'` and `no-store`, and every response sends `nosniff`, a referrer policy and HSTS. HSTS leaves
+  out `includeSubDomains`, because a self-hosted deployment's other hosts are someone else's. Styles
+  stay at `'unsafe-inline'`: Radix sets `style` attributes, and a style cannot run code.
+- Turnstile sits in front of what costs money or invites guessing: sending a code, requesting a reset,
+  and password sign-in. It is off unless `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are both set.
+  The server requires success, the expected action and the expected hostname, and refuses when
+  Siteverify cannot answer. Entering a code needs no pass, since the code is the proof.
 - Rate limits are durable and keyed by `cf-connecting-ip`.
 - A person cannot remove their last way to sign in.
 - Sign-ins, refusals, consents and admin changes go to an audit log from the first release. Exporting

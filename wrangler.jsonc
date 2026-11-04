@@ -28,8 +28,8 @@
 	// domain onboarded to Email Sending; without it, ID runs with email off, and then nobody can
 	// sign up with an address or reset a password.
 	"send_email": [{ "name": "EMAIL" }],
-	// Optional: BETTER_AUTH_URL, EMAIL_FROM, and GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET (see
-	// apps/web/src/server/env.d.ts).
+	// Optional: BETTER_AUTH_URL, EMAIL_FROM, GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET, and
+	// TURNSTILE_SITE_KEY with TURNSTILE_SECRET_KEY (see apps/web/src/server/env.d.ts).
 	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
 	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
 	// `cloud` is https://id.gateweave.com, the same Worker and database the top level names, and

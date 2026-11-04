@@ -8,6 +8,7 @@ import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { getAuthOptions } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
+import { useTurnstile } from "#/lib/turnstile";
 
 export const Route = createFileRoute("/forgot-password")({
 	validateSearch: z.object({ email: z.string().optional().catch(undefined) }),
@@ -21,6 +22,7 @@ function ForgotPasswordPage() {
 	const [sentTo, setSentTo] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	const turnstile = useTurnstile(options.turnstileSiteKey);
 	useDocumentTitle("Reset your password");
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -28,13 +30,22 @@ function ForgotPasswordPage() {
 		const email = String(new FormData(event.currentTarget).get("email")).trim();
 		setPending(true);
 		setError(null);
-		const result = await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
-		setPending(false);
-		if (result.error) {
-			setError(result.error.message ?? "Something went wrong");
-			return;
+		try {
+			const result = await authClient.requestPasswordReset({
+				email,
+				redirectTo: "/reset-password",
+				fetchOptions: { headers: await turnstile.check() },
+			});
+			if (result.error) {
+				setError(result.error.message ?? "Something went wrong");
+				return;
+			}
+			setSentTo(email);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : "Something went wrong");
+		} finally {
+			setPending(false);
 		}
-		setSentTo(email);
 	}
 
 	if (!options.email) {
@@ -82,6 +93,7 @@ function ForgotPasswordPage() {
 						required
 					/>
 				</div>
+				{turnstile.element}
 				{error && (
 					<p role="alert" className="text-sm text-destructive">
 						{error}
