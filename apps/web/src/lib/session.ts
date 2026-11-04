@@ -7,8 +7,8 @@ export const getSession = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const getAuthOptions = createServerFn({ method: "GET" }).handler(async () => {
-	const { emailEnabled, githubEnabled } = await import("#/server/auth");
-	return { github: githubEnabled, email: emailEnabled };
+	const { emailEnabled, githubEnabled, turnstileSiteKey } = await import("#/server/auth");
+	return { github: githubEnabled, email: emailEnabled, turnstileSiteKey };
 });
 
 /** Whether the signed-in person can sign in with a password. */

@@ -9,6 +9,11 @@ BETTER_AUTH_SECRET=
 # GITHUB_CLIENT_ID=
 # GITHUB_CLIENT_SECRET=
 
+# Optional: puts Cloudflare Turnstile in front of sending email and password sign-in. Set both, or it
+# stays off. Cloudflare's test keys work locally: see developers.cloudflare.com/turnstile/troubleshooting/testing/
+# TURNSTILE_SITE_KEY=
+# TURNSTILE_SECRET_KEY=
+
 # Optional: pins the app's URL. Leave it out to accept any host, for example from your phone.
 # BETTER_AUTH_URL=
 

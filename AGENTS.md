@@ -47,6 +47,7 @@ root unless noted.
 | `pnpm check`      | Biome lint and format check (`pnpm format` fixes most findings)              |
 | `pnpm typecheck`  | Type-check every package (regenerates Wrangler and route types first)        |
 | `pnpm test`       | Run every test suite                                                         |
+| `pnpm test:e2e`   | Build, then run the browser tests (Playwright, Chromium) on port 4732        |
 | `pnpm build`      | Production build                                                             |
 | `pnpm verify`     | Everything CI runs: check, typecheck, test, build                            |
 | `pnpm run deploy` | Build, apply D1 migrations, deploy                                           |
@@ -126,8 +127,13 @@ them, check whether the others have the same bug, especially in auth and rate li
   deployed Worker's request to its own hostname does; see `test/id-worker.ts`. Email lands in an
   outbox the tests read. Give each person in a test a `cf-connecting-ip` of their own, or the rate
   limits will stop them.
-- There are no browser tests yet. When the sign-in pages grow beyond forms, add Playwright as Track
-  has it.
+- `apps/web/e2e` has browser tests: Playwright drives Chromium against the production build, its
+  own empty local database and port 4732. They cover what the other suites cannot: a page's Content
+  Security Policy, because a blocked script leaves the same HTML. Every page they visit fails on a
+  policy violation. `pnpm test:e2e` builds and runs them; the first time, run
+  `pnpm --filter @gateweave/id-web exec playwright install chromium`. They are not part of
+  `pnpm verify`; CI runs them as the `e2e` job. A build has email off, since a preview reads only
+  the required secrets from `.dev.vars`, so signing up itself is the Worker tests' to cover.
 - Every bug fix gets a test that fails without the fix. Never weaken or skip a test to make a
   change pass.
 

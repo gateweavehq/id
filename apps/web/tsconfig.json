@@ -8,5 +8,6 @@
 			"#/*": ["./src/*"]
 		}
 	},
-	"include": ["src", "*.ts", "worker-configuration.d.ts"]
+	"include": ["src", "*.ts", "worker-configuration.d.ts"],
+	"exclude": ["playwright.config.ts"]
 }

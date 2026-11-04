@@ -1,7 +1,9 @@
 import type { BetterAuthRateLimitOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { betterAuth } from "better-auth/minimal";
+import { captcha } from "better-auth/plugins/captcha";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { TURNSTILE_ACTION } from "../../lib/turnstile-action";
 import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
@@ -24,7 +26,19 @@ export interface AuthConfig {
 	rateLimitStorage?: BetterAuthRateLimitOptions["customStorage"];
 	/** Whether one address may be sent another sign-up code. Unlimited without it. */
 	allowSignUpCode?: ((email: string) => Promise<boolean>) | undefined;
+	/** Puts Cloudflare Turnstile in front of the paths bots go for. Off without it. */
+	turnstileSecretKey?: string | undefined;
 }
+
+/**
+ * Sending email, because each request costs money and reputation, and password sign-in, because
+ * it is what credential stuffing aims at. GitHub and a passkey have nothing to guess.
+ */
+const TURNSTILE_PATHS = [
+	"/email-otp/send-verification-otp",
+	"/sign-in/email",
+	"/request-password-reset",
+];
 
 /**
  * Builds the Better Auth instance. Kept free of `cloudflare:workers` imports so the Better Auth
@@ -90,6 +104,17 @@ export function createAuth(config: AuthConfig) {
 		},
 		hooks: signUpHooks(config.allowSignUpCode),
 		plugins: [
+			...(config.turnstileSecretKey
+				? [
+						captcha({
+							provider: "cloudflare-turnstile",
+							secretKey: config.turnstileSecretKey,
+							endpoints: TURNSTILE_PATHS,
+							expectedAction: TURNSTILE_ACTION,
+							allowedHostnames: config.baseURL ? [new URL(config.baseURL).hostname] : undefined,
+						}),
+					]
+				: []),
 			...(mailer ? [signUpCodes(mailer)] : []),
 			firstPassword(),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.

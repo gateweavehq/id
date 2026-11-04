@@ -17,6 +17,8 @@ export default defineConfig(({ command }) => ({
 			// At the repository root, for the "Deploy to Cloudflare" button (see wrangler.jsonc).
 			configPath: "../../wrangler.jsonc",
 			viteEnvironment: { name: "ssr" },
+			// The browser tests keep their data apart from `pnpm dev` (see e2e/server.mjs).
+			persistState: process.env.ID_STATE_DIR ? { path: process.env.ID_STATE_DIR } : true,
 			// In dev only: `secrets.required` would drop the optional settings in .dev.vars.
 			config: (config) => {
 				if (command !== "serve") return;

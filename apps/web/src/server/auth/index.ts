@@ -20,6 +20,12 @@ export function getAuth() {
 	return instance;
 }
 
+/** Turnstile needs both keys, so one without the other leaves it off everywhere at once. */
+const turnstile =
+	env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY
+		? { siteKey: env.TURNSTILE_SITE_KEY, secretKey: env.TURNSTILE_SECRET_KEY }
+		: undefined;
+
 function buildAuth() {
 	return createAuth({
 		db,
@@ -33,9 +39,12 @@ function buildAuth() {
 		runInBackground: waitUntil,
 		rateLimitStorage: authRateLimits,
 		allowSignUpCode,
+		turnstileSecretKey: turnstile?.secretKey,
 	});
 }
 
 export const githubEnabled = Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET);
 
 export const emailEnabled = Boolean(mailer);
+
+export const turnstileSiteKey = turnstile?.siteKey;

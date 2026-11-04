@@ -12,5 +12,11 @@ declare namespace Cloudflare {
 		 * sign-up codes and no password reset, which leaves GitHub as the only way to an account.
 		 */
 		EMAIL_FROM?: string;
+		/**
+		 * Cloudflare Turnstile, in front of sending email and password sign-in. Both or it stays off.
+		 * Set both on a deployment open to the internet.
+		 */
+		TURNSTILE_SITE_KEY?: string;
+		TURNSTILE_SECRET_KEY?: string;
 	}
 }
