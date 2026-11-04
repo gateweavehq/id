@@ -870,39 +870,49 @@ describe("the audit log", () => {
 });
 
 describe("how often", () => {
+	/**
+	 * Asks until refused, and returns each answer. A limit lets `max` through at once and gives one back
+	 * every `window / max` seconds, so how many get through depends on how long the asking takes, which
+	 * was nearly five seconds for 62 requests on a busy machine.
+	 */
+	async function untilRefused(
+		limit: { window: number; max: number },
+		ask: () => Promise<Response>,
+	) {
+		const started = Date.now();
+		const statuses: number[] = [];
+		do {
+			statuses.push((await ask()).status);
+		} while (statuses.at(-1) !== 429 && statuses.length <= limit.max * 2);
+		const givenBack = ((Date.now() - started) / 1000) * (limit.max / limit.window);
+
+		expect(statuses.at(-1)).toBe(429);
+		expect(statuses.length - 1).toBeGreaterThanOrEqual(limit.max);
+		expect(statuses.length - 1).toBeLessThanOrEqual(limit.max + Math.ceil(givenBack));
+		return statuses;
+	}
+
 	it("limits asking to sign in from one address", async () => {
 		const client = newClient();
-		const statuses: number[] = [];
-		for (let i = 0; i < 62; i++) {
-			const response = await api("/passkey/generate-authenticate-options", { client });
-			statuses.push(response.status);
-		}
+		const statuses = await untilRefused({ window: 60, max: 60 }, () =>
+			api("/passkey/generate-authenticate-options", { client }),
+		);
 		expect(statuses.slice(0, 60).every((status) => status === 200)).toBe(true);
-		expect(statuses.at(-1)).toBe(429);
 	});
 
 	it("limits answers from one address", async () => {
 		const client = newClient();
-		const statuses: number[] = [];
-		for (let i = 0; i < 32; i++) {
-			const response = await api("/passkey/verify-authentication", {
-				client,
-				body: { response: {} },
-			});
-			statuses.push(response.status);
-		}
+		const statuses = await untilRefused({ window: 60, max: 30 }, () =>
+			api("/passkey/verify-authentication", { client, body: { response: {} } }),
+		);
 		expect(statuses.at(0)).toBe(400);
-		expect(statuses.at(-1)).toBe(429);
 	});
 
 	it("limits removing passkeys from one address", async () => {
 		const client = newClient();
-		const statuses: number[] = [];
-		for (let i = 0; i < 22; i++) {
-			const response = await api("/account/remove-passkey", { client, body: { id: "any" } });
-			statuses.push(response.status);
-		}
-		expect(statuses.at(-1)).toBe(429);
+		await untilRefused({ window: 60, max: 20 }, () =>
+			api("/account/remove-passkey", { client, body: { id: "any" } }),
+		);
 	});
 });
 
