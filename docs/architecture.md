@@ -102,13 +102,12 @@ is bound to that host for good and cannot be moved.
 Better Auth's passkey plugin does the WebAuthn. What it does by default falls short of being the way in
 to everything else a person uses, so ID differs in these places:
 
-- **The server demands user verification.** The plugin passes `requireUserVerification: false` to its
-  checks whatever its options say, so a stolen security key with no PIN would do. ID refuses a ceremony
-  that did not verify the person, and tells the browser `required` rather than `preferred`, or a browser
-  could skip the fingerprint reader and be refused with no way to put it right.
+- **User verification is required,** not `preferred`, so a stolen security key with no PIN will not do.
+  The browser is told so too, or it could skip the fingerprint reader and be refused with no way to put
+  it right. Before 1.7.16 the plugin ignored this when checking, so `test/passkeys.test.ts` holds it to it.
 - **The credentials are discoverable,** since there is no address to look someone up by first.
-- **The expected origin comes from settings.** The plugin would fall back to the request's `Origin`
-  header, which is what the check exists to test.
+- **The expected origin comes from settings, and is the only one.** Without that the plugin also takes
+  any trusted origin the browser reports.
 - **A credential id is unique across all accounts,** as the specification asks. The plugin keeps a plain
   index and looks passkeys up by that id alone.
 - **A new passkey is named from its authenticator or the device,** not by the person. The name the plugin
@@ -275,7 +274,7 @@ the provider reads fails there.
 `@better-auth/oauth-provider` sends back-channel logouts with `redirect: "error"`, which Workers refuse
 outright, so every one of them failed with only a warning in the log. `patches/` changes that word to
 `"manual"`. The provider treats anything but 200 or 204 as a failure, so a redirect still is not followed.
-The same line is in 1.7.16. pnpm stops an install when a patch no longer has its version, so an upgrade
+The same line is in 1.7.17. pnpm stops an install when a patch no longer has its version, so an upgrade
 has to look at this again: drop the patch if upstream has fixed it, otherwise move it.
 
 ## Products as clients

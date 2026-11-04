@@ -22,10 +22,6 @@ const REMOVE = "/account/remove-passkey";
 /** Replaced by `REMOVE`, which knows about a person's other ways to sign in. */
 export const PASSKEY_CLOSED_PATHS = ["/passkey/delete-passkey"];
 
-const USER_NOT_VERIFIED = {
-	code: "USER_VERIFICATION_REQUIRED",
-	message: "A passkey here has to check it is you, with a fingerprint, your face or a PIN.",
-};
 const ALREADY_REGISTERED = {
 	code: "PASSKEY_ALREADY_REGISTERED",
 	message: "This passkey could not be added.",
@@ -69,7 +65,7 @@ export function passkeyPlugins(db: Database, { baseURL, githubSignIn }: PasskeyS
 	const plugin = passkey({
 		rpID: hostname,
 		rpName: "Gateweave ID",
-		// Without this the plugin compares what the authenticator saw with the request's own header.
+		// Without this the plugin also takes any trusted origin the browser reports.
 		origin,
 		authenticatorSelection: {
 			// There is no step that asks for an address first, so a passkey that the browser cannot
@@ -78,11 +74,11 @@ export function passkeyPlugins(db: Database, { baseURL, githubSignIn }: PasskeyS
 			userVerification: "required",
 		},
 		registration: {
-			// The plugin passes `requireUserVerification: false` whatever is set above, so this is
-			// what holds. It runs before anything is stored.
+			// This runs before anything is stored.
 			afterVerification: async ({ ctx, verification }) => {
 				const info = verification.registrationInfo;
-				if (!info?.userVerified) throw APIError.from("BAD_REQUEST", USER_NOT_VERIFIED);
+				// For the types: the plugin has already refused an answer without this.
+				if (!info) return;
 				const [taken] = await db
 					.select({ id: schema.passkey.id })
 					.from(schema.passkey)
@@ -95,13 +91,6 @@ export function passkeyPlugins(db: Database, { baseURL, githubSignIn }: PasskeyS
 						getAuthenticatorName(info.aaguid) ??
 						describeDevice(ctx.headers?.get("user-agent") ?? undefined),
 				};
-			},
-		},
-		authentication: {
-			afterVerification: async ({ verification }) => {
-				if (!verification.authenticationInfo.userVerified) {
-					throw APIError.from("UNAUTHORIZED", USER_NOT_VERIFIED);
-				}
 			},
 		},
 	});
@@ -197,19 +186,6 @@ function passkeyRules(db: Database, githubSignIn: boolean) {
 								message: "Adding a passkey does not sign anyone in.",
 							});
 						}
-					}),
-				},
-			],
-			after: [
-				{
-					matcher: (ctx) => ctx.path === AUTHENTICATE_OPTIONS,
-					// The plugin always says "preferred" here. A browser may then skip the check when, say,
-					// a laptop's fingerprint reader is out of reach, and the sign-in would be refused above
-					// with nothing the person could do about it. Asked outright, it offers another way.
-					handler: createAuthMiddleware(async (ctx) => {
-						const options = ctx.context.returned;
-						if (typeof options !== "object" || options === null || options instanceof Error) return;
-						return ctx.json({ ...options, userVerification: "required" });
 					}),
 				},
 			],
