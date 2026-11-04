@@ -12,6 +12,7 @@ async function pruneOlder(
 		| typeof schema.verification
 		| typeof schema.oauthRefreshToken
 		| typeof schema.oauthAccessToken
+		| typeof schema.invitation
 		| typeof schema.auditEvent,
 	column: Column,
 	before: Date,
@@ -33,7 +34,8 @@ export const AUDIT_RETENTION_DAYS = 90;
  * Deletes sessions, verifications and tokens past their time. Better Auth removes one only when
  * something looks it up, so those nobody comes back for would otherwise stay forever: an abandoned
  * sign-up's code, a GitHub sign-in that was never finished, a device that was never used again, and
- * a row for every token an app was ever given. Audit events go when they reach their age.
+ * a row for every token an app was ever given. An invitation goes too, and with it an address that
+ * may never have had anything to do with this deployment. Audit events go when they reach their age.
  */
 export async function pruneExpired(db: Database): Promise<void> {
 	const now = new Date();
@@ -42,6 +44,7 @@ export async function pruneExpired(db: Database): Promise<void> {
 	// Refresh tokens first, because deleting one takes the access tokens made from it along.
 	await pruneOlder(db, schema.oauthRefreshToken, schema.oauthRefreshToken.expiresAt, now);
 	await pruneOlder(db, schema.oauthAccessToken, schema.oauthAccessToken.expiresAt, now);
+	await pruneOlder(db, schema.invitation, schema.invitation.expiresAt, now);
 	await pruneOlder(
 		db,
 		schema.auditEvent,

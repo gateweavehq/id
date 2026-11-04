@@ -151,7 +151,12 @@ function SignInForm() {
 					New to Gateweave ID?{" "}
 					<Link
 						to="/signup"
-						search={{ redirect: search.redirect, ...flowSearch(search) }}
+						search={{
+							redirect: search.redirect,
+							// On the way to an app, the query is the app's signed request and stays as it is.
+							email: inFlow(search) ? undefined : search.email,
+							...flowSearch(search),
+						}}
 						className="font-medium text-foreground underline-offset-4 hover:underline"
 					>
 						Create an account

@@ -11,9 +11,9 @@ that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq
 > **Status: early.** What works today is accounts (sign up with a code sent to your email, sign in
 > with a password, GitHub or a passkey, reset a password, see an account page and its recent activity)
 > and tokens for first-party apps that a deployment registers itself. Gateweave's own products sign in
-> through it, next to their own sign-in. It has no workspaces yet, nobody can
-> register an app of their own, and it has not been through the OpenID conformance suite, so it is
-> not ready to stand in front of your own apps. [docs/architecture.md](docs/architecture.md) describes
+> through it, next to their own sign-in. People can make workspaces and invite each other, but nobody
+> can register an app of their own yet, and it has not been through the OpenID conformance suite, so it
+> is not ready to stand in front of your own apps. [docs/architecture.md](docs/architecture.md) describes
 > what it is being built to be, including what is decided and what is still unproven.
 
 ## Tech stack

@@ -20,6 +20,9 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as DotwellKnownOpenidConfigurationRouteImport } from './routes/[.]well-known/openid-configuration'
+import { Route as InvitationsIdRouteImport } from './routes/invitations.$id'
+import { Route as WorkspacesIndexRouteImport } from './routes/workspaces.index'
+import { Route as WorkspacesSlugRouteImport } from './routes/workspaces.$slug'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -78,6 +81,21 @@ const DotwellKnownOpenidConfigurationRoute =
     path: '/.well-known/openid-configuration',
     getParentRoute: () => rootRouteImport,
   } as any)
+const InvitationsIdRoute = InvitationsIdRouteImport.update({
+  id: '/invitations/$id',
+  path: '/invitations/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspacesIndexRoute = WorkspacesIndexRouteImport.update({
+  id: '/workspaces/',
+  path: '/workspaces/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspacesSlugRoute = WorkspacesSlugRouteImport.update({
+  id: '/workspaces/$slug',
+  path: '/workspaces/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -96,6 +114,9 @@ export interface FileRoutesByFullPath {
   '/two-factor': typeof TwoFactorRoute
   '/welcome': typeof WelcomeRoute
   '/.well-known/openid-configuration': typeof DotwellKnownOpenidConfigurationRoute
+  '/invitations/$id': typeof InvitationsIdRoute
+  '/workspaces/$slug': typeof WorkspacesSlugRoute
+  '/workspaces/': typeof WorkspacesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -110,6 +131,9 @@ export interface FileRoutesByTo {
   '/two-factor': typeof TwoFactorRoute
   '/welcome': typeof WelcomeRoute
   '/.well-known/openid-configuration': typeof DotwellKnownOpenidConfigurationRoute
+  '/invitations/$id': typeof InvitationsIdRoute
+  '/workspaces/$slug': typeof WorkspacesSlugRoute
+  '/workspaces': typeof WorkspacesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -125,6 +149,9 @@ export interface FileRoutesById {
   '/two-factor': typeof TwoFactorRoute
   '/welcome': typeof WelcomeRoute
   '/.well-known/openid-configuration': typeof DotwellKnownOpenidConfigurationRoute
+  '/invitations/$id': typeof InvitationsIdRoute
+  '/workspaces/$slug': typeof WorkspacesSlugRoute
+  '/workspaces/': typeof WorkspacesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -141,6 +168,9 @@ export interface FileRouteTypes {
     | '/two-factor'
     | '/welcome'
     | '/.well-known/openid-configuration'
+    | '/invitations/$id'
+    | '/workspaces/$slug'
+    | '/workspaces/'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -155,6 +185,9 @@ export interface FileRouteTypes {
     | '/two-factor'
     | '/welcome'
     | '/.well-known/openid-configuration'
+    | '/invitations/$id'
+    | '/workspaces/$slug'
+    | '/workspaces'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -169,6 +202,9 @@ export interface FileRouteTypes {
     | '/two-factor'
     | '/welcome'
     | '/.well-known/openid-configuration'
+    | '/invitations/$id'
+    | '/workspaces/$slug'
+    | '/workspaces/'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -184,6 +220,9 @@ export interface RootRouteChildren {
   TwoFactorRoute: typeof TwoFactorRoute
   WelcomeRoute: typeof WelcomeRoute
   DotwellKnownOpenidConfigurationRoute: typeof DotwellKnownOpenidConfigurationRoute
+  InvitationsIdRoute: typeof InvitationsIdRoute
+  WorkspacesSlugRoute: typeof WorkspacesSlugRoute
+  WorkspacesIndexRoute: typeof WorkspacesIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -266,6 +305,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotwellKnownOpenidConfigurationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invitations/$id': {
+      id: '/invitations/$id'
+      path: '/invitations/$id'
+      fullPath: '/invitations/$id'
+      preLoaderRoute: typeof InvitationsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspaces/': {
+      id: '/workspaces/'
+      path: '/workspaces'
+      fullPath: '/workspaces/'
+      preLoaderRoute: typeof WorkspacesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspaces/$slug': {
+      id: '/workspaces/$slug'
+      path: '/workspaces/$slug'
+      fullPath: '/workspaces/$slug'
+      preLoaderRoute: typeof WorkspacesSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -288,6 +348,9 @@ const rootRouteChildren: RootRouteChildren = {
   TwoFactorRoute: TwoFactorRoute,
   WelcomeRoute: WelcomeRoute,
   DotwellKnownOpenidConfigurationRoute: DotwellKnownOpenidConfigurationRoute,
+  InvitationsIdRoute: InvitationsIdRoute,
+  WorkspacesSlugRoute: WorkspacesSlugRoute,
+  WorkspacesIndexRoute: WorkspacesIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

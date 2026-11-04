@@ -1,3 +1,4 @@
+import { roleName } from "../../lib/workspace";
 import type { Email } from "./mailer";
 
 /** An email before it is addressed. */
@@ -55,6 +56,38 @@ export function accountExistsEmail({
 		],
 		action: { label: "Sign in", url: signInUrl },
 		footer: "If this was not you, ignore this email. Nothing has changed.",
+	});
+}
+
+/**
+ * Goes to an address no member needs to have proven, so it says as little as it can in words someone
+ * else chose: a workspace's name, which has rules of its own, and the address of whoever sent it, which
+ * they had to prove. The subject holds neither, so it cannot be turned into an advertisement.
+ */
+export function workspaceInvitationEmail({
+	url,
+	workspace,
+	inviter,
+	role,
+	email,
+	days,
+}: {
+	url: string;
+	workspace: string;
+	inviter: string;
+	role: string;
+	email: string;
+	days: number;
+}): Message {
+	return compose({
+		subject: `An invitation to a ${PRODUCT} workspace`,
+		heading: "You have been invited to a workspace",
+		body: [
+			`${inviter} invited you to the workspace "${workspace}" on ${PRODUCT}, as ${roleName(role).toLowerCase()}.`,
+			`To accept, sign in or create an account with this address: ${email}. The invitation works for ${days} days.`,
+		],
+		action: { label: "See the invitation", url },
+		footer: "If you do not know this person, ignore this email. Nothing happens unless you accept.",
 	});
 }
 

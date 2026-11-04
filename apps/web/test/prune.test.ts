@@ -40,7 +40,13 @@ function addSession(rowId: string, expiresAt: number) {
 }
 
 async function has(
-	table: "session" | "verification" | "oauth_access_token" | "oauth_refresh_token" | "audit_event",
+	table:
+		| "session"
+		| "verification"
+		| "oauth_access_token"
+		| "oauth_refresh_token"
+		| "audit_event"
+		| "invitation",
 	rowId: string,
 ) {
 	const row = await id.db.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(rowId).first();
@@ -48,6 +54,25 @@ async function has(
 }
 
 describe("the daily cron", () => {
+	it("deletes invitations past their time, and the addresses they hold", async () => {
+		const addInvitation = (rowId: string, expiresAt: number) =>
+			id.db
+				.prepare(
+					"INSERT INTO invitation (id, organization_id, email, status, expires_at, inviter_id) VALUES (?, 'prunable', ?, 'pending', ?, 'someone')",
+				)
+				.bind(rowId, `${rowId}@example.com`, expiresAt);
+		await id.db.batch([
+			id.db.prepare(
+				"INSERT INTO organization (id, name, slug, created_at) VALUES ('prunable', 'Prunable', 'prunable', 0)",
+			),
+			addInvitation("expired-invitation", Date.now() - HOUR),
+			addInvitation("live-invitation", Date.now() + HOUR),
+		]);
+		await id.runCron();
+		expect(await has("invitation", "expired-invitation")).toBe(false);
+		expect(await has("invitation", "live-invitation")).toBe(true);
+	});
+
 	it("deletes expired sessions and leaves live ones", async () => {
 		await id.db.batch([
 			addSession("expired-session", Date.now() - HOUR),

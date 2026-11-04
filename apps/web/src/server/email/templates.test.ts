@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { accountExistsEmail, passwordResetEmail, signUpCodeEmail } from "./templates";
+import {
+	accountExistsEmail,
+	passwordResetEmail,
+	signUpCodeEmail,
+	workspaceInvitationEmail,
+} from "./templates";
 
 describe("passwordResetEmail", () => {
 	it("links to the reset and says what happens", () => {
@@ -25,6 +30,41 @@ describe("signUpCodeEmail", () => {
 		const email = signUpCodeEmail({ code: "123456", minutes: 10, email: "a<b>@example.com" });
 		expect(email.text).toContain("a<b>@example.com");
 		expect(email.html).toContain("a&lt;b&gt;@example.com");
+	});
+});
+
+describe("workspaceInvitationEmail", () => {
+	const url = "https://id.example.com/login?redirect=%2Finvitations%2Fone";
+
+	it("says who, what, for how long, and where to go", () => {
+		const email = workspaceInvitationEmail({
+			url,
+			workspace: "Acme",
+			inviter: "ada@example.com",
+			role: "admin",
+			email: "bob@example.com",
+			days: 7,
+		});
+		expect(email.text).toContain('ada@example.com invited you to the workspace "Acme"');
+		expect(email.text).toContain("as admin");
+		expect(email.text).toContain("this address: bob@example.com");
+		expect(email.text).toContain("7 days");
+		expect(email.text).toContain(url);
+		expect(email.html).toContain(`href="${url}"`);
+	});
+
+	it("keeps what someone else chose out of the subject, and out of the markup", () => {
+		const email = workspaceInvitationEmail({
+			url,
+			workspace: "Free <b>money</b>",
+			inviter: "ada@example.com",
+			role: "member",
+			email: "bob@example.com",
+			days: 7,
+		});
+		expect(email.subject).toBe("An invitation to a Gateweave ID workspace");
+		expect(email.html).toContain("Free &lt;b&gt;money&lt;/b&gt;");
+		expect(email.html).not.toContain("<b>money");
 	});
 });
 

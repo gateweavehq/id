@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { AccountActivity } from "#/components/account-activity";
 import { AccountPasskeys } from "#/components/account-passkeys";
 import { AccountPassword } from "#/components/account-password";
@@ -47,6 +47,17 @@ function AccountPage() {
 			</header>
 
 			<AccountProfile name={session.user.name} email={session.user.email} />
+			<section aria-labelledby="workspaces-heading" className="space-y-4">
+				<h2 id="workspaces-heading" className="text-sm font-semibold">
+					Workspaces
+				</h2>
+				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-4">
+					<p className="text-sm text-muted-foreground">The teams you belong to, and invitations.</p>
+					<Button asChild variant="outline" size="sm">
+						<Link to="/workspaces">Open workspaces</Link>
+					</Button>
+				</div>
+			</section>
 			<AccountPassword email={session.user.email} hasPassword={data.hasPassword} />
 			{data.hasPassword && (
 				<AccountTwoFactor

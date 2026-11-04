@@ -19,6 +19,8 @@ export interface AuditEventRow {
 	at: number;
 	type: string;
 	user_id: string | null;
+	actor_id: string | null;
+	workspace_id: string | null;
 	app: string | null;
 	ip: string | null;
 	device: string | null;

@@ -1,3 +1,5 @@
+import { roleName } from "./workspace";
+
 /** What the audit log records, and how the account page says it. */
 export const AUDIT_EVENT_TYPES = [
 	"account_created",
@@ -19,6 +21,16 @@ export const AUDIT_EVENT_TYPES = [
 	"provider_linked",
 	"provider_unlinked",
 	"app_added",
+	"workspace_created",
+	"workspace_renamed",
+	"workspace_deleted",
+	"member_invited",
+	"invitation_canceled",
+	"invitation_accepted",
+	"invitation_declined",
+	"member_role_changed",
+	"member_removed",
+	"member_left",
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -33,6 +45,24 @@ export interface AuditActivity {
 	ip: string | null;
 	device: string | null;
 	detail: string | null;
+	/** Whether someone else did this to the person reading it. */
+	byOther?: boolean | undefined;
+	/** The name of the other person in it, while they have an account. */
+	other?: string | null | undefined;
+}
+
+/** What a workspace's event keeps in `detail`, read with care: the log outlives what wrote it. */
+function workspaceDetail(detail: string | null): { workspace: string; role: string | undefined } {
+	let parsed: { workspace?: unknown; role?: unknown } = {};
+	try {
+		parsed = JSON.parse(detail ?? "{}");
+	} catch {
+		// Words without the name are still better than nothing.
+	}
+	return {
+		workspace: typeof parsed?.workspace === "string" ? parsed.workspace : "a workspace",
+		role: typeof parsed?.role === "string" ? roleName(parsed.role).toLowerCase() : undefined,
+	};
 }
 
 const SIGNED_IN_WITH: Record<string, string> = {
@@ -45,8 +75,9 @@ const SIGNED_IN_WITH: Record<string, string> = {
 };
 
 /** A person's own event, in their words. A type this build has not heard of says so plainly. */
-export function describeActivity({ type, app, detail }: AuditActivity): string {
+export function describeActivity({ type, app, detail, byOther, other }: AuditActivity): string {
 	const theApp = app ?? "an app";
+	const someone = other ?? "Someone";
 	switch (type as AuditEventType) {
 		case "account_created":
 			return "Created this account";
@@ -93,6 +124,34 @@ export function describeActivity({ type, app, detail }: AuditActivity): string {
 			return `Disconnected ${detail === "github" ? "GitHub" : (detail ?? "a sign-in provider")}`;
 		case "app_added":
 			return `Added ${theApp}`;
+		case "workspace_created":
+			return `Created the workspace ${workspaceDetail(detail).workspace}`;
+		case "workspace_renamed":
+			return `Renamed a workspace to ${workspaceDetail(detail).workspace}`;
+		case "workspace_deleted":
+			return `Deleted the workspace ${workspaceDetail(detail).workspace}`;
+		case "member_invited": {
+			const { workspace, role } = workspaceDetail(detail);
+			return `Invited someone to ${workspace}${role ? ` as ${role}` : ""}`;
+		}
+		case "invitation_canceled":
+			return `Withdrew an invitation to ${workspaceDetail(detail).workspace}`;
+		case "invitation_accepted":
+			return `Joined ${workspaceDetail(detail).workspace}`;
+		case "invitation_declined":
+			return `Turned down an invitation to ${workspaceDetail(detail).workspace}`;
+		case "member_left":
+			return `Left ${workspaceDetail(detail).workspace}`;
+		case "member_role_changed": {
+			const { workspace, role = "something else" } = workspaceDetail(detail);
+			if (byOther) return `${someone} made you ${role} of ${workspace}`;
+			return other ? `Made ${other} ${role} of ${workspace}` : `Became ${role} of ${workspace}`;
+		}
+		case "member_removed": {
+			const { workspace } = workspaceDetail(detail);
+			if (byOther) return `${someone} removed you from ${workspace}`;
+			return `Removed ${other ?? "someone"} from ${workspace}`;
+		}
 		default:
 			return type;
 	}
