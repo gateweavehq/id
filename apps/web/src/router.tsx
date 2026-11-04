@@ -1,3 +1,5 @@
+// First, because it has to run before any route creates a schema.
+import "./lib/zod-config";
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { createIsomorphicFn, getGlobalStartContext } from "@tanstack/react-start";
 import { RouteError } from "./components/route-error";

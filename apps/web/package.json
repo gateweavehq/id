@@ -12,8 +12,9 @@
 		"deploy": "node scripts/deploy.mjs",
 		"deploy:staging": "vite build --mode staging && wrangler deploy --cwd ../..",
 		"typegen": "wrangler types && tsr generate",
-		"typecheck": "wrangler types && tsr generate && tsc && tsc -p scripts && tsc -p test",
+		"typecheck": "wrangler types && tsr generate && tsc && tsc -p scripts && tsc -p test && tsc -p e2e",
 		"test": "vitest run",
+		"test:e2e": "vite build && playwright test",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to .wrangler/state",
 		"db:migrate:remote": "wrangler d1 migrations apply DB --remote",
@@ -37,6 +38,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.65.0",
+		"@playwright/test": "1.64.1",
 		"@tailwindcss/vite": "4.3.3",
 		"@tanstack/devtools-vite": "0.8.5",
 		"@tanstack/react-devtools": "0.10.13",
