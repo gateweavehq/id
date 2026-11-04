@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
+import { LiveButton } from "#/components/live-button";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -108,9 +109,9 @@ function ResetPasswordPage() {
 						{error}
 					</p>
 				)}
-				<Button type="submit" className="w-full" disabled={pending}>
+				<LiveButton type="submit" className="w-full" disabled={pending}>
 					Change password
-				</Button>
+				</LiveButton>
 			</form>
 		</AuthPage>
 	);

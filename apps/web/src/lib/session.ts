@@ -16,6 +16,13 @@ export const getAuthOptions = createServerFn({ method: "GET" }).handler(async ()
 	return { github: githubEnabled, email: emailEnabled, turnstileSiteKey };
 });
 
+/** How the signed-in person can sign in: `credential` for a password, `github`, and so on. */
+export const signInMethods = createServerFn({ method: "GET" }).handler(async () => {
+	const { getAuth } = await import("#/server/auth");
+	const accounts = await getAuth().api.listUserAccounts({ headers: getRequestHeaders() });
+	return accounts.map((account) => account.providerId);
+});
+
 /** Whether the signed-in person can sign in with a password. */
 export const hasPassword = createServerFn({ method: "GET" }).handler(async () => {
 	const { getAuth } = await import("#/server/auth");

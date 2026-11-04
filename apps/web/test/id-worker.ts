@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
+import { get } from "node:http";
 import { join, resolve } from "node:path";
 import { convertV4MiniflareOptions, Miniflare, type V4ModuleDefinition } from "miniflare";
 
@@ -314,6 +315,27 @@ export async function startId(
 		/** A `fetch` that reaches the Worker directly. Redirects are returned, not followed. */
 		fetch: (input: string | URL | Request, init?: RequestInit) => fetchIn(0, input, init),
 		fetchIn,
+		/**
+		 * A browser's navigation, with what became of it. Not through `fetch`, which says
+		 * `sec-fetch-mode: cors` whatever it is told, and the provider answers that differently.
+		 */
+		async navigate(url: string, headers: Record<string, string>) {
+			const { pathname, search } = new URL(url);
+			const entry = await mf.ready;
+			return new Promise<{ status: number; location: string | null }>((resolve, reject) => {
+				get(
+					new URL(pathname + search, entry),
+					{ headers: { "sec-fetch-mode": "navigate", accept: "text/html", ...headers } },
+					(response) => {
+						response.resume();
+						resolve({
+							status: response.statusCode ?? 0,
+							location: response.headers.location ?? null,
+						});
+					},
+				).on("error", reject);
+			});
+		},
 		/** URLs the Worker tried to fetch from outside. */
 		outbound,
 		/** What the Worker sent to apps. */

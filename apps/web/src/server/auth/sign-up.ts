@@ -86,7 +86,7 @@ export function signUpCodes(mailer: Mailer) {
 				}
 				await mailer.send({
 					to: email,
-					...signUpCodeEmail({ code: otp, minutes: CODE_LIFETIME_SECONDS / 60 }),
+					...signUpCodeEmail({ code: otp, minutes: CODE_LIFETIME_SECONDS / 60, email }),
 				});
 			},
 		}),

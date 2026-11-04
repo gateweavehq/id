@@ -23,21 +23,22 @@ export async function watch(page: Page): Promise<string[]> {
 const OUTBOX = resolve(import.meta.dirname, "../.wrangler/tmp/email");
 
 /**
- * The code in the newest email since `since`. The files do not say who a message is for, so only
- * one test in a run may be waiting for a code at a time.
+ * The code sent to `email` since `since`. The files do not say who a message is for, but what it
+ * says does, so tests can wait for their own codes side by side.
  */
-export async function codeSentSince(since: number): Promise<string> {
+export async function codeSentSince(since: number, email: string): Promise<string> {
 	for (let attempt = 0; attempt < 100; attempt++) {
 		const texts = readdirSync(OUTBOX, { recursive: true, encoding: "utf8" })
 			.filter((file) => file.includes("email-text"))
 			.map((file) => join(OUTBOX, file))
 			.filter((file) => statSync(file).isFile() && statSync(file).mtimeMs >= since)
-			.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
-		const code = /\b\d{6}\b/.exec(texts[0] ? readFileSync(texts[0], "utf8") : "")?.[0];
+			.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+			.map((file) => readFileSync(file, "utf8"));
+		const code = /\b\d{6}\b/.exec(texts.find((text) => text.includes(email)) ?? "")?.[0];
 		if (code) return code;
 		await new Promise((done) => setTimeout(done, 100));
 	}
-	throw new Error("No code arrived");
+	throw new Error(`No code reached ${email}`);
 }
 
 /** Signs in on the page. It lands on the account page. */

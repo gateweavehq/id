@@ -138,8 +138,10 @@ them, check whether the others have the same bug, especially in auth and rate li
   policy violation. `pnpm test:e2e` builds and runs them; the first time, run
   `pnpm --filter @gateweave/id-web exec playwright install chromium`. They are not part of
   `pnpm verify`; CI runs them as the `e2e` job. A preview reads only the required secrets from
-  `.dev.vars`, so `e2e/build.mjs` turns email on for these tests. Each email lands in a local file
-  that does not name its recipient, so only one test at a time may wait for a code.
+  `.dev.vars`, so `e2e/build.mjs` turns email and the provider on for these tests. `e2e/server.mjs`
+  seeds what tests cannot make themselves (`e2e/fixtures.ts`), and answers for the app they play on
+  port 4733, because `page.route` does not see where a redirect leads. Sign-up codes land in local
+  files that name the address in their text, so tests can wait for their own side by side.
 - Every bug fix gets a test that fails without the fix. Never weaken or skip a test to make a
   change pass.
 

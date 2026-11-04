@@ -1,18 +1,21 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
+import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
-import { Button } from "#/components/ui/button";
+import { LiveButton } from "#/components/live-button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
+import { flowSearch, inFlow, onItsWay, type Search } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
 import { getAuthOptions, getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 import { useTurnstile } from "#/lib/turnstile";
 
-const signUpSearch = z.object({
+// Loose, because on the way to an app the query is the app's signed request. See `lib/oauth-flow`.
+const signUpSearch = z.looseObject({
 	/** Where to go once the account is set up. */
 	redirect: z.string().optional().catch(undefined),
 	/** Prefills the email field. */
@@ -22,6 +25,8 @@ const signUpSearch = z.object({
 export const Route = createFileRoute("/signup")({
 	validateSearch: signUpSearch,
 	beforeLoad: async ({ search }) => {
+		// On the way to an app, someone signed in only comes here when the app wants them to sign in again.
+		if (inFlow(search)) return;
 		if (await getSession()) throw redirect({ href: safeRedirect(search.redirect) ?? "/account" });
 	},
 	loader: () => getAuthOptions(),
@@ -35,21 +40,21 @@ function SignUpPage() {
 	const router = useRouter();
 	/** Who asked for a code, once one is on its way. */
 	const [person, setPerson] = useState<{ name: string; email: string } | null>(null);
-	const [error, setError] = useState<string | null>(null);
+	const [error, setError] = useState<ReactNode>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const turnstile = useTurnstile(options.turnstileSiteKey);
 	useDocumentTitle("Create your account");
 
 	/** Sends a code, and returns what went wrong if it did. */
-	async function sendCode(email: string): Promise<string | null> {
+	async function sendCode(email: string): Promise<ReactNode> {
 		try {
 			const result = await authClient.emailOtp.sendVerificationOtp({
 				email,
 				type: "sign-in",
 				fetchOptions: { headers: await turnstile.check() },
 			});
-			return result.error ? (result.error.message ?? "Something went wrong") : null;
+			return result.error ? failureMessage(result.error, search) : null;
 		} catch (caught) {
 			return caught instanceof Error ? caught.message : "Something went wrong";
 		}
@@ -81,9 +86,10 @@ function SignUpPage() {
 		const result = await authClient.signIn.emailOtp({ ...person, otp });
 		if (result.error) {
 			setPending(false);
-			setError(result.error.message ?? "Something went wrong");
+			setError(failureMessage(result.error, search));
 			return;
 		}
+		if (onItsWay(result.data)) return;
 		// Not `router.invalidate()` first: this page sends people with a session straight to `next`,
 		// which would flash past before the welcome page.
 		await router.navigate({ to: "/welcome", search: { redirect: next } });
@@ -104,8 +110,8 @@ function SignUpPage() {
 				title="Create your account"
 				description="This server does not send email, so it cannot check an address. Ask whoever runs it for an invitation."
 			>
-				{options.github && <GitHubSignIn next={next} />}
-				<BackToSignIn redirect={search.redirect} />
+				{options.github && <GitHubSignIn next={next} search={search} />}
+				<BackToSignIn search={search} />
 			</AuthPage>
 		);
 	}
@@ -147,9 +153,9 @@ function SignUpPage() {
 							{notice}
 						</p>
 					)}
-					<Button type="submit" className="w-full" disabled={pending}>
+					<LiveButton type="submit" className="w-full" disabled={pending}>
 						Create account
-					</Button>
+					</LiveButton>
 				</form>
 				<div className="flex justify-between text-sm text-muted-foreground">
 					<button
@@ -182,7 +188,7 @@ function SignUpPage() {
 					<h1 className="text-xl font-semibold tracking-tight">Create your account</h1>
 				</div>
 
-				{options.github && <GitHubSignIn next={next} />}
+				{options.github && <GitHubSignIn next={next} search={search} />}
 
 				<form onSubmit={onAskForCode} className="space-y-4">
 					<div className="space-y-2">
@@ -206,24 +212,24 @@ function SignUpPage() {
 							{error}
 						</p>
 					)}
-					<Button type="submit" className="w-full" disabled={pending}>
+					<LiveButton type="submit" className="w-full" disabled={pending}>
 						Send me a code
-					</Button>
+					</LiveButton>
 				</form>
 
-				<BackToSignIn redirect={search.redirect} />
+				<BackToSignIn search={search} />
 			</div>
 		</main>
 	);
 }
 
-function BackToSignIn({ redirect }: { redirect: string | undefined }) {
+function BackToSignIn({ search }: { search: Search & { redirect?: string | undefined } }) {
 	return (
 		<p className="text-center text-sm text-muted-foreground">
 			Already have an account?{" "}
 			<Link
 				to="/login"
-				search={{ redirect }}
+				search={{ redirect: search.redirect, ...flowSearch(search) }}
 				className="font-medium text-foreground underline-offset-4 hover:underline"
 			>
 				Sign in

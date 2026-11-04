@@ -1,6 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
-import { Button } from "#/components/ui/button";
+import { LiveButton } from "#/components/live-button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
@@ -114,9 +114,9 @@ export function AccountPassword({ email, hasPassword }: { email: string; hasPass
 						{notice}
 					</p>
 				)}
-				<Button type="submit" variant="outline" size="sm" disabled={pending}>
+				<LiveButton type="submit" variant="outline" size="sm" disabled={pending}>
 					{hasPassword ? "Change password" : "Add password"}
-				</Button>
+				</LiveButton>
 			</form>
 		</section>
 	);

@@ -3,6 +3,7 @@ import "./lib/zod-config";
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { createIsomorphicFn, getGlobalStartContext } from "@tanstack/react-start";
 import { RouteError } from "./components/route-error";
+import { parseSearch, stringifySearch } from "./lib/search";
 import { routeTree } from "./routeTree.gen";
 
 /**
@@ -22,6 +23,8 @@ const requestNonce = createIsomorphicFn()
 export function getRouter() {
 	const router = createTanStackRouter({
 		routeTree,
+		parseSearch,
+		stringifySearch,
 		scrollRestoration: true,
 		defaultPreload: "intent",
 		defaultPreloadStaleTime: 0,

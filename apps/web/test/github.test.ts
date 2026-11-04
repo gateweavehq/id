@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { appRow, insertStatement } from "../scripts/app-row";
 import { type GitHubPerson, gitHubCode, startId } from "./id-worker";
 
 // Signing in with GitHub, through the public routes of the built Worker, with a stand-in for GitHub.
@@ -383,5 +384,64 @@ describe("the sign-in page after a refusal", () => {
 	it("does not give a refusal to someone who has none", async () => {
 		const html = await page("");
 		expect(html).not.toContain('role="alert"');
+	});
+});
+
+describe("on the way to an app", () => {
+	/** A browser arriving at the authorization endpoint for a new app, which sends it to sign in. */
+	async function arriveFromApp(client: string) {
+		const redirectUri = `https://github-${++gitHubIds}.apps.test/callback`;
+		const app = appRow({ app: "github-test", name: "GitHub Test", redirectUris: [redirectUri] });
+		await id.db.prepare(insertStatement(app.row)).run();
+		const query = new URLSearchParams({
+			client_id: app.clientId,
+			redirect_uri: redirectUri,
+			response_type: "code",
+			scope: "openid email",
+			state: "state-of-the-app",
+			code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+			code_challenge_method: "S256",
+		});
+		const response = await id.fetch(`${origin}/api/auth/oauth2/authorize?${query}`, {
+			headers: { "cf-connecting-ip": client },
+		});
+		const { url } = (await response.json()) as { url: string };
+		const signIn = new URL(url, origin);
+		expect(signIn.pathname).toBe("/login");
+		return { redirectUri, oauthQuery: signIn.search.slice(1) };
+	}
+
+	it("comes back with a code, and asks nobody from GitHub for a password", async () => {
+		const client = newClient();
+		const { redirectUri, oauthQuery } = await arriveFromApp(client);
+
+		const { state, cookie } = await start(client, { oauth_query: oauthQuery });
+		const query = new URLSearchParams({ code: gitHubCode(person()), state });
+		const { status, location } = await id.navigate(`${origin}/api/auth/callback/github?${query}`, {
+			"cf-connecting-ip": client,
+			cookie,
+		});
+
+		expect(status).toBe(302);
+		const back = new URL(location ?? "");
+		expect(back.origin + back.pathname).toBe(redirectUri);
+		expect(back.searchParams.get("state")).toBe("state-of-the-app");
+		expect(back.searchParams.has("code")).toBe(true);
+	});
+
+	it("brings a refusal back to a page that can still finish the job", async () => {
+		const client = newClient();
+		const { oauthQuery } = await arriveFromApp(client);
+
+		const { state, cookie } = await start(client, {
+			oauth_query: oauthQuery,
+			errorCallbackURL: `/login?${oauthQuery}`,
+		});
+		const response = await comeBack(client, { error: "access_denied", state }, cookie);
+
+		const back = new URL(response.headers.get("location") ?? "", origin);
+		expect(back.pathname).toBe("/login");
+		expect(back.searchParams.get("error")).toBe("access_denied");
+		expect(back.searchParams.get("sig")).toBe(new URLSearchParams(oauthQuery).get("sig"));
 	});
 });
