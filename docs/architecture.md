@@ -162,6 +162,9 @@ for why this replaced a shared session.
   The server requires success, the expected action and the expected hostname, and refuses when
   Siteverify cannot answer. Entering a code needs no pass, since the code is the proof.
 - Rate limits are durable and keyed by `cf-connecting-ip`.
+- Changing a password ends every other session, since whoever knew the old one may be why it changed.
+  The account page lists a person's sessions, and they can end any of them.
+- The cookie keeps the session token away from scripts, so the session a page carries leaves it out.
 - A person cannot remove their last way to sign in.
 - Sign-ins, refusals, consents and admin changes go to an audit log from the first release. Exporting
   it is an `ee/` feature; recording it is not.

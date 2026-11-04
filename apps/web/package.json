@@ -14,7 +14,7 @@
 		"typegen": "wrangler types && tsr generate",
 		"typecheck": "wrangler types && tsr generate && tsc && tsc -p scripts && tsc -p test && tsc -p e2e",
 		"test": "vitest run",
-		"test:e2e": "vite build && playwright test",
+		"test:e2e": "node e2e/build.mjs && playwright test",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to .wrangler/state",
 		"db:migrate:remote": "wrangler d1 migrations apply DB --remote",

@@ -132,8 +132,9 @@ them, check whether the others have the same bug, especially in auth and rate li
   Security Policy, because a blocked script leaves the same HTML. Every page they visit fails on a
   policy violation. `pnpm test:e2e` builds and runs them; the first time, run
   `pnpm --filter @gateweave/id-web exec playwright install chromium`. They are not part of
-  `pnpm verify`; CI runs them as the `e2e` job. A build has email off, since a preview reads only
-  the required secrets from `.dev.vars`, so signing up itself is the Worker tests' to cover.
+  `pnpm verify`; CI runs them as the `e2e` job. A preview reads only the required secrets from
+  `.dev.vars`, so `e2e/build.mjs` turns email on for these tests. Each email lands in a local file
+  that does not name its recipient, so only one test at a time may wait for a code.
 - Every bug fix gets a test that fails without the fix. Never weaken or skip a test to make a
   change pass.
 
