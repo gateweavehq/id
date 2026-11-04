@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { convertV4MiniflareOptions, Miniflare, type V4ModuleDefinition } from "miniflare";
@@ -67,20 +67,17 @@ export const PWNED_PASSWORDS = {
 	noAnswer: "a-password-while-the-service-hangs",
 };
 
-function sha1(password: string): string {
-	return createHash("sha1").update(password).digest("hex").toUpperCase();
-}
+// The service holds hashes and not passwords, so the stand-in does too. These are the SHA-1 of the
+// passwords above, in the same order.
+const BREACHED_SHA1 = "78C19D71E296D458874E2BE4E5CC300264A9CFBE";
+const SERVICE_DOWN_PREFIX = "B0D3E";
+const NO_ANSWER_PREFIX = "0F216";
 
 /** The range API: the suffixes of every password whose SHA-1 starts with this prefix. */
 async function pwnedRange(prefix: string): Promise<Response> {
-	const startsHere = (password: string) => sha1(password).startsWith(prefix);
-	if (startsHere(PWNED_PASSWORDS.serviceDown)) return new Response("Down", { status: 503 });
-	if (startsHere(PWNED_PASSWORDS.noAnswer)) {
-		await new Promise((resolve) => setTimeout(resolve, 6000));
-	}
-	const known = startsHere(PWNED_PASSWORDS.breached)
-		? `${sha1(PWNED_PASSWORDS.breached).slice(5)}:42\r\n`
-		: "";
+	if (prefix === SERVICE_DOWN_PREFIX) return new Response("Down", { status: 503 });
+	if (prefix === NO_ANSWER_PREFIX) await new Promise((resolve) => setTimeout(resolve, 6000));
+	const known = BREACHED_SHA1.startsWith(prefix) ? `${BREACHED_SHA1.slice(5)}:42\r\n` : "";
 	return new Response(`${known}0000000000000000000000000000000000A:1\r\n`);
 }
 
