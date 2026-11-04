@@ -1,0 +1,69 @@
+name: Deploy
+
+# Gateweave Cloud's deploys. Every green build of main goes to staging, and publishing a release
+# deploys that tag to production. Forks skip both jobs: they have no Cloudflare credentials.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  staging:
+    if: >-
+      github.repository == 'gateweavehq/id' &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://id-staging.gateweave.com
+    concurrency: deploy-staging
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Migrations first, so the new code never meets an old schema.
+      - name: Apply D1 migrations
+        run: pnpm --filter @gateweave/id-web db:migrate:staging
+      - name: Deploy
+        run: pnpm --filter @gateweave/id-web deploy:staging
+
+  production:
+    if: github.repository == 'gateweavehq/id' && github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://id.gateweave.com
+    concurrency: deploy-production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Builds, applies D1 migrations, then deploys (apps/web/scripts/deploy.mjs), as self-hosters do,
+      # but with the `cloud` environment of wrangler.jsonc, which both the build and Wrangler read
+      # from CLOUDFLARE_ENV. `run` is needed: `pnpm deploy` is a built-in command.
+      - name: Deploy
+        env:
+          CLOUDFLARE_ENV: cloud
+        run: pnpm --filter @gateweave/id-web run deploy

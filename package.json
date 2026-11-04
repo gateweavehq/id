@@ -1,0 +1,37 @@
+{
+	"name": "gateweave-id",
+	"private": true,
+	"license": "AGPL-3.0-only",
+	"type": "module",
+	"packageManager": "pnpm@12.4.2",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"dev": "pnpm --filter @gateweave/id-web dev",
+		"dev:setup": "pnpm --filter @gateweave/id-web dev:setup",
+		"doctor": "node scripts/doctor.mjs",
+		"build": "pnpm -r build",
+		"deploy": "pnpm --filter @gateweave/id-web run deploy",
+		"wrangler": "pnpm --filter @gateweave/id-web exec wrangler --cwd ../..",
+		"typecheck": "pnpm -r typecheck",
+		"test": "pnpm -r test",
+		"check": "biome check",
+		"format": "biome check --write",
+		"verify": "pnpm check && pnpm typecheck && pnpm test && pnpm build"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.6.3",
+		"typescript": "catalog:"
+	},
+	"cloudflare": {
+		"bindings": {
+			"DB": {
+				"description": "Holds accounts and sessions. Choose **Create new** unless you are moving an existing installation."
+			},
+			"BETTER_AUTH_SECRET": {
+				"description": "Signs sessions. Use a long random string, for example from `openssl rand -base64 32`, and keep it secret."
+			}
+		}
+	}
+}

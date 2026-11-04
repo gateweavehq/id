@@ -1,0 +1,72 @@
+// ID deploys from the repository root, where the "Deploy to Cloudflare" button looks for this
+// file; the app itself lives in apps/web, which runs Wrangler and Vite against it.
+{
+	"$schema": "apps/web/node_modules/wrangler/config-schema.json",
+	"name": "gateweave-id",
+	"main": "apps/web/src/server.ts",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": { "enabled": true },
+	"upload_source_maps": true,
+	// Accounts and sessions. The database is provisioned on first deploy.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "gateweave-id",
+			"migrations_dir": "apps/web/migrations"
+		}
+	],
+	// Rate limits on sign-in, password reset and email are counted in one per client address or
+	// recipient.
+	"durable_objects": {
+		"bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+	},
+	"exports": {
+		"RateLimiter": { "type": "durable-object", "storage": "sqlite" }
+	},
+	// Email through Cloudflare Email Service. Nothing is sent until EMAIL_FROM names a sender on a
+	// domain onboarded to Email Sending; without it, ID runs with email off, and then nobody's
+	// address can be verified.
+	"send_email": [{ "name": "EMAIL" }],
+	// Optional: BETTER_AUTH_URL, EMAIL_FROM, and GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET (see
+	// apps/web/src/server/env.d.ts).
+	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
+	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
+	// `cloud` is https://id.gateweave.com, the same Worker and database the top level names, and
+	// `staging` a separate Worker with its own. Bindings are not inherited, so each repeats them.
+	"env": {
+		"cloud": {
+			"name": "gateweave-id",
+			"routes": [{ "pattern": "id.gateweave.com", "custom_domain": true }],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "gateweave-id",
+					"migrations_dir": "apps/web/migrations"
+				}
+			],
+			"durable_objects": {
+				"bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+			},
+			"send_email": [{ "name": "EMAIL" }],
+			"secrets": { "required": ["BETTER_AUTH_SECRET"] }
+		},
+		"staging": {
+			"name": "gateweave-id-staging",
+			"routes": [{ "pattern": "id-staging.gateweave.com", "custom_domain": true }],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "gateweave-id-staging",
+					"database_id": "fa746fc4-3ab5-4a91-9e1e-8ed4625ddb6e",
+					"migrations_dir": "apps/web/migrations"
+				}
+			],
+			"durable_objects": {
+				"bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+			},
+			"send_email": [{ "name": "EMAIL" }],
+			"secrets": { "required": ["BETTER_AUTH_SECRET"] }
+		}
+	}
+}

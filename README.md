@@ -1,0 +1,48 @@
+<h1 align="center">Gateweave ID</h1>
+
+An OpenID Connect provider that runs entirely on Cloudflare, with no server to run: one Worker, one
+D1 database and a Durable Object for rate limits. It is meant to let people hold one account and
+sign in to any app that supports OIDC.
+
+Gateweave ID is part of [Gateweave](https://gateweave.com), the family of open-source business tools
+that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq/track) and
+[Gateweave Agents](https://github.com/gateweavehq/agents).
+
+> **Status: early, and not usable yet.** All that works today is accounts: sign up, verify your
+> email, sign in, reset a password and see an account page. It does not issue tokens to other apps,
+> and it has no passkeys, workspaces or apps. Do not put anything that matters behind it.
+> [docs/architecture.md](docs/architecture.md) describes what it is being built to be, including
+> what is decided and what is still unproven.
+
+## Tech stack
+
+[TanStack Start](https://tanstack.com/start) · React 19 · Tailwind CSS 4 ·
+[Better Auth](https://better-auth.com) · [Drizzle ORM](https://orm.drizzle.team) ·
+Cloudflare Workers, Durable Objects and D1 · TypeScript 7 · Vitest · Biome
+
+## Running it locally
+
+Requirements: Node.js 24 (22+ works) and pnpm 12.
+
+```sh
+pnpm install
+pnpm doctor      # checks your toolchain and setup, and explains how to fix anything missing
+pnpm dev:setup   # creates .dev.vars with a random secret, migrates the local database
+pnpm dev         # http://localhost:4730
+```
+
+Sign up at `/login?mode=sign-up`. ID signs nobody in until their address is verified, so
+`pnpm dev:setup` turns email on. Nothing is sent locally: each email is saved as a file under
+`apps/web/.wrangler/tmp/email`, and the terminal that runs `pnpm dev` prints its path. Open the
+verification link from the `.txt` file. To enable "Continue with GitHub", uncomment and fill in
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.dev.vars`.
+
+`pnpm verify` runs everything CI does: lint, types, tests and a build. See
+[CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for how the code is organized and
+what must never break.
+
+## License
+
+[AGPL-3.0](LICENSE). Contributors sign a [CLA](CLA.md) once, which covers every Gateweave project.
+Third-party code is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Report security
+problems as [SECURITY.md](SECURITY.md) describes.
