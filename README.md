@@ -8,9 +8,10 @@ Gateweave ID is part of [Gateweave](https://gateweave.com), the family of open-s
 that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq/track) and
 [Gateweave Agents](https://github.com/gateweavehq/agents).
 
-> **Status: early, and not usable yet.** All that works today is accounts: sign up with a code sent
-> to your email, sign in, reset a password and see an account page. It does not issue tokens to other apps,
-> and it has no passkeys, workspaces or apps. Do not put anything that matters behind it.
+> **Status: early, and not usable yet.** What works today is accounts (sign up with a code sent to
+> your email, sign in with a password, GitHub or a passkey, reset a password, see an account page) and
+> tokens for first-party apps that a deployment registers itself. It has no workspaces, and nobody can
+> register an app of their own. Do not put anything that matters behind it.
 > [docs/architecture.md](docs/architecture.md) describes what it is being built to be, including
 > what is decided and what is still unproven.
 

@@ -41,8 +41,10 @@ describe("a page as it arrives", () => {
 		}
 	});
 
-	it("does not offer GitHub until it can go there", async () => {
-		const [button] = await buttonsOf("/login");
-		expect(button).toMatch(/\sdisabled(=|\s|>)/);
+	it("does not offer GitHub or a passkey until it can go there", async () => {
+		const buttons = await buttonsOf("/login");
+		// GitHub, a passkey and the form's own.
+		expect(buttons).toHaveLength(3);
+		for (const button of buttons) expect(button).toMatch(/\sdisabled(=|\s|>)/);
 	});
 });

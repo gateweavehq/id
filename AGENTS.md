@@ -10,8 +10,8 @@ one Worker, one D1 database and a Durable Object for rate limits. It is part of
 [Gateweave](https://gateweave.com), next to [Gateweave Track](https://github.com/gateweavehq/track)
 and [Gateweave Agents](https://github.com/gateweavehq/agents), which will sign people in with it.
 
-It is early. Today it has accounts (sign-up, email verification, sign-in, password reset and an
-account page) and the OIDC provider, for first-party apps a deployment registers itself. Passkeys,
+It is early. Today it has accounts (sign-up, email verification, sign-in, passkeys, password reset
+and an account page) and the OIDC provider, for first-party apps a deployment registers itself.
 TOTP, workspaces, groups and workspace apps come in later issues.
 
 Read [docs/architecture.md](docs/architecture.md) before changing sign-in, tokens or who may use an
@@ -142,6 +142,9 @@ them, check whether the others have the same bug, especially in auth and rate li
   seeds what tests cannot make themselves (`e2e/fixtures.ts`), and answers for the app they play on
   port 4733, because `page.route` does not see where a redirect leads. Sign-up codes land in local
   files that name the address in their text, so tests can wait for their own side by side.
+  `e2e/authenticator.ts` gives a page Chromium's virtual authenticator. It answers the offer under
+  the email field by itself, so once it holds a passkey, signing out signs that person back in.
+  Say `withoutTheOfferInTheEmailField` first in any test that is about something else.
 - Every bug fix gets a test that fails without the fix. Never weaken or skip a test to make a
   change pass.
 

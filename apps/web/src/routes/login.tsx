@@ -4,6 +4,8 @@ import { z } from "zod";
 import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
 import { LiveButton } from "#/components/live-button";
+import { PasskeySignIn } from "#/components/passkey-sign-in";
+import { SignInDivider } from "#/components/sign-in-divider";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
@@ -84,7 +86,15 @@ function SignInForm() {
 					</p>
 				)}
 
-				{options.github && <GitHubSignIn next={next} search={search} />}
+				{(options.github || options.passkeys) && (
+					<>
+						<div className="space-y-3">
+							{options.github && <GitHubSignIn next={next} search={search} />}
+							{options.passkeys && <PasskeySignIn next={next} search={search} />}
+						</div>
+						<SignInDivider />
+					</>
+				)}
 
 				<form onSubmit={onSubmit} className="space-y-4">
 					<div className="space-y-2">
@@ -93,7 +103,7 @@ function SignInForm() {
 							id="email"
 							name="email"
 							type="email"
-							autoComplete="email"
+							autoComplete={options.passkeys ? "email webauthn" : "email"}
 							defaultValue={search.email}
 							required
 						/>

@@ -4,7 +4,7 @@ import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, type Search } from "#/lib/oauth-flow";
 import { stringifySearch } from "#/lib/search";
 
-/** "Continue with GitHub", and the divider that sets it apart from the form below it. */
+/** "Continue with GitHub". */
 export function GitHubSignIn({ next, search }: { next: string; search: Search }) {
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
@@ -36,11 +36,6 @@ export function GitHubSignIn({ next, search }: { next: string; search: Search })
 					{error}
 				</p>
 			)}
-			<div className="flex items-center gap-3 text-xs text-muted-foreground">
-				<span className="h-px flex-1 bg-border" />
-				or
-				<span className="h-px flex-1 bg-border" />
-			</div>
 		</>
 	);
 }

@@ -12,15 +12,29 @@ export const getSession = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const getAuthOptions = createServerFn({ method: "GET" }).handler(async () => {
-	const { emailEnabled, githubEnabled, turnstileSiteKey } = await import("#/server/auth");
-	return { github: githubEnabled, email: emailEnabled, turnstileSiteKey };
+	const { emailEnabled, githubEnabled, passkeysEnabled, turnstileSiteKey } = await import(
+		"#/server/auth"
+	);
+	return {
+		github: githubEnabled,
+		email: emailEnabled,
+		passkeys: passkeysEnabled,
+		turnstileSiteKey,
+	};
 });
 
-/** How the signed-in person can sign in: `credential` for a password, `github`, and so on. */
+/** How the signed-in person can sign in: `credential` for a password, `github`, `passkey`. */
 export const signInMethods = createServerFn({ method: "GET" }).handler(async () => {
-	const { getAuth } = await import("#/server/auth");
-	const accounts = await getAuth().api.listUserAccounts({ headers: getRequestHeaders() });
-	return accounts.map((account) => account.providerId);
+	const { db, getAuth } = await import("#/server/auth");
+	const { hasPasskey } = await import("#/server/auth/passkeys");
+	const headers = getRequestHeaders();
+	const [accounts, signedIn] = await Promise.all([
+		getAuth().api.listUserAccounts({ headers }),
+		getAuth().api.getSession({ headers }),
+	]);
+	const methods = accounts.map((account) => account.providerId);
+	if (signedIn && (await hasPasskey(db, signedIn.user.id))) methods.push("passkey");
+	return methods;
 });
 
 /** Whether the signed-in person can sign in with a password. */
