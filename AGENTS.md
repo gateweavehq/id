@@ -11,8 +11,8 @@ one Worker, one D1 database and a Durable Object for rate limits. It is part of
 and [Gateweave Agents](https://github.com/gateweavehq/agents), which will sign people in with it.
 
 It is early. Today it has accounts (sign-up, email verification, sign-in, passkeys, two-factor,
-password reset and an account page) and the OIDC provider, for first-party apps a deployment registers itself.
-Workspaces, groups and workspace apps come in later issues.
+password reset and an account page), the OIDC provider, for first-party apps a deployment registers
+itself, and workspaces with members and invitations. Groups and workspace apps come in later issues.
 
 Read [docs/architecture.md](docs/architecture.md) before changing sign-in, tokens or who may use an
 app. A mistake in those places signs the wrong person in to someone else's app.
@@ -92,7 +92,10 @@ These are load-bearing. Breaking one breaks users' data or security, usually sil
    after it rather than renaming it. Follow `.claude/skills/schema-change/SKILL.md`.
 7. **Secrets stay local.** Never commit `.dev.vars` or print its contents.
 8. **Admin rights are granted, never assumed.** Never decide what only owners and admins may do by
-   comparing a role with `member`; ask what the role is allowed (`clientPrivileges` for apps).
+   comparing a role with `member`; ask what the role is allowed (`can` in `apps/web/src/lib/workspace.ts`).
+9. **The organization plugin is reached only through the gate.** Every path under `/organization/` needs
+   a rule in `apps/web/src/server/auth/workspaces.ts`, with a strict body, or it answers 404. To someone
+   outside a workspace, it does not exist. See "Workspaces" in [docs/architecture.md](docs/architecture.md).
 
 Also: one Better Auth instance per isolate, built on first use (`getAuth()`). workerd forbids I/O in
 global scope, and `test/startup-logs.test.ts` fails if a cold start logs an error.

@@ -15,6 +15,57 @@ function activity(fields: Partial<AuditActivity>): AuditActivity {
 }
 
 describe("describeActivity", () => {
+	const inAcme = JSON.stringify({ workspace: "Acme", role: "admin" });
+
+	it.each([
+		["workspace_created", "Created the workspace Acme"],
+		["workspace_renamed", "Renamed a workspace to Acme"],
+		["workspace_deleted", "Deleted the workspace Acme"],
+		["member_invited", "Invited someone to Acme as admin"],
+		["invitation_canceled", "Withdrew an invitation to Acme"],
+		["invitation_accepted", "Joined Acme"],
+		["invitation_declined", "Turned down an invitation to Acme"],
+		["member_left", "Left Acme"],
+	])("says what %s was", (type, words) => {
+		expect(describeActivity(activity({ type, detail: inAcme }))).toBe(words);
+	});
+
+	it("says a change of role from each side", () => {
+		const type = "member_role_changed";
+		expect(describeActivity(activity({ type, detail: inAcme, other: "Bob" }))).toBe(
+			"Made Bob admin of Acme",
+		);
+		expect(describeActivity(activity({ type, detail: inAcme, byOther: true, other: "Ada" }))).toBe(
+			"Ada made you admin of Acme",
+		);
+		expect(describeActivity(activity({ type, detail: inAcme }))).toBe("Became admin of Acme");
+	});
+
+	it("says a removal from each side, and when the other person has gone", () => {
+		const type = "member_removed";
+		expect(describeActivity(activity({ type, detail: inAcme, other: "Bob" }))).toBe(
+			"Removed Bob from Acme",
+		);
+		expect(describeActivity(activity({ type, detail: inAcme, byOther: true, other: "Ada" }))).toBe(
+			"Ada removed you from Acme",
+		);
+		expect(describeActivity(activity({ type, detail: inAcme, byOther: true, other: null }))).toBe(
+			"Someone removed you from Acme",
+		);
+		expect(describeActivity(activity({ type, detail: inAcme, other: null }))).toBe(
+			"Removed someone from Acme",
+		);
+	});
+
+	it.each(["not json", "null", "[]", '{"workspace":7}', null])(
+		"still has words when a workspace's detail reads %s",
+		(detail) => {
+			expect(describeActivity(activity({ type: "workspace_created", detail }))).toBe(
+				"Created the workspace a workspace",
+			);
+		},
+	);
+
 	it("has words for every type the log records", () => {
 		for (const type of AUDIT_EVENT_TYPES) {
 			expect(describeActivity(activity({ type }))).not.toBe(type);

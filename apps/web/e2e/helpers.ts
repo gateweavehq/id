@@ -41,6 +41,22 @@ export async function codeSentSince(since: number, email: string): Promise<strin
 	throw new Error(`No code reached ${email}`);
 }
 
+/** The link in the invitation sent to `email` since `since`. */
+export async function linkSentSince(since: number, email: string): Promise<string> {
+	for (let attempt = 0; attempt < 100; attempt++) {
+		const texts = readdirSync(OUTBOX, { recursive: true, encoding: "utf8" })
+			.filter((file) => file.includes("email-text"))
+			.map((file) => join(OUTBOX, file))
+			.filter((file) => statSync(file).isFile() && statSync(file).mtimeMs >= since)
+			.map((file) => readFileSync(file, "utf8"));
+		const invitation = texts.find((text) => text.includes(email) && text.includes("invited you"));
+		const link = /https?:\S+/.exec(invitation ?? "")?.[0];
+		if (link) return link;
+		await new Promise((done) => setTimeout(done, 100));
+	}
+	throw new Error(`No invitation reached ${email}`);
+}
+
 /** Signs in on the page. It lands on the account page. */
 export async function signIn(page: Page, email: string, password: string) {
 	await page.goto("/login", { waitUntil: "networkidle" });

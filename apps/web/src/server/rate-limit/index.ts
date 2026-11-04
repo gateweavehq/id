@@ -31,6 +31,18 @@ export const SIGN_UP_CODES_PER_ADDRESS: Rule[] = [
 	{ window: 24 * 60 * 60, max: 10 },
 ];
 
+/** Invitations one person can send, so a workspace cannot be a way to mail strangers. */
+export const INVITATIONS_PER_PERSON: Rule[] = [
+	{ window: 60 * 60, max: 30 },
+	{ window: 24 * 60 * 60, max: 100 },
+];
+
+/**
+ * Invitations one address can be sent, from anyone. Well under `EMAILS_PER_RECIPIENT`, so that nobody
+ * can use up what that address has left for a sign-up code or a password reset by inviting it.
+ */
+export const INVITATIONS_PER_ADDRESS: Rule[] = [{ window: 24 * 60 * 60, max: 3 }];
+
 /** Longer than an authenticator's code stays good: its own 30 seconds and one step either side. */
 export const CODE_CLAIM: Rule[] = [{ window: 120, max: 1 }];
 
@@ -80,6 +92,14 @@ export function limitRecipients(mailer: Mailer | undefined): Mailer | undefined 
 export async function allowSignUpCode(email: string): Promise<boolean> {
 	const { allowed } = await consumeDurably(`sign-up-code:${email}`, SIGN_UP_CODES_PER_ADDRESS);
 	return allowed;
+}
+
+/** Whether this person may invite this address, whichever workspace it is for. */
+export async function allowInvitation(inviterId: string, email: string): Promise<boolean> {
+	const person = await consumeDurably(`invited-by:${inviterId}`, INVITATIONS_PER_PERSON);
+	if (!person.allowed) return false;
+	const address = await consumeDurably(`invited:${email}`, INVITATIONS_PER_ADDRESS);
+	return address.allowed;
 }
 
 /** Whether this code has not been offered for this person since it became good. */

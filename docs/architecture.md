@@ -26,9 +26,12 @@ Building on Track's sync engine here would add moving parts and solve nothing.
 There is one issuer per deployment. Gateweave Cloud's is `https://id.gateweave.com`.
 
 - **An account** is global, with one verified email address.
-- **A workspace** is a Better Auth organization. It owns apps and groups. Its owners and admins
-  manage them, decided with `clientPrivileges` and never by comparing a role with `member`.
-- **An app** is an OAuth client. `clientReference` makes the active workspace its owner.
+- **A workspace** is a Better Auth organization, behind a gate of ID's own (see "Workspaces"). It will
+  own apps and groups. What its owners and admins may do is decided with `can`, never by comparing a
+  role with `member`.
+- **An app** is an OAuth client. All of them are first-party for now. A workspace's will be made through
+  ID's own endpoints, which can put the workspace in the app's `metadata`. The provider's own way,
+  `clientReference`, reads the session's active workspace, which a person cannot see and ID does not use.
 - **A first-party app** has no workspace. The deployment registers it. Track and Agents are
   first-party in Gateweave Cloud. Anyone with an account may use one, because the product checks its
   own membership afterwards.
@@ -180,6 +183,65 @@ was done for them. Their sessions stay, since they lost a device and nobody said
 **Apps cannot be told how someone signed in.** The provider strips `amr` from custom claims and always sends
 `acr: "0"`, so no app can require a second factor through its tokens. A rule that does has to live in ID's
 own check at authorization.
+
+## Workspaces
+
+A workspace is a group of people who will share apps. Better Auth's organization plugin keeps the rows,
+and `apps/web/src/server/auth/workspaces.ts` decides what reaches it. Today a workspace has a name, an
+address, members and invitations. The apps and groups that give it a point come next.
+
+**Every request to the plugin goes through a gate first.** Ten paths have a rule. Anything else answers
+404, including the plugin's teams and custom roles and whatever a later version adds, so an upgrade
+opens nothing. Each rule has a strict body and names the workspace in it, so a field the plugin would
+accept and no page sends, such as `metadata` or `userId`, is refused. The session's "active workspace" is
+not used: a person cannot see it, so a request that leans on it can act somewhere they did not mean.
+
+`can`, in `lib/workspace.ts`, says who may do what, and the server and the pages both ask it. Rights are
+granted by name, so a role this build has not heard of has none.
+
+|                                              | Owner  | Admin            | Member |
+| -------------------------------------------- | ------ | ---------------- | ------ |
+| See the workspace and its members, and leave | Yes    | Yes              | Yes    |
+| Rename, invite, see and withdraw invitations | Yes    | Yes              | No     |
+| Change a role, remove someone                | Anyone | Anyone but owner | No     |
+| Make someone an owner                        | Yes    | No               | No     |
+| Delete the workspace                         | Yes    | No               | No     |
+
+- **To someone outside, a workspace does not exist.** One that exists answers them with the same 404 and
+  the same words as one that does not. A member who lacks a right gets a 403, since they can see it.
+- **Reads are ID's own endpoints** (`/workspaces/list`, `/workspaces/get`, `/workspaces/invitation`), which
+  name their columns, so that a new column stays in the database. Writes stay on Better Auth's endpoints,
+  for its origin check. A cookie that is only `SameSite=Lax` would not stop another `*.gateweave.com` host.
+- **A workspace always has an owner,** because nobody could fix one without. The gate says so in words, the
+  plugin counts too, and triggers in the `0006` migration refuse the change in the database, which holds
+  when two owners leave at once and for anything else that ever touches a row. Whoever loses that race
+  gets a 500, and trying again gets the proper refusal.
+- **Deleting goes workspace first.** The plugin deletes the members first, which the triggers refuse, so a
+  hook deletes the workspace and lets the database's cascade take the rest.
+- **Deleting needs a sign-in from the last day.** It cannot be undone and takes everyone's place with it,
+  so like a first password it has to outlast a stolen cookie.
+- **Limits are on owning, not belonging.** One person can own 10 workspaces and be invited to any number,
+  because nobody chooses their invitations. A workspace holds 500 members.
+
+**An invitation goes to an address, and only an account that has proven that address can see or take it.**
+For anyone else it answers 404, like one that does not exist. Someone with no account follows the link to
+the sign-in page, and from there to making an account, with the address already filled in. The sign-up
+above proves it, and the invitation is waiting.
+
+- **An invitation makes an admin or a member.** An owner is made afterwards, by another owner, so that a
+  mistyped address cannot hand a workspace to a stranger.
+- **The email can reach anyone, so it can say little of what a stranger chose.** The subject is fixed. The
+  workspace's name cannot hold a link or characters that hide text, and the sender appears by the address
+  they proved, never by the name they chose.
+- **Sending is limited** to 30 an hour and 100 a day per person and 3 a day per address, whoever sends
+  them. That last one sits well under what an address can be sent in all, so nobody can use up what it has
+  left for a sign-up code or a password reset by inviting it.
+- **It lasts 7 days.** Asking again replaces it, and the old link stops working. The cron deletes expired
+  ones, since an address in one may have nothing to do with this deployment.
+- **It outlives the person who sent it** leaving the workspace, until someone withdraws it or it expires.
+  They may have gone for reasons that have nothing to do with it, and admins can see and withdraw it.
+- **A deployment that sends no email has no invitations,** and the page says why. A workspace there stays
+  one person.
 
 ## Who may sign in
 
@@ -400,11 +462,16 @@ holds it, in D1.
   `passkey_removed`, `two_factor_enabled`, `two_factor_disabled` (`operator` when `two-factor:remove` did
   it), `recovery_codes_replaced`, `provider_linked`, `provider_unlinked`, and `sessions_revoked` for
   someone ending a session elsewhere.
+- **Workspaces:** `workspace_created`, `workspace_renamed`, `workspace_deleted`, `member_invited`,
+  `invitation_canceled`, `invitation_accepted`, `invitation_declined`, `member_role_changed`,
+  `member_removed` and `member_left`.
 - **The deployment:** `app_added`, from `apps:add`. Who ran it is between them and Cloudflare.
 
 Each row has the time, and where it applies the account, the app's own id, the IP address and a device
-name such as "Chrome on Windows". Workspaces will add a workspace and an actor, and their admins will
-see their workspace's events.
+name such as "Chrome on Windows". A workspace's rows also have its id, and its name and any role in
+`detail`, which is all that is left of it once it is deleted. There, `user_id` is who it happened to and
+`actor_id` who did it. A workspace's admins will see their workspace's events through an endpoint of its
+own.
 
 Not recorded: signing out, a refresh that changes nothing, and a refresh token reused, which the provider
 answers and revokes with no hook to hear it. A request stopped by the rate limit or Turnstile never gets
@@ -417,12 +484,15 @@ this far, which is what bounds the rows a person's account can collect.
   vary by accident.
 - **No addresses.** The account's id says who. A failed sign-in for an address with no account writes
   nothing at all: what someone typed may be a password in the wrong field, and there is no end to
-  addresses with no account for a stranger to send.
+  addresses with no account for a stranger to send. `member_invited` does not say who was invited, for
+  the same reason.
 - **No foreign keys.** A log someone can empty by deleting what it talks about is no log. Rows outlive
   an account until their ninety days are up. ID cannot delete an account yet; a privacy policy has to
   state this when it can.
 
-A person sees their last 50 events on their account page, and nobody can read anyone else's.
+A person sees their last 50 events on their account page: what happened to them, and what they did to
+someone else. Where someone else did it, they see who, and not that person's IP address or device. Nobody
+can read anyone else's.
 
 Every write happens after the response. A failed sign-in writes a row only for an address with an
 account, so a response that waited for the write would say which addresses have one, as sending email
@@ -458,7 +528,9 @@ the URL from forms sent before the page's script ran.
 of its own that can sign what a real one never would. `apps/web/e2e/passkeys.spec.ts` drives the pages
 with Chromium's WebAuthn and a virtual authenticator, which found someone with only a passkey being asked
 for a password on the way to an app. That authenticator answers the browser's offer under the email field
-by itself, so the list a person chooses from is the one part no test has seen.
+by itself, so no test sees the list a person chooses from. It was looked at once by hand, on staging on
+2026-11-04, with that authenticator in Chromium: the list names the address, choosing from it signs in, the
+button does too, and a key whose signature counter went backwards is refused.
 
 On 2026-11-04 Track's staging signed a browser in through ID's staging, both deployed Workers on Custom
 Domains of one zone: discovery, the code exchange and the JWKS from Track to ID, a refused person landing
@@ -470,7 +542,9 @@ On 2026-11-04 the same held on production: one sign-in through Track's button, t
 password, each with its own session and no provider tokens kept, signing out of ID ending both, signing out
 of Track leaving ID alone, and a refused person reaching `/no-access` from each. One run in between found
 signing out of ID leaving Track's session in place (see "A patched dependency"), and this was run again and
-held on ID 0.2.1, Track 0.26.2 and Agents 0.12.2, all on Better Auth 1.7.16.
+held on ID 0.2.1, Track 0.26.2 and Agents 0.12.2, all on Better Auth 1.7.16. The first real account came
+the same day, through Agents' button and GitHub: Agents and then Track each linked it to the account that
+person already had, by its verified address, with no new user in either.
 
 `apps/web/test/two-factor.test.ts` holds two-factor sign-in against an authenticator written from RFC 6238
 rather than with the library ID uses, so that a pass says an authenticator app can use what ID hands out,
@@ -480,7 +554,12 @@ turning it on ending Track's session, a right password stopping at `/two-factor`
 code going on to Track, the same code refused a second time within its window, a recovery code in capitals
 working, and turning it off leaving no keys behind.
 
+`apps/web/test/workspaces.test.ts` holds what the gate lets through and what the database refuses, for each
+role and for someone from outside, and `apps/web/e2e/workspaces.spec.ts` drives the pages: two people from an
+invitation to a removal, an invitation for someone else, a narrow screen, and signing in on the way to one.
+
 Still unproven:
 
+- A real passkey, from Windows Hello or a phone, rather than a virtual authenticator.
 - Cloudflare Access against a deployed ID.
 - The OpenID conformance suite, which Pocket ID has passed and ID should too.

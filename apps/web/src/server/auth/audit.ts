@@ -7,7 +7,7 @@ import {
 	NO_STORE_HEADERS,
 	sessionMiddleware,
 } from "better-auth/api";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { AuditActivity, AuditEventType } from "../../lib/audit-event";
 import { describeDevice } from "../../lib/device";
 import type { Database } from "../db";
@@ -15,6 +15,8 @@ import { schema } from "../db";
 
 export interface AuditDetails {
 	userId?: string | null | undefined;
+	actorId?: string | null | undefined;
+	workspaceId?: string | null | undefined;
 	app?: string | null | undefined;
 	ip?: string | null | undefined;
 	device?: string | null | undefined;
@@ -263,10 +265,28 @@ async function appNames(db: Database, apps: string[]): Promise<Map<string, strin
 	return new Map(rows.flatMap(({ app, name }) => (name ? [[app, name] as const] : [])));
 }
 
+/** Names the people in these events, as they are called now. */
+async function peopleNames(db: Database, people: string[]): Promise<Map<string, string>> {
+	if (people.length === 0) return new Map();
+	const rows = await db
+		.select({ id: schema.user.id, name: schema.user.name })
+		.from(schema.user)
+		.where(inArray(schema.user.id, people))
+		.all();
+	return new Map(rows.map(({ id, name }) => [id, name]));
+}
+
+/** One person's view of an event: what they did, or what someone else did to them. */
+function asSeenBy(me: string, event: typeof schema.auditEvent.$inferSelect) {
+	const byOther = event.actorId !== null && event.actorId !== me;
+	const other = byOther ? event.actorId : event.userId !== me ? event.userId : null;
+	return { byOther, other };
+}
+
 /**
- * Records what happens at paths that have no row to hook, and shows a person their own events. A
- * workspace's admins will see that workspace's events through their own endpoint, when there are
- * workspaces.
+ * Records what happens at paths that have no row to hook, and shows a person their own events: those
+ * that happened to them, and those they did to someone else. A workspace's admins will see that
+ * workspace's events through their own endpoint.
  */
 export function auditLog(db: Database, record: RecordEvent): BetterAuthPlugin {
 	return {
@@ -279,28 +299,37 @@ export function auditLog(db: Database, record: RecordEvent): BetterAuthPlugin {
 					for (const [name, value] of Object.entries(NO_STORE_HEADERS)) {
 						ctx.setHeader(name, value);
 					}
+					const me = ctx.context.session.user.id;
 					const events = await db
 						.select()
 						.from(schema.auditEvent)
-						.where(eq(schema.auditEvent.userId, ctx.context.session.user.id))
+						.where(or(eq(schema.auditEvent.userId, me), eq(schema.auditEvent.actorId, me)))
 						.orderBy(desc(schema.auditEvent.at))
 						.limit(ACTIVITY_LIMIT)
 						.all();
 					const names = await appNames(db, [
 						...new Set(events.flatMap(({ app }) => (app ? [app] : []))),
 					]);
+					const people = await peopleNames(db, [
+						...new Set(events.flatMap((event) => asSeenBy(me, event).other ?? [])),
+					]);
 					return {
-						events: events.map(
-							({ id, at, type, app, ip, device, detail }): AuditActivity => ({
+						events: events.map((event): AuditActivity => {
+							const { id, at, type, app, ip, device, detail } = event;
+							const { byOther, other } = asSeenBy(me, event);
+							return {
 								id,
 								at,
 								type,
 								app: app && (names.get(app) ?? app),
-								ip,
-								device,
+								// Where someone else did it, this is where they were, and not this person's to see.
+								ip: byOther ? null : ip,
+								device: byOther ? null : device,
 								detail,
-							}),
-						),
+								byOther,
+								other: other && (people.get(other) ?? null),
+							};
+						}),
 					};
 				},
 			),

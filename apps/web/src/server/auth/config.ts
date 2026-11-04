@@ -15,6 +15,7 @@ import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 import { TWO_FACTOR_CLOSED_PATHS, twoFactorPlugins } from "./two-factor";
+import { workspacePlugins } from "./workspaces";
 
 export interface AuthConfig {
 	db: Database;
@@ -34,6 +35,8 @@ export interface AuthConfig {
 	allowSignUpCode?: ((email: string) => Promise<boolean>) | undefined;
 	/** Whether an authenticator's code is being offered for the first time. Unchecked without it. */
 	firstUseOfCode?: ((key: string) => Promise<boolean>) | undefined;
+	/** Whether this person may send another invitation, to this address. Unlimited without it. */
+	allowInvitation?: ((inviterId: string, email: string) => Promise<boolean>) | undefined;
 	/** Puts Cloudflare Turnstile in front of the paths bots go for. Off without it. */
 	turnstileSecretKey?: string | undefined;
 	/** Refuses passwords known from breaches, by asking a service outside this deployment. */
@@ -67,8 +70,6 @@ const NO_TOKENS = {
 /**
  * Builds the Better Auth instance. Kept free of `cloudflare:workers` imports so the Better Auth
  * CLI can load it to generate the database schema.
- *
- * Workspaces are not here yet: they arrive with the migration that creates their tables.
  */
 export function createAuth(config: AuthConfig) {
 	const { mailer } = config;
@@ -194,6 +195,13 @@ export function createAuth(config: AuthConfig) {
 			// Before the provider, which must not see a session that a code is still owed for.
 			...twoFactorPlugins({ record, firstUseOfCode: config.firstUseOfCode }),
 			auditLog(config.db, record),
+			...workspacePlugins({
+				db: config.db,
+				baseURL: config.baseURL,
+				mailer,
+				record,
+				allowInvitation: config.allowInvitation,
+			}),
 			...(config.oidc ? oidcPlugins(config.db, config.oidc, record) : []),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.
 			tanstackStartCookies(),

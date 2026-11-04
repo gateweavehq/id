@@ -36,6 +36,20 @@
       "when": 1793817894515,
       "tag": "0004_two_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793826077875,
+      "tag": "0005_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793826084972,
+      "tag": "0006_workspace_keeps_an_owner",
+      "breakpoints": true
     }
   ]
 }
