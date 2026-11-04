@@ -37,12 +37,51 @@ Sign-up is open in Gateweave Cloud, behind Turnstile. A strange account gains no
 workspace app refuses non-members. On a self-hosted deployment, the first account owns the instance
 and sign-up then closes, leaving invitations as the way in, unless the owner opens it.
 
+## Sign-up
+
+**The address is proven before the account exists, and the password comes after that.**
+
+The usual form takes a name, an address and a password, then emails a link. That allows pre-account
+hijacking: a stranger signs up with someone else's address and their own password. When the real owner
+opens the link, the account is verified, and the stranger knows its password. Better Auth's link
+verification does not clear that password, so this form cannot be made safe by adding to it.
+
+So signing up has three steps, and only the last two touch the database's accounts:
+
+1. The person gives a name and an address, and ID emails a 6-digit code. The code is stored hashed, for
+   10 minutes and three tries.
+2. The code comes back. Only now does the account exist, and it is verified from its first row.
+3. The person chooses a password at `/welcome`. Leaving before this is fine: a password reset gives
+   the account its first password.
+
+Better Auth's `email-otp` plugin does steps 1 and 2. It is also a way to sign in, which ID does not
+want, because signing in with only a mailbox would skip the password and, later, two-factor.
+`apps/web/src/server/auth/sign-up.ts` holds it to signing up:
+
+- **A code never opens an account that exists.** An existing address gets an email that says so, with
+  no code. If a right code does arrive, because an account appeared while it was still good, it is
+  refused.
+- **Every other way in is closed.** `/sign-up/email`, link verification and the plugin's other paths
+  answer 404, and a database hook refuses any account that is not verified, which is what stops a
+  GitHub account whose address GitHub has not verified.
+- **Outside, an address with an account looks like one without.** Asking for a code and getting one
+  wrong answer the same. "Expired" and "too many attempts" would give it away, so they use the same
+  words too. The answers are not equal in time: telling them apart that way takes many measurements
+  of codes that each cost a Turnstile pass.
+- **Codes per address are capped** before a code is stored, because each new code resets the attempts.
+  That holds the guesses against one address to about one chance in 33,000 a day, however many clients
+  ask.
+
+The first password goes through `/account/first-password`, which needs a session from the last day.
+Setting a password outlasts a stolen cookie, so an old session cannot do it.
+
 ## Who may sign in
 
 Three rules, in this order:
 
-1. **The address is verified.** No token ever goes out for an unverified address. Apps and Cloudflare
-   Access trust the `email` claim, and rules such as "anyone at acme.com" depend on it.
+1. **The address is verified.** No account exists without that, as above, and the check stands
+   anyway. Apps and Cloudflare Access trust the `email` claim, and rules such as "anyone at acme.com"
+   depend on it.
 2. **The person belongs.** A workspace's app admits only that workspace's members.
 3. **The app's rule passes.** An admin can narrow an app to some of its workspace's groups.
 

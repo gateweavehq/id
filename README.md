@@ -8,8 +8,8 @@ Gateweave ID is part of [Gateweave](https://gateweave.com), the family of open-s
 that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq/track) and
 [Gateweave Agents](https://github.com/gateweavehq/agents).
 
-> **Status: early, and not usable yet.** All that works today is accounts: sign up, verify your
-> email, sign in, reset a password and see an account page. It does not issue tokens to other apps,
+> **Status: early, and not usable yet.** All that works today is accounts: sign up with a code sent
+> to your email, sign in, reset a password and see an account page. It does not issue tokens to other apps,
 > and it has no passkeys, workspaces or apps. Do not put anything that matters behind it.
 > [docs/architecture.md](docs/architecture.md) describes what it is being built to be, including
 > what is decided and what is still unproven.
@@ -31,11 +31,10 @@ pnpm dev:setup   # creates .dev.vars with a random secret, migrates the local da
 pnpm dev         # http://localhost:4730
 ```
 
-Sign up at `/login?mode=sign-up`. ID signs nobody in until their address is verified, so
-`pnpm dev:setup` turns email on. Nothing is sent locally: each email is saved as a file under
-`apps/web/.wrangler/tmp/email`, and the terminal that runs `pnpm dev` prints its path. Open the
-verification link from the `.txt` file. To enable "Continue with GitHub", uncomment and fill in
-`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.dev.vars`.
+Sign up at `/signup`. Signing up takes a code sent by email, so `pnpm dev:setup` turns email on.
+Nothing is sent locally: each email is saved as a file under `apps/web/.wrangler/tmp/email`, and the
+terminal that runs `pnpm dev` prints its path. The code is in the `.txt` file. To enable "Continue
+with GitHub", uncomment and fill in `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.dev.vars`.
 
 `pnpm verify` runs everything CI does: lint, types, tests and a build. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for how the code is organized and

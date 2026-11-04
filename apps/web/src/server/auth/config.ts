@@ -5,7 +5,8 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
-import { passwordResetEmail, verificationEmail } from "../email/templates";
+import { passwordResetEmail } from "../email/templates";
+import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 
 export interface AuthConfig {
 	db: Database;
@@ -13,14 +14,16 @@ export interface AuthConfig {
 	baseURL?: string | undefined;
 	github?: { clientId: string; clientSecret: string } | undefined;
 	/**
-	 * Sends email. Without it, password reset is off and nobody's address is verified, so a server
-	 * without one is for trying ID out, not for people who rely on it.
+	 * Sends email. Without it there are no sign-up codes and no password reset, so the only way to
+	 * an account is GitHub.
 	 */
 	mailer?: Mailer | undefined;
 	/** Keeps work such as sending email going after the response, like `ctx.waitUntil`. */
 	runInBackground?: ((work: Promise<unknown>) => void) | undefined;
 	/** Where rate limits are counted. This isolate's memory without it. */
 	rateLimitStorage?: BetterAuthRateLimitOptions["customStorage"];
+	/** Whether one address may be sent another sign-up code. Unlimited without it. */
+	allowSignUpCode?: ((email: string) => Promise<boolean>) | undefined;
 }
 
 /**
@@ -38,6 +41,7 @@ export function createAuth(config: AuthConfig) {
 		baseURL: config.baseURL,
 		database: drizzleAdapter(config.db, { provider: "sqlite", schema }),
 		telemetry: { enabled: false },
+		disabledPaths: CLOSED_PATHS,
 		// Better Auth only turns its limiter on by itself when NODE_ENV is "production", which a
 		// Worker never sets. Its built-in rules allow 3 sign-ins per 10 seconds per client. It
 		// stays on in local dev too, so what works there works deployed.
@@ -52,19 +56,17 @@ export function createAuth(config: AuthConfig) {
 				// and Better Auth puts every request whose address it cannot trust in one bucket.
 				ipAddressHeaders: ["cf-connecting-ip"],
 			},
-			// Email goes out after the response. For password reset this also keeps the response
-			// time the same whether or not the account exists.
+			// Email goes out after the response. For password reset and sign-up codes this also keeps
+			// the response time the same whether or not the account exists.
 			...(config.runInBackground && {
 				backgroundTasks: { handler: config.runInBackground },
 			}),
 		},
 		emailAndPassword: {
 			enabled: true,
-			// ID's design depends on verified addresses: apps and Cloudflare Access trust the `email`
-			// claim of a token, and rules such as "anyone at acme.com" rest on it. So with a mailer,
-			// nobody signs in until they have opened the link sent to their address. Without one
-			// nobody could ever verify, and refusing everybody would make the server useless.
-			requireEmailVerification: Boolean(mailer),
+			// Accounts come from a sign-up code or GitHub. See "Sign-up" in docs/architecture.md.
+			disableSignUp: true,
+			requireEmailVerification: true,
 			...(mailer && {
 				sendResetPassword: async ({ user, url }) => {
 					await mailer.send({ to: user.email, ...passwordResetEmail({ url }) });
@@ -74,17 +76,22 @@ export function createAuth(config: AuthConfig) {
 			}),
 		},
 		socialProviders: config.github ? { github: config.github } : {},
-		emailVerification: mailer && {
-			sendVerificationEmail: async ({ user, url }) => {
-				await mailer.send({ to: user.email, ...verificationEmail({ url }) });
+		databaseHooks: {
+			user: {
+				create: {
+					// Apps and Cloudflare Access trust the `email` claim, and rules such as "anyone at
+					// acme.com" rest on it. A sign-up code proves the address before this runs, so what
+					// this refuses is a GitHub account whose address GitHub has not verified.
+					before: async (user) => {
+						if (!user.emailVerified) return false;
+					},
+				},
 			},
-			sendOnSignUp: true,
-			// Someone refused for lack of verification gets a fresh link.
-			sendOnSignIn: true,
-			autoSignInAfterVerification: true,
-			expiresIn: VERIFICATION_LIFETIME_SECONDS,
 		},
+		hooks: signUpHooks(config.allowSignUpCode),
 		plugins: [
+			...(mailer ? [signUpCodes(mailer)] : []),
+			firstPassword(),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.
 			tanstackStartCookies(),
 		],
@@ -95,6 +102,3 @@ export type Auth = ReturnType<typeof createAuth>;
 
 /** What a client may send to an auth path that has no rule of its own: Better Auth's default. */
 export const DEFAULT_AUTH_LIMIT = { window: 10, max: 100 };
-
-/** How long an emailed verification link works. */
-export const VERIFICATION_LIFETIME_SECONDS = 24 * 60 * 60;

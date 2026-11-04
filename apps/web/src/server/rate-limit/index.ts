@@ -22,6 +22,15 @@ export const EMAILS_PER_RECIPIENT: Rule[] = [
 	{ window: 24 * 60 * 60, max: 10 },
 ];
 
+/**
+ * Sign-up codes one address can be sent. With three attempts at each 6-digit code, that holds the
+ * guesses against an address to about one chance in 33,000 a day.
+ */
+export const SIGN_UP_CODES_PER_ADDRESS: Rule[] = [
+	{ window: 60 * 60, max: 5 },
+	{ window: 24 * 60 * 60, max: 10 },
+];
+
 const local = new LocalLimiter();
 
 /**
@@ -62,6 +71,12 @@ export function limitRecipients(mailer: Mailer | undefined): Mailer | undefined 
 			await mailer.send(email);
 		},
 	};
+}
+
+/** Whether an address may be sent another sign-up code, however many clients ask for one. */
+export async function allowSignUpCode(email: string): Promise<boolean> {
+	const { allowed } = await consumeDurably(`sign-up-code:${email}`, SIGN_UP_CODES_PER_ADDRESS);
+	return allowed;
 }
 
 async function consumeDurably(key: string, rules: Rule[]): Promise<Decision> {

@@ -16,8 +16,8 @@ if (existsSync(DEV_VARS)) {
 		DEV_VARS,
 		template
 			.replace(/^BETTER_AUTH_SECRET=.*$/m, `BETTER_AUTH_SECRET=${secret}`)
-			// ID signs nobody in with an unverified address, so local dev has email on. Nothing is
-			// sent: each message is saved to a file under apps/web/.wrangler/tmp/email.
+			// Signing up takes a code sent by email, so local dev has email on. Nothing is sent: each
+			// message is saved to a file under apps/web/.wrangler/tmp/email.
 			.replace(/^# EMAIL_FROM=.*$/m, "EMAIL_FROM=Gateweave ID <id@example.com>"),
 	);
 	console.log("Created .dev.vars with a fresh BETTER_AUTH_SECRET and email on.");

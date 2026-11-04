@@ -10,3 +10,10 @@ export const getAuthOptions = createServerFn({ method: "GET" }).handler(async ()
 	const { emailEnabled, githubEnabled } = await import("#/server/auth");
 	return { github: githubEnabled, email: emailEnabled };
 });
+
+/** Whether the signed-in person can sign in with a password. */
+export const hasPassword = createServerFn({ method: "GET" }).handler(async () => {
+	const { getAuth } = await import("#/server/auth");
+	const accounts = await getAuth().api.listUserAccounts({ headers: getRequestHeaders() });
+	return accounts.some((account) => account.providerId === "credential");
+});

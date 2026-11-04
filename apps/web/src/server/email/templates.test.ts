@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { passwordResetEmail, verificationEmail } from "./templates";
+import { accountExistsEmail, passwordResetEmail, signUpCodeEmail } from "./templates";
 
 describe("passwordResetEmail", () => {
 	it("links to the reset and says what happens", () => {
@@ -12,13 +12,25 @@ describe("passwordResetEmail", () => {
 	});
 });
 
-describe("verificationEmail", () => {
-	it("links to the verification and says how long it works", () => {
-		const url = "https://id.example.com/api/auth/verify-email?token=t&callbackURL=%2F";
-		const email = verificationEmail({ url });
-		expect(email.subject).toBe("Verify your email for Gateweave ID");
-		expect(email.text).toContain(url);
-		expect(email.text).toContain("24 hours");
-		expect(email.html).toContain(`href="${url.replace("&", "&amp;")}"`);
+describe("signUpCodeEmail", () => {
+	it("shows the code in every part and says how long it works", () => {
+		const email = signUpCodeEmail({ code: "123456", minutes: 10 });
+		expect(email.subject).toBe("123456 is your Gateweave ID code");
+		expect(email.text).toContain("123456");
+		expect(email.text).toContain("10 minutes");
+		expect(email.html).toContain("123456");
+	});
+});
+
+describe("accountExistsEmail", () => {
+	it("offers signing in and a new password, and no code", () => {
+		const signInUrl = "https://id.example.com/login?email=a%40b.c";
+		const resetUrl = "https://id.example.com/forgot-password?email=a%40b.c";
+		const email = accountExistsEmail({ signInUrl, resetUrl });
+		expect(email.subject).toBe("You already have a Gateweave ID account");
+		expect(email.text).toContain(signInUrl);
+		expect(email.text).toContain(resetUrl);
+		expect(email.html).toContain(`href="${signInUrl}"`);
+		expect(email.text).not.toMatch(/\b\d{6}\b/);
 	});
 });

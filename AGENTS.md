@@ -69,8 +69,10 @@ These are load-bearing. Breaking one breaks users' data or security, usually sil
 1. **The check for who may sign in fails closed.** When it cannot name the app or the person, it
    refuses. Its tests always include someone who is refused: a version of it once let everyone
    through while every test for permitted people still passed.
-2. **No token goes out for an unverified address.** Apps and Cloudflare Access trust the `email`
-   claim. With email configured, `requireEmailVerification` stays on.
+2. **No account exists with an unverified address.** Apps and Cloudflare Access trust the `email`
+   claim. An address is proven before its account exists, and a password comes only after that, so
+   nobody can prepare an account on someone else's address. A sign-up code never opens an account that
+   already exists. See "Sign-up" in [docs/architecture.md](docs/architecture.md).
 3. **The permanent values change only by a deliberate, documented decision.** The issuer, the signing
    algorithm, pairwise subjects and their secret, token prefixes and the passkey `rpID` are in
    [docs/architecture.md](docs/architecture.md). Changing one signs everybody out of every app or

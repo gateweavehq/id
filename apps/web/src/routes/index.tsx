@@ -25,9 +25,7 @@ function Home() {
 						<Link to="/login">Sign in</Link>
 					</Button>
 					<Button asChild variant="outline" className="flex-1">
-						<Link to="/login" search={{ mode: "sign-up" }}>
-							Create an account
-						</Link>
+						<Link to="/signup">Create an account</Link>
 					</Button>
 				</div>
 			</div>
