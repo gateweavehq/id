@@ -6,6 +6,7 @@ import { codeSentSince, signIn, watch } from "./helpers";
 
 const PASSWORD = "a-long-password-for-tests";
 const NEW_PASSWORD = "another-long-password";
+const ELSEWHERE = "203.0.113.50";
 
 test("from signing up to ending a session elsewhere", async ({ page, browser, baseURL }) => {
 	const problems = await watch(page);
@@ -39,7 +40,12 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 	});
 
 	const sessions = page.getByRole("region", { name: "Where you are signed in" });
-	const elsewhereContext = await browser.newContext({ baseURL });
+	// Another device is another client. Tests run side by side from one address, and three sign-ins
+	// in ten seconds is all it gets, which this test needs for itself.
+	const elsewhereContext = await browser.newContext({
+		baseURL,
+		extraHTTPHeaders: { "cf-connecting-ip": ELSEWHERE },
+	});
 	const elsewhere = await elsewhereContext.newPage();
 
 	await test.step("see another device, and sign it out", async () => {
@@ -47,6 +53,7 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await page.reload({ waitUntil: "networkidle" });
 		await expect(sessions.getByRole("listitem")).toHaveCount(2);
 		await expect(sessions.getByText("This device")).toHaveCount(1);
+		await expect(sessions.getByText(`from ${ELSEWHERE}`)).toBeVisible();
 		// The newest session, and the one that is not this device, is the only one with a button.
 		await sessions.getByRole("listitem").getByRole("button", { name: "Sign out" }).click();
 		await expect(sessions.getByRole("listitem")).toHaveCount(1);
