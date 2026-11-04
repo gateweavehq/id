@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { convertV4MiniflareOptions, Miniflare, type V4ModuleDefinition } from "miniflare";
@@ -58,6 +58,30 @@ function siteverify(host: string, body: string): Response {
 		default:
 			return Response.json({ success: false, "error-codes": ["invalid-input-response"] });
 	}
+}
+
+/** Passwords the stand-in for Have I Been Pwned treats specially. Any other has not been seen. */
+export const PWNED_PASSWORDS = {
+	breached: "a-password-seen-in-a-breach",
+	serviceDown: "a-password-while-the-service-is-down",
+	noAnswer: "a-password-while-the-service-hangs",
+};
+
+function sha1(password: string): string {
+	return createHash("sha1").update(password).digest("hex").toUpperCase();
+}
+
+/** The range API: the suffixes of every password whose SHA-1 starts with this prefix. */
+async function pwnedRange(prefix: string): Promise<Response> {
+	const startsHere = (password: string) => sha1(password).startsWith(prefix);
+	if (startsHere(PWNED_PASSWORDS.serviceDown)) return new Response("Down", { status: 503 });
+	if (startsHere(PWNED_PASSWORDS.noAnswer)) {
+		await new Promise((resolve) => setTimeout(resolve, 6000));
+	}
+	const known = startsHere(PWNED_PASSWORDS.breached)
+		? `${sha1(PWNED_PASSWORDS.breached).slice(5)}:42\r\n`
+		: "";
+	return new Response(`${known}0000000000000000000000000000000000A:1\r\n`);
 }
 
 /** Who the stand-in for GitHub says someone is. */
@@ -143,7 +167,7 @@ function builtModules(): V4ModuleDefinition[] {
  * ID needs no outside service for sign-in, so code that only works because local dev can reach
  * itself fails here instead of in production. Email is on unless `email` is false, and lands in
  * `emails()`. With `turnstile`, Siteverify answers: see `TURNSTILE_TOKENS`. With `github`, GitHub
- * does: see `gitHubCode`.
+ * does: see `gitHubCode`. With `breachedPasswords`, Have I Been Pwned does: see `PWNED_PASSWORDS`.
  *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
@@ -155,7 +179,14 @@ export async function startId(
 		email = true,
 		turnstile = false,
 		github = false,
-	}: { isolates?: number; email?: boolean; turnstile?: boolean; github?: boolean } = {},
+		breachedPasswords = false,
+	}: {
+		isolates?: number;
+		email?: boolean;
+		turnstile?: boolean;
+		github?: boolean;
+		breachedPasswords?: boolean;
+	} = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
 	const outbound: string[] = [];
@@ -196,6 +227,7 @@ export async function startId(
 									GITHUB_CLIENT_SECRET: GITHUB_CLIENT.secret,
 								}
 							: {}),
+						...(breachedPasswords ? { CHECK_BREACHED_PASSWORDS: "1" } : {}),
 					},
 					serviceBindings: { EMAIL: "outbox" },
 					d1Databases: { DB: "id-test" },
@@ -210,6 +242,8 @@ export async function startId(
 						}
 						const answer = github ? await gitHub(request) : null;
 						if (answer) return answer;
+						const range = /^https:\/\/api\.pwnedpasswords\.com\/range\/(.+)$/.exec(request.url);
+						if (breachedPasswords && range?.[1]) return pwnedRange(range[1]);
 						return new Response("Outbound requests are blocked in this test", { status: 502 });
 					},
 				})),

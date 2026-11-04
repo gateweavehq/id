@@ -40,6 +40,7 @@ function buildAuth() {
 		rateLimitStorage: authRateLimits,
 		allowSignUpCode,
 		turnstileSecretKey: turnstile?.secretKey,
+		checkBreachedPasswords: env.CHECK_BREACHED_PASSWORDS === "1",
 	});
 }
 

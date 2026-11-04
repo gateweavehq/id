@@ -18,5 +18,10 @@ declare namespace Cloudflare {
 		 */
 		TURNSTILE_SITE_KEY?: string;
 		TURNSTILE_SECRET_KEY?: string;
+		/**
+		 * `"1"` refuses passwords known from breaches. This sends the first five characters of a
+		 * password's SHA-1 to Have I Been Pwned, so a deployment has to choose it.
+		 */
+		CHECK_BREACHED_PASSWORDS?: string;
 	}
 }
