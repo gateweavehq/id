@@ -280,18 +280,18 @@ describe("adding a passkey", () => {
 		expect(await passkeysOf(person)).toEqual([]);
 	});
 
-	it.each<[string, Ceremony, number]>([
-		["did not check who is there", { userVerified: false }, 400],
-		["was made for another site", { origin: "https://elsewhere.test" }, 500],
-		["was made for another relying party", { rpId: "elsewhere.test" }, 500],
-		["signed another challenge", { challenge: "bm90LXRoZS1jaGFsbGVuZ2U" }, 500],
-		["claims to be a sign-in", { type: "webauthn.get" }, 500],
-	])("refuses a passkey that %s", async (_, ceremony, status) => {
+	it.each<[string, Ceremony]>([
+		["did not check who is there", { userVerified: false }],
+		["was made for another site", { origin: "https://elsewhere.test" }],
+		["was made for another relying party", { rpId: "elsewhere.test" }],
+		["signed another challenge", { challenge: "bm90LXRoZS1jaGFsbGVuZ2U" }],
+		["claims to be a sign-in", { type: "webauthn.get" }],
+	])("refuses a passkey that %s", async (_, ceremony) => {
 		const person = await newPersonWithAPassword();
 
 		const added = await tryToRegister(person, new FakeAuthenticator(origin), ceremony);
 
-		expect(added.status).toBe(status);
+		expect(added.status).toBe(400);
 		expect(await passkeysOf(person)).toEqual([]);
 	});
 
@@ -416,17 +416,17 @@ describe("signing in with a passkey", () => {
 		await expectNotSignedIn(await tryToSignIn(authenticator, { counter: 5 }), 400);
 	});
 
-	it.each<[string, Ceremony, number]>([
-		["did not check who is there", { userVerified: false }, 401],
-		["was made for another site", { origin: "https://elsewhere.test" }, 400],
-		["was made for another relying party", { rpId: "elsewhere.test" }, 400],
-		["signed another challenge", { challenge: "bm90LXRoZS1jaGFsbGVuZ2U" }, 400],
-		["claims to be a registration", { type: "webauthn.create" }, 400],
-	])("refuses an answer that %s", async (_, ceremony, status) => {
+	it.each<[string, Ceremony]>([
+		["did not check who is there", { userVerified: false }],
+		["was made for another site", { origin: "https://elsewhere.test" }],
+		["was made for another relying party", { rpId: "elsewhere.test" }],
+		["signed another challenge", { challenge: "bm90LXRoZS1jaGFsbGVuZ2U" }],
+		["claims to be a registration", { type: "webauthn.create" }],
+	])("refuses an answer that %s", async (_, ceremony) => {
 		const person = await newPersonWithAPassword();
 		const { authenticator } = await withPasskey(person);
 
-		await expectNotSignedIn(await tryToSignIn(authenticator, ceremony), status);
+		await expectNotSignedIn(await tryToSignIn(authenticator, ceremony), 400);
 	});
 
 	it("refuses a passkey nobody has registered", async () => {

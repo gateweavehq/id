@@ -19,6 +19,11 @@ updates:
       prefix: chore
       include: scope
     groups:
+      # These move together, and one of them is patched, so a pull request of their own shows up with
+      # a failing install until someone moves the patch (see "A patched dependency" in
+      # docs/architecture.md).
+      better-auth:
+        patterns: ["better-auth", "@better-auth/*"]
       dependencies:
         patterns: ["*"]
         update-types: [minor, patch]

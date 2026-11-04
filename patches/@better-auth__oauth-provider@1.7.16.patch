@@ -1,7 +1,7 @@
-diff --git a/dist/authorize-B1Bc3IL6.mjs b/dist/authorize-B1Bc3IL6.mjs
-index b60fcb71b9818b580a7407f301f237f430647486..ac6f83f5349ef116d8282dd10c6b19aba75248a7 100644
---- a/dist/authorize-B1Bc3IL6.mjs
-+++ b/dist/authorize-B1Bc3IL6.mjs
+diff --git a/dist/authorize-BnSO_Slc.mjs b/dist/authorize-BnSO_Slc.mjs
+index ad180217ca750e4dcba1992ebc9a588b1d80a196..d0bd03481f8e165429a60d3128b7d65d47ec10c5 100644
+--- a/dist/authorize-BnSO_Slc.mjs
++++ b/dist/authorize-BnSO_Slc.mjs
 @@ -2911,7 +2911,7 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
  				},
  				body: new URLSearchParams({ logout_token: token }),
