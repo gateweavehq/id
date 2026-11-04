@@ -24,7 +24,7 @@ function nonceOf(policy: string | null): string {
 
 /** Every script tag in a page, as the opening tag. */
 function scriptTags(html: string): string[] {
-	return html.match(/<script\b[^>]*>/g) ?? [];
+	return html.match(/<script\b[^>]*>/gi) ?? [];
 }
 
 /** The code in the email an address was sent, once it has gone out after the response. */
