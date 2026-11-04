@@ -1,7 +1,8 @@
 // Registers a first-party app in a deployment's database, and prints its client id and secret, once.
 //
 //   pnpm --filter @gateweave/id-web apps:add --app track --name "Gateweave Track" \
-//     --redirect-uri https://track.example.com/api/auth/oauth2/callback/gateweave-id \
+//     --redirect-uri https://track.example.com/api/auth/callback/oidc \
+//     --backchannel-logout-uri https://track.example.com/api/auth/backchannel-logout/oidc \
 //     --env staging
 //
 // Without --env it uses the top-level environment. With --local it uses the local dev database.

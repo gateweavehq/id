@@ -135,6 +135,59 @@ test("someone new makes an account on the way to the app", async ({ page }) => {
 	expect(problems).toEqual([]);
 });
 
+/**
+ * Holds back the document the provider's answer sent the browser to. The auth client has already
+ * set off for it, so a page that went on to navigate by itself would have the time to do so here.
+ */
+async function holdBack(page: Page, url: string | RegExp) {
+	await page.route(url, async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+		await route.continue();
+	});
+}
+
+/** Every address the page shows from now on, including ones the router moves it to. */
+function addressesOf(page: Page) {
+	const addresses: URL[] = [];
+	page.on("framenavigated", (frame) => {
+		if (frame === page.mainFrame()) addresses.push(new URL(frame.url()));
+	});
+	return addresses;
+}
+
+test("signing in leaves the way to the provider's answer alone", async ({ page }) => {
+	await holdBack(page, `${APP.redirectUri}*`);
+	const addresses = addressesOf(page);
+
+	await goToSignIn(page);
+	await fillSignInForm(page);
+	await expectBackAtTheApp(page);
+
+	expect(addresses.map((address) => address.pathname)).not.toContain("/account");
+});
+
+test("signing up leaves the way to the provider's answer alone", async ({ page }) => {
+	const email = `held-back-${Date.now()}@example.com`;
+	await holdBack(page, /\/welcome\?/);
+	const addresses = addressesOf(page);
+
+	await goToSignIn(page);
+	await page.getByRole("link", { name: "Create an account" }).click();
+	const since = Date.now() - 1000;
+	await page.getByLabel("Name").fill("Grace Hopper");
+	await page.getByLabel("Email").fill(email);
+	await page.getByRole("button", { name: "Send me a code" }).click();
+	await expect(page.getByRole("heading", { name: "Enter the code" })).toBeVisible();
+	await page.getByLabel("Code").fill(await codeSentSince(since, email));
+	await page.getByRole("button", { name: "Create account" }).click();
+	await expect(page.getByRole("heading", { name: "Choose a password" })).toBeVisible();
+
+	// The app's signed request is still in the address, on every step to this one.
+	const welcome = addresses.filter((address) => address.pathname === "/welcome");
+	expect(welcome.length).toBeGreaterThan(0);
+	for (const address of welcome) expect(address.searchParams.has("sig")).toBe(true);
+});
+
 test("someone with an account signs in, and the request arrives as it left", async ({ page }) => {
 	const problems = await watch(page);
 	// Reads as a number, a boolean and JSON, none of which the signature would forgive.
