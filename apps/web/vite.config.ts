@@ -19,9 +19,14 @@ export default defineConfig(({ command }) => ({
 			viteEnvironment: { name: "ssr" },
 			// The browser tests keep their data apart from `pnpm dev` (see e2e/server.mjs).
 			persistState: process.env.ID_STATE_DIR ? { path: process.env.ID_STATE_DIR } : true,
-			// In dev only: `secrets.required` would drop the optional settings in .dev.vars.
 			config: (config) => {
-				if (command !== "serve") return;
+				// The browser tests' build has email on, because signing up takes a code (see
+				// e2e/build.mjs). Nothing is sent: each message is saved to a file.
+				const e2e = process.env.ID_E2E
+					? { vars: { ...config.vars, EMAIL_FROM: "Gateweave ID <id@example.com>" } }
+					: {};
+				if (command !== "serve") return e2e;
+				// In dev only: `secrets.required` would drop the optional settings in .dev.vars.
 				return { secrets: { required: devSecrets(config.secrets?.required ?? [], devVarsKeys()) } };
 			},
 		}),

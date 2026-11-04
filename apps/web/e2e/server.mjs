@@ -13,7 +13,7 @@ process.chdir(root);
 const state = resolve(root, ".wrangler", "e2e-state");
 rmSync(state, { recursive: true, force: true });
 
-// Only the secret matters: a build reads nothing else from here. An existing .dev.vars (at the
+// Only the secret matters: a preview reads nothing else from here. An existing .dev.vars (at the
 // repository root, next to wrangler.jsonc) is left alone.
 const devVars = resolve(root, "../../.dev.vars");
 if (!existsSync(devVars)) {

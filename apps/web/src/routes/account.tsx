@@ -1,7 +1,10 @@
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { AccountPassword } from "#/components/account-password";
+import { AccountProfile } from "#/components/account-profile";
+import { AccountSessions } from "#/components/account-sessions";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
-import { getSession } from "#/lib/session";
+import { getSession, hasPassword } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 
 export const Route = createFileRoute("/account")({
@@ -10,11 +13,13 @@ export const Route = createFileRoute("/account")({
 		if (!session) throw redirect({ to: "/login", search: { redirect: "/account" } });
 		return { session };
 	},
+	loader: async () => ({ hasPassword: await hasPassword() }),
 	component: AccountPage,
 });
 
 function AccountPage() {
 	const { session } = Route.useRouteContext();
+	const data = Route.useLoaderData();
 	const router = useRouter();
 	useDocumentTitle("Account");
 
@@ -35,16 +40,10 @@ function AccountPage() {
 				</Button>
 			</header>
 
-			<dl className="divide-y rounded-lg border text-sm">
-				<div className="flex items-center justify-between gap-4 px-4 py-3">
-					<dt className="text-muted-foreground">Name</dt>
-					<dd className="font-medium">{session.user.name}</dd>
-				</div>
-				<div className="flex items-center justify-between gap-4 px-4 py-3">
-					<dt className="text-muted-foreground">Email</dt>
-					<dd className="font-medium">{session.user.email}</dd>
-				</div>
-			</dl>
+			<AccountProfile name={session.user.name} email={session.user.email} />
+			<AccountPassword email={session.user.email} hasPassword={data.hasPassword} />
+			{/* A changed password replaces this session, and with it what the list has to show. */}
+			<AccountSessions key={session.session.id} currentId={session.session.id} />
 		</main>
 	);
 }

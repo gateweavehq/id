@@ -3,7 +3,12 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 
 export const getSession = createServerFn({ method: "GET" }).handler(async () => {
 	const { getAuth } = await import("#/server/auth");
-	return getAuth().api.getSession({ headers: getRequestHeaders() });
+	const result = await getAuth().api.getSession({ headers: getRequestHeaders() });
+	if (!result) return null;
+	// This ends up in the page. The cookie keeps the token out of reach of scripts, and no page needs
+	// it.
+	const { token: _token, ...session } = result.session;
+	return { user: result.user, session };
 });
 
 export const getAuthOptions = createServerFn({ method: "GET" }).handler(async () => {

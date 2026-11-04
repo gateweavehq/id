@@ -1,24 +1,8 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { watch } from "./helpers";
 
 // A page's policy can only be judged in a browser. A script it blocks leaves a page that looks right
 // and does nothing, and the Worker tests see the same HTML either way.
-
-const VIOLATION = "Policy violation:";
-
-/** Everything the browser refused or that threw, from here on. */
-async function watch(page: Page): Promise<string[]> {
-	const problems: string[] = [];
-	page.on("pageerror", (error) => problems.push(error.message));
-	page.on("console", (message) => {
-		if (message.text().startsWith(VIOLATION)) problems.push(message.text());
-	});
-	await page.addInitScript((prefix) => {
-		document.addEventListener("securitypolicyviolation", (event) => {
-			console.error(`${prefix} ${event.violatedDirective} blocked ${event.blockedURI}`);
-		});
-	}, VIOLATION);
-	return problems;
-}
 
 for (const path of ["/", "/login", "/signup", "/forgot-password", "/does-not-exist"]) {
 	test(`${path} loads with nothing refused`, async ({ page }) => {
