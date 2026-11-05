@@ -24,6 +24,12 @@ export const ONLY_THE_OWNER_MAKES_WORKSPACES = {
 	message: "On this server, only the person who runs it makes workspaces.",
 };
 
+export const WORKSPACE_CANNOT_INVITE = {
+	code: "WORKSPACE_CANNOT_INVITE",
+	message:
+		"Sign-up is closed on this server, and the person who runs it is not an admin of this workspace, so it cannot invite anyone for now.",
+};
+
 const NO_INVITATION = {
 	code: "INVITATION_NOT_FOUND",
 	message:
@@ -49,7 +55,12 @@ export async function mayMakeAccount(db: Database, email: string): Promise<boole
 			OR EXISTS (SELECT 1 FROM deployment_invitation WHERE email = ${address} AND expires_at > ${now})
 			OR EXISTS (
 				SELECT 1 FROM invitation
-				WHERE email = ${address} AND status = 'pending' AND expires_at > ${now}
+				JOIN member ON member.organization_id = invitation.organization_id
+				WHERE invitation.email = ${address}
+					AND invitation.status = 'pending'
+					AND invitation.expires_at > ${now}
+					AND member.user_id = (SELECT owner_id FROM deployment WHERE id = 1)
+					AND member.role IN ('owner', 'admin')
 			)
 		) AS allowed
 	`);
@@ -70,6 +81,26 @@ export async function mayMakeWorkspaces(db: Database, userId: string): Promise<b
 		)
 		.get();
 	return row !== undefined;
+}
+
+/**
+ * Whether this workspace's invitations can go out. On a closed server they are a way in, and a workspace
+ * made while sign-up was open is its maker's, so closing sign-up has to close it too. Asking this of the
+ * workspace and not the address tells an admin nothing about who has an account here.
+ */
+export async function mayInviteTo(db: Database, workspaceId: string): Promise<boolean> {
+	const row = await db.get<{ allowed: number }>(sql`
+		SELECT (
+			COALESCE((SELECT sign_up FROM deployment WHERE id = 1), 'closed') = 'open'
+			OR EXISTS (
+				SELECT 1 FROM member
+				WHERE organization_id = ${workspaceId}
+					AND user_id = (SELECT owner_id FROM deployment WHERE id = 1)
+					AND role IN ('owner', 'admin')
+			)
+		) AS allowed
+	`);
+	return row?.allowed === 1;
 }
 
 export async function signUpState(db: Database): Promise<SignUpState> {

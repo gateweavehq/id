@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { PERSON } from "./fixtures";
 import { linkSentSince, signIn, watch } from "./helpers";
-import { address, clientAddress, newDevice, PASSWORD, signUp } from "./people";
+import { address, clientAddress, makeWorkspace, newDevice, PASSWORD, signUp } from "./people";
 
 // Who runs a server, inviting someone to it. What the server holds to is in test/deployment.test.ts.
 // The first account in this server's database is the seeded person, so they own it. Sign-up stays as
@@ -87,6 +87,23 @@ test("anyone else finds no such page, and no way to it from their account", asyn
 	await page.goto("/server", { waitUntil: "networkidle" });
 	await expect(page.getByRole("heading", { name: "This server", exact: true })).toHaveCount(0);
 	await expect(page.getByLabel("Their email")).toHaveCount(0);
+});
+
+test("a workspace that cannot invite says why, and offers no form", async ({ page }) => {
+	const problems = await watch(page);
+	await signUp(page, "Their Own Workspace", address("no-invites"));
+	const slug = await makeWorkspace(page, "Closed Door");
+	await expect(page.getByLabel("Their email")).toBeVisible();
+
+	// Sign-up stays open here, as above, so the server's answer is what changes.
+	await page.route("**/api/auth/workspaces/get*", async (route) => {
+		const response = await route.fetch();
+		await route.fulfill({ response, json: { ...(await response.json()), mayInvite: false } });
+	});
+	await page.goto(`/workspaces/${slug}`);
+	await expect(page.getByText("so it cannot invite anyone for now")).toBeVisible();
+	await expect(page.getByLabel("Their email")).toBeHidden();
+	expect(problems).toEqual([]);
 });
 
 test("a link with nothing in it says it does not work", async ({ page }) => {

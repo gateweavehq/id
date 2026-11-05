@@ -28,7 +28,12 @@ import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { workspaceInvitationEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
-import { mayMakeWorkspaces, ONLY_THE_OWNER_MAKES_WORKSPACES } from "./deployment";
+import {
+	mayInviteTo,
+	mayMakeWorkspaces,
+	ONLY_THE_OWNER_MAKES_WORKSPACES,
+	WORKSPACE_CANNOT_INVITE,
+} from "./deployment";
 import {
 	type Member,
 	memberOf,
@@ -203,6 +208,9 @@ function gateRules({ db, allowInvitation }: WorkspacesConfig): Record<string, Ch
 			async ({ organizationId, email, role }, session, ctx) => {
 				requireRight(can(await requireMember(db, organizationId, session), "invite"));
 				requireFreshToGrant(role, session, ctx);
+				if (!(await mayInviteTo(db, organizationId))) {
+					throw APIError.from("FORBIDDEN", WORKSPACE_CANNOT_INVITE);
+				}
 				if (allowInvitation && !(await allowInvitation(session.user.id, email.toLowerCase()))) {
 					throw APIError.from("TOO_MANY_REQUESTS", {
 						code: "TOO_MANY_INVITATIONS",
@@ -433,6 +441,7 @@ function getWorkspace(db: Database, appsEnabled: boolean) {
 				you: { memberId: you.id, role: you.role },
 				members,
 				invitations,
+				mayInvite: can(you, "invite") && (await mayInviteTo(db, workspace.id)),
 				apps,
 				groups,
 				appsEnabled,
