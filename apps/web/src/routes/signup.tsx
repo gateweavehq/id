@@ -6,6 +6,7 @@ import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
 import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { LiveButton } from "#/components/live-button";
+import { NewAccountForm } from "#/components/new-account-form";
 import { SignInDivider } from "#/components/sign-in-divider";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -108,6 +109,36 @@ function SignUpPage() {
 		const failure = await sendCode(person.email);
 		if (failure) setError(failure);
 		else setNotice("A new code is on its way. The last one no longer works.");
+	}
+
+	if (!options.email && options.signUp === "unclaimed") {
+		return (
+			<AuthPage
+				agreeing
+				title="Claim this server"
+				description="It has no accounts yet. The first one owns it, and decides who else can join. This server does not send email, so nothing checks the address: use your real one."
+			>
+				{options.github && (
+					<>
+						<GitHubSignIn next={next} search={search} />
+						<SignInDivider />
+					</>
+				)}
+				<NewAccountForm
+					askAddress
+					action="Claim this server"
+					submit={async (person) => {
+						const result = await authClient.$fetch("/deployment/claim", {
+							method: "POST",
+							body: person,
+						});
+						if (result.error) return result.error.message ?? "Something went wrong";
+						await router.navigate({ to: "/server" });
+						return null;
+					}}
+				/>
+			</AuthPage>
+		);
 	}
 
 	if (!options.email) {

@@ -13,9 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as ConsentRouteImport } from './routes/consent'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as JoinRouteImport } from './routes/join'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as NoAccessRouteImport } from './routes/no-access'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as ServerRouteImport } from './routes/server'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
 import { Route as WelcomeRouteImport } from './routes/welcome'
@@ -45,6 +47,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JoinRoute = JoinRouteImport.update({
+  id: '/join',
+  path: '/join',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -58,6 +65,11 @@ const NoAccessRoute = NoAccessRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServerRoute = ServerRouteImport.update({
+  id: '/server',
+  path: '/server',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignupRoute = SignupRouteImport.update({
@@ -107,9 +119,11 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRoute
   '/consent': typeof ConsentRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/no-access': typeof NoAccessRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
   '/two-factor': typeof TwoFactorRoute
   '/welcome': typeof WelcomeRoute
@@ -124,9 +138,11 @@ export interface FileRoutesByTo {
   '/account': typeof AccountRoute
   '/consent': typeof ConsentRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/no-access': typeof NoAccessRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
   '/two-factor': typeof TwoFactorRoute
   '/welcome': typeof WelcomeRoute
@@ -142,9 +158,11 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/consent': typeof ConsentRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/no-access': typeof NoAccessRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
   '/two-factor': typeof TwoFactorRoute
   '/welcome': typeof WelcomeRoute
@@ -161,9 +179,11 @@ export interface FileRouteTypes {
     | '/account'
     | '/consent'
     | '/forgot-password'
+    | '/join'
     | '/login'
     | '/no-access'
     | '/reset-password'
+    | '/server'
     | '/signup'
     | '/two-factor'
     | '/welcome'
@@ -178,9 +198,11 @@ export interface FileRouteTypes {
     | '/account'
     | '/consent'
     | '/forgot-password'
+    | '/join'
     | '/login'
     | '/no-access'
     | '/reset-password'
+    | '/server'
     | '/signup'
     | '/two-factor'
     | '/welcome'
@@ -195,9 +217,11 @@ export interface FileRouteTypes {
     | '/account'
     | '/consent'
     | '/forgot-password'
+    | '/join'
     | '/login'
     | '/no-access'
     | '/reset-password'
+    | '/server'
     | '/signup'
     | '/two-factor'
     | '/welcome'
@@ -213,9 +237,11 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   ConsentRoute: typeof ConsentRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
   NoAccessRoute: typeof NoAccessRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  ServerRoute: typeof ServerRoute
   SignupRoute: typeof SignupRoute
   TwoFactorRoute: typeof TwoFactorRoute
   WelcomeRoute: typeof WelcomeRoute
@@ -256,6 +282,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/join': {
+      id: '/join'
+      path: '/join'
+      fullPath: '/join'
+      preLoaderRoute: typeof JoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -275,6 +308,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/server': {
+      id: '/server'
+      path: '/server'
+      fullPath: '/server'
+      preLoaderRoute: typeof ServerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/signup': {
@@ -341,9 +381,11 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   ConsentRoute: ConsentRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
   NoAccessRoute: NoAccessRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  ServerRoute: ServerRoute,
   SignupRoute: SignupRoute,
   TwoFactorRoute: TwoFactorRoute,
   WelcomeRoute: WelcomeRoute,

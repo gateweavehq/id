@@ -13,6 +13,7 @@ async function pruneOlder(
 		| typeof schema.oauthRefreshToken
 		| typeof schema.oauthAccessToken
 		| typeof schema.invitation
+		| typeof schema.deploymentInvitation
 		| typeof schema.auditEvent,
 	column: Column,
 	before: Date,
@@ -45,6 +46,7 @@ export async function pruneExpired(db: Database): Promise<void> {
 	await pruneOlder(db, schema.oauthRefreshToken, schema.oauthRefreshToken.expiresAt, now);
 	await pruneOlder(db, schema.oauthAccessToken, schema.oauthAccessToken.expiresAt, now);
 	await pruneOlder(db, schema.invitation, schema.invitation.expiresAt, now);
+	await pruneOlder(db, schema.deploymentInvitation, schema.deploymentInvitation.expiresAt, now);
 	await pruneOlder(
 		db,
 		schema.auditEvent,
