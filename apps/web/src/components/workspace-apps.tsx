@@ -335,8 +335,8 @@ function AppRow({
 						/>
 					</div>
 					<div className="flex flex-wrap gap-2">
-						<LiveButton type="submit" size="sm" disabled={pending}>
-							Save {app.name}
+						<LiveButton type="submit" size="sm" disabled={pending} aria-label={`Save ${app.name}`}>
+							Save
 						</LiveButton>
 						<Button type="button" variant="ghost" size="sm" onClick={() => turnTo(null)}>
 							Cancel
@@ -362,8 +362,14 @@ function AppRow({
 						The app stops working until it has the new secret. People stay signed in to it.
 					</p>
 					<div className="flex flex-wrap gap-2">
-						<Button variant="destructive" size="sm" disabled={pending} onClick={onReplace}>
-							Yes, replace the secret of {app.name}
+						<Button
+							variant="destructive"
+							size="sm"
+							disabled={pending}
+							aria-label={`Yes, replace the secret of ${app.name}`}
+							onClick={onReplace}
+						>
+							Yes, replace the secret
 						</Button>
 						<Button variant="ghost" size="sm" onClick={() => turnTo(null)}>
 							Keep it
@@ -377,8 +383,14 @@ function AppRow({
 						This cannot be undone. Everyone is signed out of it at once.
 					</p>
 					<div className="flex flex-wrap gap-2">
-						<Button variant="destructive" size="sm" disabled={pending} onClick={onDelete}>
-							Yes, delete {app.name}
+						<Button
+							variant="destructive"
+							size="sm"
+							disabled={pending}
+							aria-label={`Yes, delete ${app.name}`}
+							onClick={onDelete}
+						>
+							Yes, delete
 						</Button>
 						<Button variant="ghost" size="sm" onClick={() => turnTo(null)}>
 							Keep it
