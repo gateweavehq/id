@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
@@ -7,6 +7,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
+import { carriesASignature } from "#/lib/oauth-flow";
 import { useDocumentTitle } from "#/lib/title";
 
 // Better Auth checks the emailed link and sends the browser here with the token, or with an
@@ -18,6 +19,14 @@ const resetSearch = z.object({
 
 export const Route = createFileRoute("/reset-password")({
 	validateSearch: resetSearch,
+	beforeLoad: ({ search }) => {
+		if (carriesASignature(search)) {
+			throw redirect({
+				to: "/reset-password",
+				search: { token: search.token, error: search.error },
+			});
+		}
+	},
 	// The token is in this page's URL, so it must not travel on as a referrer.
 	head: () => ({ meta: [{ name: "referrer", content: "no-referrer" }] }),
 	component: ResetPasswordPage,

@@ -116,6 +116,48 @@ describe("the page", () => {
 		expect(response.status).toBe(307);
 		expect(response.headers.get("location")).toContain("/login");
 	});
+
+	// The auth client would send a made-up signature back with every POST from these pages, and the
+	// provider would refuse them, so an app's link could make Take back fail until the address changed.
+	it.each(["/account", "/workspaces", "/workspaces/some-slug", "/invitations/some-id"])(
+		"drops a signature nothing brought to %s",
+		async (path) => {
+			const person = await newPerson();
+			const headers = { cookie: person.cookie, "cf-connecting-ip": person.client };
+			const response = await id.fetch(`${origin}${path}?sig=made-up&ba_param=sig&ba_iat=1`, {
+				headers,
+			});
+			expect(response.status).toBe(307);
+			expect(new URL(response.headers.get("location") ?? "", origin).pathname).toBe(path);
+			expect(response.headers.get("location")).not.toContain("sig");
+		},
+	);
+
+	it("drops a signature from the pages for a forgotten password, and keeps what they use", async () => {
+		const forgot = await id.fetch(
+			`${origin}/forgot-password?email=someone%40example.com&sig=made-up&ba_param=sig`,
+		);
+		expect(forgot.status).toBe(307);
+		const forgotTo = new URL(forgot.headers.get("location") ?? "", origin);
+		expect(forgotTo.pathname).toBe("/forgot-password");
+		expect(forgotTo.searchParams.get("email")).toContain("someone");
+		expect(forgotTo.searchParams.has("sig")).toBe(false);
+
+		const reset = await id.fetch(`${origin}/reset-password?token=a-token&sig=made-up&ba_param=sig`);
+		expect(reset.status).toBe(307);
+		const resetTo = new URL(reset.headers.get("location") ?? "", origin);
+		expect(resetTo.pathname).toBe("/reset-password");
+		expect(resetTo.searchParams.get("token")).toContain("a-token");
+		expect(resetTo.searchParams.has("sig")).toBe(false);
+	});
+
+	it("leaves a query the auth client would not send back", async () => {
+		const person = await newPerson();
+		const response = await id.fetch(`${origin}/account?sig=only-this`, {
+			headers: { cookie: person.cookie, "cf-connecting-ip": person.client },
+		});
+		expect(response.status).toBe(200);
+	});
 });
 
 describe("changing a password", () => {

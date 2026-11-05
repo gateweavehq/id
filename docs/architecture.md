@@ -272,7 +272,8 @@ It runs in two places:
 Someone out of a workspace also loses what they already hold from its apps, in the same statement: a
 trigger on `member` deletes their access tokens, refresh tokens and consent for them. Without that, an
 access token would carry on for up to an hour. A token request that passes the check at the very moment
-someone is removed can still leave an access token for up to that hour, and the next refresh is refused.
+someone is removed writes its tokens after they have gone, with no consent behind them, and the trigger
+in "Taking an app back" deletes each one as it arrives.
 
 **Consent.** First-party apps skip the consent screen. Workspace apps never do, because `skip_consent`
 on them would let any workspace's admin receive a member's address silently. The screen names the app,
@@ -456,10 +457,47 @@ who may sign in trusts.
 An app belongs to its workspace, so it stays when the admin who added it leaves. If they run its host,
 the members who agreed to it can still reach it until someone deletes it.
 
+### Taking an app back
+
+Someone can see the apps they allowed on their account page and take one back, which ends its access
+without leaving the workspace. `allowed-apps.ts` has a list and a take-back, for this person's own consents
+to a workspace's apps. First-party apps do not ask, so they are not on it, and the same answer comes back
+for an app that does not exist, is someone else's to take back or was never allowed, so nobody learns which.
+
+- **All of it, at once.** The take-back deletes the person's access tokens, refresh tokens and consent for
+  that app in one batch, the same three tables as the trigger below. The provider's `/oauth2/delete-consent`
+  removes only the row, and a refresh never reads it, so that path is closed. `get-consent`, `get-consents`
+  and `update-consent` are closed too, as nothing here uses them.
+- **A code handed out earlier buys only what they agree to again.** Tokens take their scopes from the code,
+  not from the consent, so the token hook also asks whether the consent covers those scopes, for a workspace's
+  app. A code the app has not exchanged yet is refused, unless they have since allowed it at least those
+  scopes, when it gets what they have just agreed to. A code is good for ten minutes and for one try. The
+  check for who may sign in cannot do this, as it also runs before anyone has been asked.
+- **A token that crosses with it goes as it arrives.** The hook reads the consent before the provider writes
+  the tokens, so a take-back can land in between. Migration `0008` has triggers that delete any token of a
+  workspace's app written with no consent behind it. The app is told of a token that does not work, as every
+  use reads its row, and nothing is left that nobody could see on their list or end. The ID token in the same
+  answer still arrives, and says only what the app was allowed a moment before.
+- **The list says what the app holds.** The provider leaves older tokens at their old scopes when someone
+  answers again, so an app could ask for less, look harmless on the page and keep what it had. So in the same
+  migration, a consent whose scopes change ends the tokens from the old one, and the answer's own code buys
+  new ones. The same scopes in another order count as a change. A request caught at the very moment of that
+  change can fail, or leave a token at its old scopes for up to an hour, whose refresh is refused.
+- **One answer for each person and app.** Nothing in the provider stops two answers at once from making two
+  rows, and the list would then show the app twice, one of them wrong. So the same migration adds a unique
+  index, and the second of two answers at once fails.
+- **A link cannot make it fail.** The auth client sends a signed query back with every POST from the page it
+  is on, and an app can link to any page with one made up, which the provider would refuse until the address
+  changed. Pages no flow comes to drop it (`carriesASignature`).
+- **What it does not reach.** The app is not told, because back-channel logout for these apps is ID-20. What
+  it has seen stays with it, and so does any session it keeps of its own. The page says so before anyone
+  agrees to it.
+
 **Removal is in the database, not in hooks.** Migration `0007` has a trigger on `member` that ends what
 someone holds, and one on `organization` that deletes its apps, whose tokens and consents follow by their
 foreign keys. A hook would hold only for the paths someone remembered, and cascades from deleting a user
-or a workspace would pass it by.
+or a workspace would pass it by. Migration `0008` is there for the same reason: only the database can see
+both sides of a crossing.
 
 ## A patched dependency
 
@@ -530,8 +568,8 @@ holds it, in D1.
   wrong code, against the account it was for. `two_factor_asked` is a right password with a code still
   owed, which is not someone signing in, though someone who did not enter it will want to know.
 - **Apps:** `app_sign_in` when an app exchanges a code, the moment it learns who someone is, `refused`
-  by the check at authorization or on refresh, `consent_granted`, `consent_denied`, and `token_revoked`
-  when an app revokes a token. That last one names no person: an app's server is asking, and tokens are
+  by the check at authorization or on refresh, `consent_granted`, `consent_denied`, `consent_revoked` when
+  someone takes an app back, and `token_revoked` when an app revokes a token. That last one names no person: an app's server is asking, and tokens are
   stored hashed.
 - **Changes to an account:** `password_changed` (`first`, `changed`, `reset` or `removed`), `passkey_added`,
   `passkey_removed`, `two_factor_enabled`, `two_factor_disabled` (`operator` when `two-factor:remove` did

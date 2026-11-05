@@ -57,6 +57,13 @@
       "when": 1793834411011,
       "tag": "0007_workspace_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793875039562,
+      "tag": "0008_tokens_need_consent",
+      "breakpoints": true
     }
   ]
 }

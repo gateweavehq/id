@@ -162,6 +162,42 @@ test("an admin adds an app, and only members get in, once they agree", async ({
 		await expect(appHeading(bob)).toBeVisible();
 	});
 
+	await test.step("they can take it back, and it has to ask again", async () => {
+		// By a link an app could send, whose made-up signature would make the button fail if it stayed.
+		await bob.goto("/account?sig=made-up&ba_param=sig", { waitUntil: "networkidle" });
+		await expect(bob).toHaveURL(/\/account$/);
+		const allowed = bob.getByRole("list", { name: "Apps you allowed" });
+		await expect(allowed).toContainText("Field Notes");
+		await expect(allowed).toContainText(workspaceName);
+		await expect(allowed).toContainText("localhost:4733");
+		await expect(allowed).toContainText("See your email address");
+
+		const opener = bob.getByRole("button", { name: "Take back Field Notes", exact: true });
+		await opener.click();
+		await expect(bob.getByText("What it has already seen stays with it")).toBeVisible();
+		await bob.getByRole("button", { name: "Keep it" }).click();
+		await expect(bob.getByText("What it has already seen stays with it")).toHaveCount(0);
+		await expect(opener).toBeFocused();
+		await expect(allowed).toContainText("Field Notes");
+
+		await opener.click();
+		await bob.getByRole("button", { name: "Yes, take back Field Notes" }).click();
+		await expect(allowed).toHaveCount(0);
+		await expect(bob.getByRole("status")).toHaveText("Field Notes can no longer see your account.");
+		await expect(bob.getByRole("heading", { name: "Apps you allowed" })).toBeFocused();
+
+		await bob.reload({ waitUntil: "networkidle" });
+		await expect(bob.getByText("The ones you allow are listed here")).toBeVisible();
+		await expect(bob.getByText("Stopped allowing Field Notes to see this account")).toBeVisible();
+
+		await goToSignIn(bob, clientId);
+		await expect(
+			bob.getByRole("heading", { name: "Allow Field Notes to use your account?" }),
+		).toBeVisible();
+		await bob.getByRole("button", { name: "Allow" }).click();
+		await expect(appHeading(bob)).toBeVisible();
+	});
+
 	await test.step("a wrong link leads nobody signed out to the app", async () => {
 		const passerby = await newDevice(page, baseURL);
 		await goToSignIn(passerby, clientId, { code_challenge: "", code_challenge_method: "" });

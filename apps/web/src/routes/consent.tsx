@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { LiveButton } from "#/components/live-button";
+import { scopeWords } from "#/lib/allowed-app";
 import { authClient } from "#/lib/auth-client";
 import { getAppToAllow } from "#/lib/oauth-app";
 import { flowSearch, onItsWay } from "#/lib/oauth-flow";
@@ -14,20 +15,6 @@ const consentSearch = z.looseObject({
 	client_id: z.string().max(200).optional().catch(undefined),
 	scope: z.string().optional().catch(undefined),
 });
-
-/** What each scope lets an app have, in the words of the person it is about. */
-const SCOPES: Record<string, string> = {
-	profile: "See your name and picture",
-	email: "See your email address",
-	offline_access: "Keep you signed in while you are away",
-};
-
-function scopeWords(scope: string | undefined): string[] {
-	return (scope ?? "").split(" ").flatMap((name) => {
-		const words = Object.hasOwn(SCOPES, name) ? SCOPES[name] : undefined;
-		return words ? [words] : [];
-	});
-}
 
 /**
  * Asks whether an app may have what it asked for. First-party apps only come here when they ask to,
@@ -59,7 +46,7 @@ function ConsentPage() {
 	const [error, setError] = useState<ReactNode>(null);
 	const [pending, setPending] = useState(false);
 	const app = about.name ?? "This app";
-	const scopes = scopeWords(search.scope);
+	const scopes = scopeWords((search.scope ?? "").split(" "));
 	useDocumentTitle("Allow access");
 
 	async function answer(accept: boolean) {

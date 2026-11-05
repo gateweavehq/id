@@ -57,3 +57,48 @@ export async function maySignIn(
 		.get();
 	return member !== undefined;
 }
+
+/**
+ * The provider's adapter encodes the list, and the column encodes that again, so a read here gets text.
+ * Read with care: a row that holds no list still names an app someone can take back, and allows nothing.
+ */
+export function scopesIn(stored: unknown): string[] {
+	try {
+		const parsed: unknown = typeof stored === "string" ? JSON.parse(stored) : stored;
+		return Array.isArray(parsed) ? parsed.filter((scope) => typeof scope === "string") : [];
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Whether what someone told a workspace's app still covers what it is about to get tokens for. It
+ * cannot go in the check above, which also runs before anyone has been asked. Tokens take their scopes
+ * from the code, not from the consent, so without this a code handed out before they took the app back
+ * would buy tokens, and if they came back and allowed less, it would buy what they had just refused.
+ * A first-party app is not asked about, so there is nothing to stand.
+ */
+export async function stillAllowed(
+	db: Database,
+	{
+		user,
+		app,
+		scopes,
+	}: {
+		user: { id?: unknown } | null | undefined;
+		app: AppIdentity | undefined;
+		scopes: string[];
+	},
+): Promise<boolean> {
+	if (!app) return false;
+	if (!app.workspace) return true;
+	if (typeof user?.id !== "string" || !user.id) return false;
+	const consent = await db
+		.select({ scopes: schema.oauthConsent.scopes })
+		.from(schema.oauthConsent)
+		.where(and(eq(schema.oauthConsent.clientId, app.app), eq(schema.oauthConsent.userId, user.id)))
+		.get();
+	if (!consent) return false;
+	const allowed = scopesIn(consent.scopes);
+	return scopes.every((scope) => allowed.includes(scope));
+}

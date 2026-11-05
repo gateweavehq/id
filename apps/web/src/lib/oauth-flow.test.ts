@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	asksForNewAccount,
+	carriesASignature,
 	flowSearch,
 	inFlow,
 	linkExpired,
@@ -37,6 +38,15 @@ describe("a page on the way to an app", () => {
 		expect(inFlow({ client_id: "app" })).toBe(false);
 		// Repeating the name must not make a page think it has one.
 		expect(inFlow({ sig: ["a", "b"] })).toBe(false);
+	});
+
+	it("is told from any other page the way the auth client tells it", () => {
+		expect(carriesASignature(signed)).toBe(true);
+		// The client goes by the names, so what they hold makes no difference to it.
+		expect(carriesASignature({ sig: ["a", "b"], ba_param: "sig" })).toBe(true);
+		expect(carriesASignature({ sig: "a" })).toBe(false);
+		expect(carriesASignature({ ba_param: "sig" })).toBe(false);
+		expect(carriesASignature({ client_id: "app" })).toBe(false);
 	});
 
 	it("takes its signed query along, and not its own message", () => {

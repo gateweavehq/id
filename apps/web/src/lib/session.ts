@@ -14,13 +14,13 @@ export const getSession = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const getAuthOptions = createServerFn({ method: "GET" }).handler(async () => {
-	const { emailEnabled, githubEnabled, passkeysEnabled, turnstileSiteKey } = await import(
-		"#/server/auth"
-	);
+	const { emailEnabled, githubEnabled, oidcEnabled, passkeysEnabled, turnstileSiteKey } =
+		await import("#/server/auth");
 	return {
 		github: githubEnabled,
 		email: emailEnabled,
 		passkeys: passkeysEnabled,
+		apps: oidcEnabled,
 		turnstileSiteKey,
 	};
 });

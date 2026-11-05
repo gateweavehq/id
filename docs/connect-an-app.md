@@ -86,16 +86,25 @@ seems to go nowhere, try it signed in as a member, and you will see the error.
 `prompt=none` follows the same rule. A member gets the usual answer, with a code or an error. Someone
 signed out is asked to sign in instead of your app getting `login_required`, and then goes on to your app.
 
-## When someone leaves
+## When someone leaves or takes your app back
 
-When someone leaves a workspace or is removed, they lose its apps at once. Their access tokens, refresh
-tokens and consent are deleted, so anything your app does with those tokens starts failing. If they
-come back, they are asked again.
+When someone leaves a workspace or is removed, they lose its apps at once. Anyone can also take your app
+back from their account page, and stay in the workspace. Either way their access tokens, refresh tokens
+and consent are deleted, so anything your app does with those tokens starts failing, and a code you have
+not exchanged yet is refused, unless they have since allowed your app at least its scopes. If they come
+back, they are asked again.
+
+When someone answers your consent screen with a different list of scopes, the tokens you hold for them
+end, on every device. That happens when you ask for a scope they have not allowed, with or without
+`prompt=consent`, and with `prompt=consent` when the same scopes come in another order. Their answer
+replaces the old list rather than adding to it, so ask for everything you need each time: a request that
+leaves out `offline_access` gets no refresh token. The code from that answer buys new tokens, so sign them
+in with it.
 
 Your app is not told, and its own sessions are its own to end. **If your app keeps people signed in
 longer than an access token lasts, use `offline_access` and refresh, and end the session when a refresh
-fails.** Without that, someone removed from the workspace stays signed in to your app until its own
-session ends. Back-channel logout is not available to apps a workspace adds yet.
+fails.** Without that, someone who has left the workspace or taken your app back stays signed in to your
+app until its own session ends. Back-channel logout is not available to apps a workspace adds yet.
 
 ## Changing it later
 

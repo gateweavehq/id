@@ -7,6 +7,7 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { WorkspaceApps } from "#/components/workspace-apps";
 import { authClient } from "#/lib/auth-client";
+import { carriesASignature } from "#/lib/oauth-flow";
 import { getAuthOptions, getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 import {
@@ -22,7 +23,8 @@ import {
 } from "#/lib/workspace";
 
 export const Route = createFileRoute("/workspaces/$slug")({
-	beforeLoad: async ({ params }) => {
+	beforeLoad: async ({ params, search }) => {
+		if (carriesASignature(search)) throw redirect({ to: "/workspaces/$slug", params });
 		if (!(await getSession())) {
 			throw redirect({ to: "/login", search: { redirect: `/workspaces/${params.slug}` } });
 		}

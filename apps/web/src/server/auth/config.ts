@@ -9,6 +9,7 @@ import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { passwordResetEmail } from "../email/templates";
+import { allowedAppsPlugin } from "./allowed-apps";
 import { auditDatabaseHooks, auditLog, auditRecorder, whereFrom } from "./audit";
 import { breachedPasswords } from "./breached-passwords";
 import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
@@ -209,6 +210,7 @@ export function createAuth(config: AuthConfig) {
 						...oidcPlugins(config.db, config.oidc, record),
 						// With no provider, no app could sign anyone in.
 						workspaceAppsPlugin({ db: config.db, issuer: config.oidc.issuer, record }),
+						allowedAppsPlugin({ db: config.db, record }),
 					]
 				: []),
 			// Must stay last: forwards Set-Cookie headers from server-side auth calls.

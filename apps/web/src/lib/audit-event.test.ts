@@ -35,6 +35,7 @@ describe("describeActivity", () => {
 		["app_changed", "Changed the app Tool"],
 		["app_secret_replaced", "Replaced the secret of Tool"],
 		["app_deleted", "Deleted the app Tool"],
+		["consent_revoked", "Stopped allowing Tool to see this account"],
 	])("says what %s was, by the name it had", (type, words) => {
 		const detail = JSON.stringify({ workspace: "Acme", name: "Tool" });
 		expect(describeActivity(activity({ type, detail, app: "client-id" }))).toBe(words);

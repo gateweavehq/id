@@ -4,6 +4,7 @@ import { AuthPage } from "#/components/auth-page";
 import { LiveButton } from "#/components/live-button";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
+import { carriesASignature } from "#/lib/oauth-flow";
 import { getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 import { type InvitationForYou, roleName, workspaceFailure } from "#/lib/workspace";
@@ -13,7 +14,8 @@ import { type InvitationForYou, roleName, workspaceFailure } from "#/lib/workspa
  * sees of an invitation that does not exist, which is why this page has to say whose account it is.
  */
 export const Route = createFileRoute("/invitations/$id")({
-	beforeLoad: async ({ params }) => {
+	beforeLoad: async ({ params, search }) => {
+		if (carriesASignature(search)) throw redirect({ to: "/invitations/$id", params });
 		const session = await getSession();
 		if (!session) {
 			throw redirect({ to: "/login", search: { redirect: `/invitations/${params.id}` } });
