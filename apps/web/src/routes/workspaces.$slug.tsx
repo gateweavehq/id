@@ -6,6 +6,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { WorkspaceApps } from "#/components/workspace-apps";
+import { WorkspaceGroups } from "#/components/workspace-groups";
 import { authClient } from "#/lib/auth-client";
 import { carriesASignature } from "#/lib/oauth-flow";
 import { getAuthOptions, getSession } from "#/lib/session";
@@ -111,6 +112,7 @@ function WorkspacePage() {
 					{can(details.you, "rename") && <RenameWorkspace details={details} reload={load} />}
 					<Members details={details} reload={load} />
 					{can(details.you, "invite") && <Invitations details={details} reload={load} />}
+					{details.appsEnabled && <WorkspaceGroups details={details} reload={load} />}
 					{details.appsEnabled && can(details.you, "manageApps") && (
 						<WorkspaceApps details={details} reload={load} />
 					)}

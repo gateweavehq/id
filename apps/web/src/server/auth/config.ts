@@ -17,6 +17,7 @@ import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 import { TWO_FACTOR_CLOSED_PATHS, twoFactorPlugins } from "./two-factor";
 import { workspaceAppsPlugin } from "./workspace-apps";
+import { workspaceGroupsPlugin } from "./workspace-groups";
 import { workspacePlugins } from "./workspaces";
 
 export interface AuthConfig {
@@ -210,6 +211,7 @@ export function createAuth(config: AuthConfig) {
 						...oidcPlugins(config.db, config.oidc, record),
 						// With no provider, no app could sign anyone in.
 						workspaceAppsPlugin({ db: config.db, issuer: config.oidc.issuer, record }),
+						workspaceGroupsPlugin({ db: config.db, record }),
 						allowedAppsPlugin({ db: config.db, record }),
 					]
 				: []),

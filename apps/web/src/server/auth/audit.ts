@@ -12,6 +12,7 @@ import type { AuditActivity, AuditEventType } from "../../lib/audit-event";
 import { describeDevice } from "../../lib/device";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { maySignIn } from "./who-may-sign-in";
 import { isAWorkersAddress } from "./workers-address";
 
 export interface AuditDetails {
@@ -268,13 +269,26 @@ async function appNames(db: Database, apps: string[]): Promise<Map<string, strin
 }
 
 /** The workspaces someone is in now. */
-async function workspacesOf(db: Database, userId: string): Promise<Set<string>> {
-	const rows = await db
-		.select({ workspaceId: schema.member.organizationId })
-		.from(schema.member)
-		.where(eq(schema.member.userId, userId))
-		.all();
-	return new Set(rows.map(({ workspaceId }) => workspaceId));
+/**
+ * A workspace's app is called something only to those who may sign in to it, as on the page that asks
+ * them. Someone it turned away has its id, which should not get them its name.
+ */
+async function appsThatMayBeNamed(
+	db: Database,
+	user: { id: string; emailVerified: boolean },
+	events: { app: string | null; workspaceId: string | null }[],
+): Promise<Set<string>> {
+	const apps = new Map(
+		events.flatMap(({ app, workspaceId }) =>
+			app && workspaceId ? [[app, workspaceId] as const] : [],
+		),
+	);
+	const allowed = await Promise.all(
+		[...apps].map(async ([app, workspace]) =>
+			(await maySignIn(db, { user, app: { app, workspace } })) ? [app] : [],
+		),
+	);
+	return new Set(allowed.flat());
 }
 
 /** Names the people in these events, as they are called now. */
@@ -322,7 +336,7 @@ export function auditLog(db: Database, record: RecordEvent): BetterAuthPlugin {
 					const names = await appNames(db, [
 						...new Set(events.flatMap(({ app }) => (app ? [app] : []))),
 					]);
-					const workspaces = await workspacesOf(db, me);
+					const nameable = await appsThatMayBeNamed(db, ctx.context.session.user, events);
 					const people = await peopleNames(db, [
 						...new Set(events.flatMap((event) => asSeenBy(me, event).other ?? [])),
 					]);
@@ -334,13 +348,11 @@ export function auditLog(db: Database, record: RecordEvent): BetterAuthPlugin {
 								id,
 								at,
 								type,
-								// A workspace's app is called something only to its members, as on the page that
-								// asks them. Someone it turned away has its id, which should not get them its name,
-								// and its id alone means nothing to anyone once it is gone.
+								// Its id alone means nothing to anyone once a workspace's app has gone.
 								app:
 									app &&
 									(workspaceId
-										? workspaces.has(workspaceId)
+										? nameable.has(app)
 											? (names.get(app) ?? null)
 											: null
 										: (names.get(app) ?? app)),

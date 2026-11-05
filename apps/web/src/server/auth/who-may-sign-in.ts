@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, exists, notExists, or, sql } from "drizzle-orm";
 import type { Database } from "../db";
 import { schema } from "../db";
 
@@ -50,12 +50,47 @@ export async function maySignIn(
 	if (user.emailVerified !== true) return false;
 	if (!app.workspace) return true;
 	if (typeof user.id !== "string" || !user.id) return false;
-	const member = await db
-		.select({ id: schema.member.id })
-		.from(schema.member)
-		.where(and(eq(schema.member.organizationId, app.workspace), eq(schema.member.userId, user.id)))
+	const { member, workspaceAppGroup: named, workspaceGroupMember: held } = schema;
+	const admitted = await db
+		.select({ id: member.id })
+		.from(member)
+		.where(
+			and(
+				eq(member.organizationId, app.workspace),
+				eq(member.userId, user.id),
+				// An app narrowed to groups with nobody in them admits nobody. One query, since this runs on
+				// every token and every step of an authorization.
+				or(
+					notExists(db.select({ one: sql`1` }).from(named).where(eq(named.clientId, app.app))),
+					exists(
+						db
+							.select({ one: sql`1` })
+							.from(named)
+							.innerJoin(held, eq(held.groupId, named.groupId))
+							.where(and(eq(named.clientId, app.app), eq(held.memberId, member.id))),
+					),
+				),
+			),
+		)
 		.get();
-	return member !== undefined;
+	return admitted !== undefined;
+}
+
+/**
+ * The groups an app can be told of: this person's, in the app's own workspace and no other. They read
+ * by name, in a stable order, as an app would compare them.
+ */
+export async function groupsOf(db: Database, userId: string, workspace: string): Promise<string[]> {
+	const { member, workspaceGroup: group, workspaceGroupMember: held } = schema;
+	const rows = await db
+		.select({ name: group.name })
+		.from(held)
+		.innerJoin(group, eq(group.id, held.groupId))
+		.innerJoin(member, eq(member.id, held.memberId))
+		.where(and(eq(member.userId, userId), eq(group.organizationId, workspace)))
+		.orderBy(asc(group.name))
+		.all();
+	return rows.map(({ name }) => name);
 }
 
 /**

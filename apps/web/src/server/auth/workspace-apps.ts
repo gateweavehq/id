@@ -61,10 +61,19 @@ export async function appsOf(db: Database, workspaceId: string): Promise<Workspa
 		.where(eq(schema.oauthClient.referenceId, workspaceId))
 		.orderBy(asc(schema.oauthClient.createdAt))
 		.all();
+	const named = await db
+		.select({
+			clientId: schema.workspaceAppGroup.clientId,
+			groupId: schema.workspaceAppGroup.groupId,
+		})
+		.from(schema.workspaceAppGroup)
+		.where(eq(schema.workspaceAppGroup.organizationId, workspaceId))
+		.all();
 	return rows.map(({ clientId, name, redirectUris }) => ({
 		clientId,
 		name: name ?? "",
 		redirectUris: urisIn(redirectUris),
+		groups: named.filter((row) => row.clientId === clientId).map((row) => row.groupId),
 	}));
 }
 
