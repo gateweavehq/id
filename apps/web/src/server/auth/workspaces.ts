@@ -29,9 +29,11 @@ import type { Mailer } from "../email/mailer";
 import { workspaceInvitationEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
 import {
+	mayChangeRoleOf,
 	mayInviteTo,
 	mayMakeWorkspaces,
 	ONLY_THE_OWNER_MAKES_WORKSPACES,
+	SERVER_OWNER_STAYS_A_MEMBER,
 	WORKSPACE_CANNOT_INVITE,
 } from "./deployment";
 import {
@@ -256,6 +258,9 @@ function gateRules({ db, allowInvitation }: WorkspacesConfig): Record<string, Ch
 				const target = await requireTarget(db, organizationId, memberId);
 				requireRight(can(actor, "changeRole", { role: target.role, to: role }));
 				requireFreshToGrant(role, session, ctx);
+				if (!(await mayChangeRoleOf(db, organizationId, memberId))) {
+					throw APIError.from("FORBIDDEN", SERVER_OWNER_STAYS_A_MEMBER);
+				}
 				if (target.role === "owner" && role !== "owner") {
 					if ((await ownersOf(db, organizationId)) <= 1) {
 						throw APIError.from("BAD_REQUEST", LAST_OWNER);

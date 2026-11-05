@@ -107,8 +107,8 @@ export function createAuth(config: AuthConfig) {
 				// and Better Auth puts every request whose address it cannot trust in one bucket.
 				ipAddressHeaders: ["cf-connecting-ip"],
 			},
-			// Email goes out after the response. For password reset and sign-up codes this also keeps
-			// the response time the same whether or not the account exists.
+			// Email goes out after the response, so sending it is no part of how long an answer takes.
+			// `even-answer.ts` holds the rest of that time to a minimum.
 			...(config.runInBackground && {
 				backgroundTasks: { handler: config.runInBackground },
 			}),
