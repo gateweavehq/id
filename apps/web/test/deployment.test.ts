@@ -245,7 +245,7 @@ describe("a new deployment", () => {
 				.prepare("SELECT value FROM verification WHERE identifier LIKE ?")
 				.bind(`%${email}%`)
 				.all<{ value: string }>();
-			return results.map(({ value }) => value).sort();
+			return results.map(({ value }: { value: string }) => value).sort();
 		};
 
 		await Promise.all(Array.from({ length: SIGN_UP_CODES_AN_HOUR }, () => requestCode(email)));
