@@ -1,4 +1,4 @@
-/** Where this deployment's legal pages are. Whoever runs it sets them; see docs/self-hosting.md. */
+/** Where this deployment's legal pages are. Whoever runs it sets them; see "Legal pages" in docs/architecture.md. */
 export interface LegalLinks {
 	notice?: string;
 	privacy?: string;
