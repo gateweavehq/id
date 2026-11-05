@@ -5,6 +5,7 @@ import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { LiveButton } from "#/components/live-button";
 import { authClient } from "#/lib/auth-client";
+import { getAppToAllow } from "#/lib/oauth-app";
 import { flowSearch, inFlow, onItsWay, restartHref } from "#/lib/oauth-flow";
 import { getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
@@ -15,6 +16,7 @@ import { useDocumentTitle } from "#/lib/title";
  */
 export const Route = createFileRoute("/no-access")({
 	validateSearch: z.looseObject({
+		client_id: z.string().max(200).optional().catch(undefined),
 		redirect_uri: z.string().optional().catch(undefined),
 	}),
 	beforeLoad: async ({ search }) => {
@@ -22,12 +24,16 @@ export const Route = createFileRoute("/no-access")({
 		if (!session) throw redirect({ to: "/login", search: flowSearch(search) });
 		return { session };
 	},
+	loaderDeps: ({ search }) => ({ clientId: search.client_id }),
+	loader: ({ deps }) => (deps.clientId ? getAppToAllow({ data: deps.clientId }) : null),
 	component: NoAccessPage,
 });
 
 function NoAccessPage() {
 	const { session } = Route.useRouteContext();
 	const search = Route.useSearch();
+	// Nothing of an app someone may not know about, and no way there. An app everyone can use is ours.
+	const known = Route.useLoaderData();
 	const [error, setError] = useState<ReactNode>(null);
 	const [pending, setPending] = useState(false);
 	const flow = inFlow(search);
@@ -79,7 +85,7 @@ function NoAccessPage() {
 				<LiveButton className="w-full" disabled={pending} onClick={onUseAnotherAccount}>
 					Use another account
 				</LiveButton>
-				{flow && host && (
+				{flow && host && known && (
 					<LiveButton variant="outline" className="w-full" disabled={pending} onClick={onGoBack}>
 						Back to {host}
 					</LiveButton>

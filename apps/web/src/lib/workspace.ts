@@ -17,9 +17,18 @@ const SLUG_LIMIT = 40;
  */
 const HIDDEN_CHARACTERS = /[\p{Cc}\u00AD\u200B\u200E\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/u;
 
+/** A name with everything that only looks different taken out, for comparing with another. */
+export function comparableName(name: string): string {
+	return name
+		.normalize("NFKC")
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
 /**
  * A workspace's name goes into invitations, to addresses its members do not need to know. Letting it
- * hold a link or hidden characters would make those a way to send anyone anything from this domain.
+ * hold a link or hidden characters would make those a way to send anyone anything from this domain,
+ * and the same goes for sounding like the people who run it.
  */
 export const workspaceName = z
 	.string()
@@ -27,7 +36,8 @@ export const workspaceName = z
 	.max(NAME_LIMIT, `Enter a name of at most ${NAME_LIMIT} characters.`)
 	.refine((name) => name === name.trim(), "A name cannot start or end with a space.")
 	.refine((name) => !name.includes("://"), "A name cannot hold a link.")
-	.refine((name) => !HIDDEN_CHARACTERS.test(name), "A name cannot hold control characters.");
+	.refine((name) => !HIDDEN_CHARACTERS.test(name), "A name cannot hold control characters.")
+	.refine((name) => !comparableName(name).includes("gateweave"), "A name cannot hold Gateweave.");
 
 /** An app's name is shown to people when they are asked about it, so it follows the same rules. */
 export const appName = workspaceName;

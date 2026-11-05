@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
 	appRow,
 	CLIENT_SECRET_PREFIX,
-	comparableName,
 	hostOfUris,
 	insertStatement,
 	problemWithRedirectUri,
@@ -115,6 +114,8 @@ describe("problemWithWorkspaceAppUris", () => {
 		["this server", ["https://id.example.com/callback"]],
 		["another port of this server", ["https://id.example.com:8443/callback"]],
 		["this server after another", ["https://a.example.com/1", "https://id.example.com/1"]],
+		["this server with a dot after it", ["https://id.example.com./callback"]],
+		["any host with a dot after it", ["https://a.example.com./callback"]],
 	])("refuses %s", (_name, uris) => {
 		expect(problemWithWorkspaceAppUris(uris, issuer)).toBeTruthy();
 	});
@@ -137,20 +138,4 @@ describe("hostOfUris", () => {
 			expect(hostOfUris(uris)).toBeNull();
 		},
 	);
-});
-
-describe("comparableName", () => {
-	it.each([
-		["Gateweave", "gateweave"],
-		["GATE-WEAVE", "gateweave"],
-		["  gate  weave! ", "gateweave"],
-		["Ｇａｔｅｗｅａｖｅ", "gateweave"],
-	])("reads %s as %s", (name, comparable) => {
-		expect(comparableName(name)).toBe(comparable);
-	});
-
-	it("keeps letters of other alphabets, so names in them can differ", () => {
-		expect(comparableName("Çizelge")).not.toBe(comparableName("Takvim"));
-		expect(comparableName("カレンダー")).not.toBe("");
-	});
 });

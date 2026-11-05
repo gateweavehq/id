@@ -162,6 +162,8 @@ export function problemWithWorkspaceAppUris(uris: string[], issuer: string): str
 	const own = new URL(issuer);
 	for (const uri of uris) {
 		const url = new URL(uri);
+		// The same host to a browser, and not to anything here that compares it with another.
+		if (url.hostname.endsWith(".")) return `${uri} has a host that ends in a dot`;
 		// Other ports of this machine are other programs. Other ports of a real host are not to be trusted.
 		const local = own.hostname === "localhost" || own.hostname === "127.0.0.1";
 		if (local ? url.host === own.host : url.hostname === own.hostname) {
@@ -175,12 +177,4 @@ export function problemWithWorkspaceAppUris(uris: string[], issuer: string): str
 export function hostOfUris(uris: unknown): string | null {
 	const first = Array.isArray(uris) ? uris[0] : undefined;
 	return typeof first === "string" && URL.canParse(first) ? new URL(first).host : null;
-}
-
-/** A name with everything that only looks different taken out, for comparing with another. */
-export function comparableName(name: string): string {
-	return name
-		.normalize("NFKC")
-		.toLowerCase()
-		.replace(/[^\p{L}\p{N}]+/gu, "");
 }

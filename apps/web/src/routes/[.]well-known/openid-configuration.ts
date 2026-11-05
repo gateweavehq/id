@@ -9,7 +9,16 @@ export const Route = createFileRoute("/.well-known/openid-configuration")({
 				const { oauthProviderOpenIdConfigMetadata } = await import("@better-auth/oauth-provider");
 				const { getAuth, oidcEnabled } = await import("../../server/auth");
 				if (!oidcEnabled) return new Response("Not found", { status: 404 });
-				return oauthProviderOpenIdConfigMetadata(getAuth())(request);
+				const answer = await oauthProviderOpenIdConfigMetadata(getAuth())(request);
+				// The provider always offers these two. Introspection is closed here, as `OIDC_CLOSED_PATHS`
+				// says, and `claims` is dropped from every request by `membersOnlyToWorkspaceApps`.
+				const offered = Object.entries((await answer.json()) as Record<string, unknown>);
+				const metadata = offered.filter(([name]) => !name.startsWith("introspection_"));
+				const said = { ...Object.fromEntries(metadata), claims_parameter_supported: false };
+				return new Response(JSON.stringify(said), {
+					status: answer.status,
+					headers: answer.headers,
+				});
 			},
 		},
 	},

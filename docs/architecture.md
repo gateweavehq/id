@@ -407,22 +407,47 @@ who may sign in trusts.
 - **A code never comes back here.** No app may send people to this server, on any port, because whatever
   this host serves could read the code. On a machine running everything locally, other ports are other
   programs, so they are allowed.
+- **Nobody is sent to one of these apps until they are known to be a member.** Anyone with an account can
+  add one, so where it goes is anyone's to choose, and the provider redirects to it for a wrong request or
+  `prompt=none` before it has looked at who someone is. That would make a link to this server a link to
+  anywhere (RFC 9700, section 4.11.2). A hook checks the provider's answer, not the request, so it holds
+  for every way of sending someone: anyone signed out stays here, and anyone outside goes to `/no-access`.
+  A request sent with POST, which OpenID Connect allows, is first turned into the same request sent with
+  GET, so everything here has one place to look. That goes by the request's own address, because the
+  provider goes through the same endpoint itself after a sign-in, when the body is what someone typed.
+  `prompt=none` for someone signed out asks them to sign in rather than answering `login_required`, which
+  OpenID Connect would have it do, because that answer could be sent to anyone. A member can still be sent
+  there by a wrong request, which is no more than an admin of their workspace could do anyway. The same
+  goes for a member's signed link in someone else's hands: neither answer on the page sends them there.
 - **A name is whatever an admin chooses,** so the screen always says whose the app is and where it goes,
   and it reaches only people who accepted an invitation to that workspace. It only takes the names people
-  already trust off the table: `Gateweave`, and any first-party app's, compared after folding away what
-  merely looks different. It is not a defence against every lookalike.
+  already trust off the table: no workspace or app can hold `Gateweave`, because they also go into
+  invitations from this domain, and no app can take a first-party app's name. Both compare after folding
+  away what merely looks different. It is not a defence against every lookalike.
+- **What people are asked about is what an app gets.** The page lists scopes, so the `claims` parameter
+  is dropped before the provider sees it, for every app, which would add to what an app gets without the
+  page saying so. OpenID Connect lets a provider leave out what it is asked for that way, and discovery
+  says it is not supported.
 - **The secret is shown once.** Only its hash is kept, and the app list reads named columns, so the hash
   stays out of it too.
 - **Adding, replacing a secret and deleting want a recent sign-in,** as deleting a workspace does. A new
-  secret gets at every member who agrees, so it should outlast a stolen cookie. Renaming does not.
-- **No `sid`, and no logout URIs.** `enable_end_session` is off, so the provider emits no `sid`, which two
+  secret gets at every member who agrees, so it should outlast a stolen cookie. Making someone an admin
+  or owner wants one too, or that cookie could make its thief an admin with a new session. Renaming does
+  not.
+- **No `sid`, and no logout URIs.** `enable_end_session` is off, so ID tokens hold no `sid`, which two
   apps that do not trust each other could use to match someone up across a session. Back-channel logout
-  for these apps is ID-20.
+  for these apps is ID-20. Introspection would tell an app the same thing, whatever its ID tokens leave
+  out, and nothing here uses it, so `/oauth2/introspect` is closed for every app and left out of discovery.
+  `auth_time` stays, because `max_age` needs it. To the second, it is a weaker way of doing the same, and
+  we accept that.
 - **`/oauth2/public-client` and `-prelogin` are closed.** They name any app to anyone who has its id.
   What a person may be told about an app is on the consent page, and it depends on who they are. The same
   rule holds in someone's own activity: an app a workspace added is named only to its members, so being
   refused by one tells nobody what it is called. Its id alone means nothing to anyone, so it is not shown
   in its place.
+
+An app belongs to its workspace, so it stays when the admin who added it leaves. If they run its host,
+the members who agreed to it can still reach it until someone deletes it.
 
 **Removal is in the database, not in hooks.** Migration `0007` has a trigger on `member` that ends what
 someone holds, and one on `organization` that deletes its apps, whose tokens and consents follow by their

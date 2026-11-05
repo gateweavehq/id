@@ -33,6 +33,10 @@ and your app sees them as new people, because their ids in an app are computed f
 | Flow              | Authorization code, with PKCE (`S256`), which is required    |
 | Scopes            | `openid`, and any of `profile`, `email` and `offline_access` |
 
+People are asked about scopes, so scopes decide what your app gets. The `claims` request parameter is
+ignored. There is no introspection endpoint, because your app has what it needs in the ID token and from
+userinfo.
+
 Let your library read everything else from discovery. For example, with
 [`oauth4webapi`](https://github.com/panva/oauth4webapi):
 
@@ -55,8 +59,9 @@ The ID token is signed with ES256, and your library checks it against the keys i
 | `email`, `email_verified` | `email`    | Their address, which ID has always verified          |
 | `name`, `picture`         | `profile`  | Their name, and a picture if they have one           |
 
-`sub` is the same for one person every time, and different in every app, so two apps cannot match people
-up by it. It is not their account id, and it is not an address that could change.
+`sub` is the same for one person every time, and different on every host, so apps on two hosts cannot
+match people up by it. Apps on one host do share it, so every app on `localhost:3000` sees the same one.
+It is not their account id, and it is not an address that could change.
 
 An ID token does not say which workspace someone is in, or their role in it. Anyone who gets as far as
 your app is a member of the workspace that added it.
@@ -71,7 +76,15 @@ checked who runs it, because nobody has. After they say yes, they are not asked 
 asks for more.
 
 Someone outside the workspace is turned away before they are asked, and is told nothing about your app.
-Your app hears nothing either, unless it sent them with `prompt=none`, which gets an error back.
+Your app hears nothing either.
+
+**ID sends nobody to your app until it knows they are a member.** Anyone can add an app, so if a mistake
+in a request sent people straight back to it, a link to ID could be a link to anywhere. So only a member
+who is signed in sees your app get an error for a wrong request. Anyone else stays on ID. If a sign-in
+seems to go nowhere, try it signed in as a member, and you will see the error.
+
+`prompt=none` follows the same rule. A member gets the usual answer, with a code or an error. Someone
+signed out is asked to sign in instead of your app getting `login_required`, and then goes on to your app.
 
 ## When someone leaves
 
@@ -97,5 +110,8 @@ Under **Apps** you can:
 
 Each of these is in the activity of whoever did it.
 
-A workspace can have up to 20 apps, and an app up to 5 redirect URIs. An app cannot take the name of
-Gateweave, or of an app that everyone on this deployment can use.
+A workspace can have up to 20 apps, and an app up to 5 redirect URIs. A name cannot hold Gateweave, and
+an app cannot take the name of one that everyone on this deployment can use.
+
+An app belongs to its workspace, not to whoever added it, so it stays when they leave. When someone who
+ran an app leaves, delete it or replace its secret.
