@@ -20,6 +20,10 @@ const CODE_EMAIL = "is your Gateweave ID code";
 const EXISTS_EMAIL = "You already have a Gateweave ID account";
 const HOUR = 60 * 60 * 1000;
 const PASSWORD = "a-long-password-for-tests";
+/** Lowercases to a plain k. */
+const KELVIN = "\u212A";
+/** `SIGN_UP_CODES_PER_ADDRESS` in src/server/rate-limit/index.ts. */
+const SIGN_UP_CODES_AN_HOUR = 5;
 
 let id: Awaited<ReturnType<typeof startId>>;
 
@@ -216,6 +220,43 @@ describe("a new deployment", () => {
 		expect((await id.emails()).filter((sent) => sent.to === stranger)).toEqual([]);
 	});
 
+	it("asks about an address written with what only lowercases to a letter of it", async () => {
+		await signUp(newAddress());
+		const stranger = `k-${newAddress()}`;
+		const invited = `k-${newAddress()}`;
+		await ownerInvites(invited);
+
+		expect((await requestCode(stranger.replace("k", KELVIN))).status).toBe(200);
+		expect((await requestCode(invited.replace("k", KELVIN))).status).toBe(200);
+
+		// The mail that does go out went after the stranger's would have.
+		await codeFor(invited);
+		expect(await codesStoredFor(stranger)).toBe(0);
+		expect((await id.emails()).filter((sent) => sent.to === stranger)).toEqual([]);
+	});
+
+	it("counts an address written that way against its cap on codes", async () => {
+		await signUp(newAddress());
+		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
+		const email = `k-${newAddress()}`;
+		// All of them: a new code is a new row beside the old ones, and the newest is what counts.
+		const storedCodes = async () => {
+			const { results } = await id.db
+				.prepare("SELECT value FROM verification WHERE identifier LIKE ?")
+				.bind(`%${email}%`)
+				.all<{ value: string }>();
+			return results.map(({ value }: { value: string }) => value).sort();
+		};
+
+		await Promise.all(Array.from({ length: SIGN_UP_CODES_AN_HOUR }, () => requestCode(email)));
+		const before = await storedCodes();
+		expect(before).not.toEqual([]);
+
+		// A new code would reset the attempts, which is what the cap is there to stop.
+		expect((await requestCode(email.replace("k", KELVIN))).status).toBe(200);
+		expect(await storedCodes()).toEqual(before);
+	});
+
 	it("still tells an address with an account so", async () => {
 		const owner = newAddress();
 		await signUp(owner);
@@ -355,6 +396,93 @@ describe("a new deployment", () => {
 		await expect(insertAccount(stranger)).rejects.toThrow("sign-up is closed here");
 		await refused(await makeWorkspace(cookie, "no-row"), "ONLY_THE_OWNER_MAKES_WORKSPACES");
 		expect(await canCreate(cookie)).toBe(false);
+	});
+});
+
+describe("the time an answer about a code takes", () => {
+	const timedOrigin = "https://timed.test";
+	/** What the code in src/server/auth/even-answer.ts holds to, less what a timer may round off. */
+	const FLOOR = 995;
+	let timed: Awaited<ReturnType<typeof startId>>;
+
+	beforeAll(async () => {
+		timed = await startId(timedOrigin, { newDeployment: true, settings: { ANSWER_FLOOR_MS: "" } });
+	});
+
+	afterAll(async () => {
+		await timed?.dispose();
+	});
+
+	async function timeOf(path: string, body: object) {
+		const started = performance.now();
+		const response = await timed.fetch(`${timedOrigin}/api/auth${path}`, {
+			method: "POST",
+			headers: {
+				origin: timedOrigin,
+				"cf-connecting-ip": newClient(),
+				"content-type": "application/json",
+			},
+			body: JSON.stringify(body),
+		});
+		await response.arrayBuffer();
+		return { status: response.status, took: performance.now() - started };
+	}
+
+	/** A first account, so that the server is closed and there is someone to tell from a stranger. */
+	async function firstAccount() {
+		const email = newAddress();
+		await timed.db.prepare("DELETE FROM user").run();
+		expect(
+			(await timeOf("/email-otp/send-verification-otp", { email, type: "sign-in" })).status,
+		).toBe(200);
+		let code: string | undefined;
+		for (let attempt = 0; attempt < 100 && !code; attempt++) {
+			const found = (await timed.emails()).find(
+				(sent) => sent.to === email && sent.subject.includes(CODE_EMAIL),
+			);
+			code = found && /\b\d{6}\b/.exec(found.text)?.[0];
+			if (!code) await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+		expect(
+			(await timeOf("/sign-in/email-otp", { email, otp: code, name: "A Person" })).status,
+		).toBe(200);
+		return email;
+	}
+
+	it("is no shorter for a stranger than for an address with an account, asking for one", async () => {
+		const owner = await firstAccount();
+		for (const email of [owner, newAddress()]) {
+			const { status, took } = await timeOf("/email-otp/send-verification-otp", {
+				email,
+				type: "sign-in",
+			});
+			expect(status).toBe(200);
+			expect(took).toBeGreaterThanOrEqual(FLOOR);
+		}
+	});
+
+	it("is no shorter for a stranger than for an address with an account, entering a wrong one", async () => {
+		const owner = await firstAccount();
+		for (const email of [owner, newAddress()]) {
+			const { status, took } = await timeOf("/sign-in/email-otp", {
+				email,
+				otp: "000000",
+				name: "A Person",
+			});
+			expect(status).toBe(400);
+			expect(took).toBeGreaterThanOrEqual(FLOOR);
+		}
+	});
+
+	// The floor is on the exact path. Were one of these ever to reach the same code, it would have none.
+	it.each([
+		"/email-otp/send-verification-otp/",
+		"/email-otp/send%2Dverification%2Dotp",
+		"/EMAIL-OTP/send-verification-otp",
+		"//email-otp/send-verification-otp",
+	])("has no other way in by writing the path as %s", async (path) => {
+		const { status } = await timeOf(path, { email: newAddress(), type: "sign-in" });
+		expect(status).toBe(404);
 	});
 });
 

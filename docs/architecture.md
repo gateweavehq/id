@@ -69,8 +69,8 @@ want, because signing in with only a mailbox would skip the password and two-fac
   GitHub account whose address GitHub has not verified.
 - **Outside, an address with an account looks like one without.** Asking for a code and getting one
   wrong answer the same. "Expired" and "too many attempts" would give it away, so they use the same
-  words too. The answers are not equal in time: telling them apart that way takes many measurements
-  of codes that each cost a Turnstile pass.
+  words too. Asking for a code and entering one both take at least a second, whatever the answer,
+  which is more than the work behind them normally takes, so the time says nothing either.
 - **Codes per address are capped** before a code is stored, because each new code resets the attempts.
   That holds the guesses against one address to about one chance in 33,000 a day, however many clients
   ask.
@@ -92,9 +92,10 @@ asks it, and the triggers in `0014_deployment_hold.sql` hold it.
 - **The database refuses the rest, whatever makes the account.** The hook in `auth/config.ts` asks first so
   that the answer has words, including at the sign-in page for someone coming back from GitHub. A way of
   making accounts added later that forgets to ask still cannot make one. A missing row counts as closed.
-- **Outside, an address with no way in looks like any other.** Asking for a code gets the same answer, and
-  nothing is stored or sent. That comes before the cap on codes per address, so a stranger cannot use up
-  someone's codes ahead of their invitation, or learn from the cap who has been invited.
+- **Outside, an address with no way in looks like any other.** Asking for a code gets the same answer in
+  the same time, and nothing is stored or sent. That comes before the cap on codes per address, so a stranger
+  cannot use up someone's codes ahead of their invitation, or learn from the cap who has been invited. The
+  address is asked about as the plugin will read it, lowercased first, since the Kelvin sign is only a `k` then.
 - **A code does not outlast the way in.** If the invitation goes while a code is on its way, the right code
   is refused, and so is the second of two people who asked while the server had no accounts.
 - **On a closed server, only the owner makes workspaces.** A workspace's invitation is a way in, so anyone
