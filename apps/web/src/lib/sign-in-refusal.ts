@@ -5,7 +5,8 @@ const REFUSALS: Record<string, string> = {
 	access_denied: "You chose not to sign in with GitHub.",
 	// Making an account, and reaching one that already has this address.
 	EMAIL_NOT_VERIFIED: NO_VERIFIED_ADDRESS,
-	account_not_linked: NO_VERIFIED_ADDRESS,
+	account_not_linked:
+		"An account here already has that address, and GitHub could not be linked to it. Sign in with its password or a passkey instead.",
 	email_not_found: NO_VERIFIED_ADDRESS,
 	SIGN_UP_CLOSED:
 		"This server takes new accounts by invitation. Ask whoever runs it to invite you.",

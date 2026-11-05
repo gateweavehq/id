@@ -57,6 +57,8 @@ const TURNSTILE_PATHS = [
 	"/email-otp/send-verification-otp",
 	"/sign-in/email",
 	"/request-password-reset",
+	// Whoever gets there first owns the server, which is worth a scanner's while.
+	"/deployment/claim",
 ];
 
 /**
@@ -143,8 +145,14 @@ export function createAuth(config: AuthConfig) {
 			: {},
 		// Better Auth's own error page knows nothing of this app. The sign-in page explains a refusal.
 		onAPIError: { errorURL: "/login" },
-		// With no tokens kept, signing in again has nothing to refresh.
-		account: { updateAccountOnSignIn: false },
+		account: {
+			// With no tokens kept, signing in again has nothing to refresh.
+			updateAccountOnSignIn: false,
+			// Better Auth links a provider to an account when both say the address is verified. Without
+			// email, ours says so on the word of whoever held the link, so linking could hand someone
+			// an account another person had already chosen the password of.
+			accountLinking: { disableImplicitLinking: !mailer },
+		},
 		databaseHooks: {
 			user: {
 				create: {
@@ -205,6 +213,7 @@ export function createAuth(config: AuthConfig) {
 			deploymentPlugin({
 				db: config.db,
 				mailer,
+				gitHub: Boolean(config.github),
 				record,
 				allowInvitation: config.allowInvitation,
 			}),

@@ -121,9 +121,9 @@ instead. An address that already has an account cannot be invited.
 
 **A server that sends no email has no way to prove an address.** So there the owner's word stands in for it:
 the owner gets the link to pass on, and whoever opens it has an account verified as that address. That is
-the owner's to answer for, as they could write the row themselves. And the first account is claimed at
-`/signup` with a name, an address and a password, a path that answers 404 once there is an account and on
-any server that does send email.
+the owner's to answer for, as they could write the row themselves. And the first account of a server with
+neither email nor GitHub is claimed at `/signup` with a name, an address and a password, a path that answers
+404 once there is an account and on any server that can prove an address.
 
 ## Signing in with GitHub
 
@@ -137,7 +137,9 @@ GitHub is a second way to prove an address, under the same rule: no account with
   for them afterwards, so a token it does not store cannot leak.
 - **A verified address that matches an account signs in to it.** An account's address is always
   verified, so both sides have proven it, and Better Auth links them. An address GitHub has not verified
-  neither makes an account nor reaches one.
+  neither makes an account nor reaches one. On a server that sends no email the account's side rests on the
+  word of whoever opened a link, so nothing links: otherwise whoever held a stray link would keep a password
+  to the account of the person it was for, who would see nothing wrong.
 - **The link is to the GitHub account, not its address.** Someone who changes their address on GitHub
   stays the same person in ID, with the address ID already has.
 - **A refusal comes back to `/login` as a code,** because it ends in a redirect. The page turns known

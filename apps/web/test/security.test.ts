@@ -118,6 +118,46 @@ describe("the session cookie", () => {
 	});
 });
 
+describe("claiming a server with Turnstile on", () => {
+	const claimOrigin = "https://claim-guarded.test";
+	let guarded: Awaited<ReturnType<typeof startId>>;
+	let clients = 0;
+
+	beforeAll(async () => {
+		guarded = await startId(claimOrigin, { turnstile: true, email: false, newDeployment: true });
+	});
+
+	afterAll(async () => {
+		await guarded?.dispose();
+	});
+
+	function claim(email: string, token?: string) {
+		return guarded.fetch(`${claimOrigin}/api/auth/deployment/claim`, {
+			method: "POST",
+			headers: {
+				origin: claimOrigin,
+				"content-type": "application/json",
+				"cf-connecting-ip": `198.51.100.${++clients}`,
+				...(token && { "x-captcha-response": token }),
+			},
+			body: JSON.stringify({ email, name: "The Owner", newPassword: "a-long-password-for-tests" }),
+		});
+	}
+
+	it.each([
+		["no token", undefined, 400],
+		["a refused token", TURNSTILE_TOKENS.refused, 403],
+	])("makes no account on %s", async (_case, token, status) => {
+		expect((await claim("first@example.com", token)).status).toBe(status);
+		const row = await guarded.db.prepare("SELECT COUNT(*) AS accounts FROM user").first();
+		expect(row).toEqual({ accounts: 0 });
+	});
+
+	it("takes the server with a good one", async () => {
+		expect((await claim("first@example.com", TURNSTILE_TOKENS.good)).status).toBe(200);
+	});
+});
+
 describe("with Turnstile on", () => {
 	const turnstileOrigin = "https://turnstile.test";
 	let guarded: Awaited<ReturnType<typeof startId>>;

@@ -116,27 +116,37 @@ function SignUpPage() {
 			<AuthPage
 				agreeing
 				title="Claim this server"
-				description="It has no accounts yet. The first one owns it, and decides who else can join. This server does not send email, so nothing checks the address: use your real one."
+				description={
+					options.github
+						? "It has no accounts yet. The first one owns it, and decides who else can join."
+						: "It has no accounts yet. The first one owns it, and decides who else can join. This server does not send email, so nothing checks the address: use your real one."
+				}
 			>
-				{options.github && (
+				{options.github ? (
+					<GitHubSignIn next={next} search={search} />
+				) : (
 					<>
-						<GitHubSignIn next={next} search={search} />
-						<SignInDivider />
+						<NewAccountForm
+							askAddress
+							action="Claim this server"
+							submit={async (person) => {
+								try {
+									const result = await authClient.$fetch("/deployment/claim", {
+										method: "POST",
+										body: person,
+										headers: await turnstile.check(),
+									});
+									if (result.error) return result.error.message ?? "Something went wrong";
+								} catch (caught) {
+									return caught instanceof Error ? caught.message : "Something went wrong";
+								}
+								await router.navigate({ to: "/server" });
+								return null;
+							}}
+						/>
+						{turnstile.element}
 					</>
 				)}
-				<NewAccountForm
-					askAddress
-					action="Claim this server"
-					submit={async (person) => {
-						const result = await authClient.$fetch("/deployment/claim", {
-							method: "POST",
-							body: person,
-						});
-						if (result.error) return result.error.message ?? "Something went wrong";
-						await router.navigate({ to: "/server" });
-						return null;
-					}}
-				/>
 			</AuthPage>
 		);
 	}
