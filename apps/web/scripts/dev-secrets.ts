@@ -4,6 +4,7 @@
  * from .dev.vars. So in dev, these are added to the list when .dev.vars sets them.
  */
 export const OPTIONAL_SECRETS = [
+	"ANSWER_FLOOR_MS",
 	"BETTER_AUTH_URL",
 	"GITHUB_CLIENT_ID",
 	"GITHUB_CLIENT_SECRET",
