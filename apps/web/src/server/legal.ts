@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import type { LegalLinks } from "#/lib/legal";
 
-/** An address people can open. Anything else is left out rather than shown as a link. */
+/** Only http(s): a `javascript:` address in an href would run as ID when clicked. */
 function address(value: string | undefined): string | undefined {
 	if (!value) return undefined;
 	try {

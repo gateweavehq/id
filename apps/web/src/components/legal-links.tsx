@@ -3,7 +3,6 @@ import { type LegalLinks as Links, legalEntries } from "#/lib/legal";
 
 const root = getRouteApi("__root__");
 
-/** This deployment's legal pages, which every page has from the root route. */
 export function useLegalLinks(): Links | undefined {
 	return root.useLoaderData();
 }

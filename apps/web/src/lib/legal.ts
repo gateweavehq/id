@@ -7,7 +7,6 @@ export interface LegalLinks {
 
 const LABELS = { notice: "Legal notice", privacy: "Privacy", terms: "Terms" } as const;
 
-/** The links that are set, in the order they are shown. */
 export function legalEntries(links: LegalLinks | undefined) {
 	return (["notice", "privacy", "terms"] as const).flatMap((kind) => {
 		const href = links?.[kind];
