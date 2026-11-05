@@ -7,6 +7,43 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.5.0] - 2026-11-05
+
+### Added
+
+- **Anyone can take back an app they allowed.** Their account page lists the workspace apps they have allowed,
+  with what each may see, whose it is and where it goes. Taking one back deletes their tokens and their consent
+  for it in one batch, and they stay in the workspace. A code the app was handed earlier buys nothing, the app
+  cannot get them back with `prompt=none`, and their activity says what happened. First-party apps do not ask,
+  so they are not on the list. (#33)
+
+### Changed
+
+- **A token of a workspace's app now rests on a consent, in the database as well as in the code.** Each person
+  has one consent for each app. A token written with no consent behind it goes as it arrives, so a sign-in that
+  crosses a take-back leaves nothing that works. An answer with a different list of scopes ends the tokens from
+  the old one, on every device, and replaces the list rather than adding to it.
+  [`docs/connect-an-app.md`](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md) says what that
+  means for an app. (#33)
+
+### Fixed
+
+- **The provider's own consent routes are closed.** `/oauth2/delete-consent` removed the consent and left the
+  tokens, so it looked done without being, and a refresh never reads the consent. `get-consent`, `get-consents`
+  and `update-consent` went with it, as nothing here uses them. (#33)
+- **A link can no longer stop the buttons on ID's pages working.** The auth client sends a page's signed request
+  back with every POST, so an app could link to the account page with a made-up signature and make its forms
+  fail. Pages no sign-in flow comes to now drop one from their address. (#33)
+
+### Upgrading
+
+A deploy applies one migration, `0008_tokens_need_consent`. Where someone has more than one consent for an app
+it keeps the latest, then adds a unique index and three triggers, so the running code keeps working until the
+new code arrives. There are no new settings, and nobody is signed out.
+
+An app a workspace added should ask for everything it needs each time, and end its own session when a refresh
+fails. None of the first-party apps ask, so none of this reaches them.
+
 ## [0.4.1] - 2026-11-05
 
 ### Fixed
