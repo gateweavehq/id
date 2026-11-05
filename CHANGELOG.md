@@ -7,6 +7,21 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.7.0] - 2026-11-05
+
+A deployment can now link its legal notice, privacy policy and terms from every page of ID. (#36)
+
+### Added
+
+- **Links to a deployment's legal pages.** `LEGAL_NOTICE_URL`, `PRIVACY_POLICY_URL` and `TERMS_URL` are unset by
+  default, so a copy someone else runs shows none of Gateweave's and can show its own. Any that is set and is an http(s)
+  address is linked from every page, in a new tab with no referrer, since some of these pages carry a token in their
+  address. Where an account can be made, `TERMS_URL` also adds that continuing means agreeing to them. (#36)
+
+### Upgrading
+
+No migrations. Nothing changes until the settings are set. Track and Agents have the same three.
+
 ## [0.6.0] - 2026-11-05
 
 A workspace's admins can now keep an app to some of its people with groups, and an app can ask which groups someone is
