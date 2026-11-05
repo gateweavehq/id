@@ -7,6 +7,21 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.4.1] - 2026-11-05
+
+### Fixed
+
+- **A Worker that has nothing to do with an app can no longer stop people signing in to it.** Every Worker
+  reaches ID from one address, so ID's limits counted them all as one caller, and enough junk from any of them
+  used up what Track and Agents need to sign people in. On staging, a sign-in to Track during such junk ended at
+  `invalid_code`; on this release it works. A Worker is now counted by its zone, which Cloudflare sets and a
+  sender cannot change. Anyone else is counted by their address as before, whatever they claim. The activity log
+  keeps no address for a Worker's request, as it says nothing of where a person is. (#31)
+
+### Upgrading
+
+No migration and no new secret. Nobody is signed out.
+
 ## [0.4.0] - 2026-11-05
 
 ### Added

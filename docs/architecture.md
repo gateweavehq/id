@@ -647,6 +647,11 @@ into any address. Replacing a secret left people signed in, and removing someone
 tokens at once and left no rows. Deleting a workspace took its apps along, and a first-party app still signed
 people in without asking.
 
+Also on 2026-11-05, on staging, a sign-in to Track ended at `invalid_code` while a Worker with nothing to do with
+Gateweave sent ID's token endpoint junk, and worked a minute later. The same run on the code that counts a Worker
+by its zone signed in during the junk, while that Worker was refused: of 8,848 requests it sent, 7,463 got a 429.
+That browser then held ID's session and passkey cookies and Track's session cookie, and no others.
+
 Still unproven:
 
 - A real passkey, from Windows Hello or a phone, rather than a virtual authenticator.
