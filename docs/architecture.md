@@ -626,8 +626,24 @@ working, and turning it off leaving no keys behind.
 role and for someone from outside, and `apps/web/e2e/workspaces.spec.ts` drives the pages: two people from an
 invitation to a removal, an invitation for someone else, a narrow screen, and signing in on the way to one.
 
+`apps/web/test/workspace-apps.test.ts` holds who can add an app, who reaches one and what they get from it, and
+`apps/web/e2e/workspace-apps.spec.ts` drives the pages. An independent read of the first version, before it was
+released, found what all of its tests and its run on staging had not: anyone can add an app, and the provider
+redirected to one before it knew who someone was, so a link to ID could lead anywhere. That read is worth having
+before a release of anything like this.
+
+On 2026-11-05 what came of it held on staging and then on production, on ID 0.4.0, with `oauth4webapi` outside
+Cloudflare as the app's server and two people made for the run. Someone signed out or from outside stayed on ID
+through a wrong link, `prompt=none` and a POST. A member signed in under a subject that was not their account's
+id, and named claims got the app no more than its scopes. Signing in with a password on the way put nothing typed
+into any address. Replacing a secret left people signed in, and removing someone stopped their access and refresh
+tokens at once and left no rows. Deleting a workspace took its apps along, and a first-party app still signed
+people in without asking.
+
 Still unproven:
 
 - A real passkey, from Windows Hello or a phone, rather than a virtual authenticator.
+- An invitation email sent by a deployed Worker.
+- A workspace's app that someone runs, rather than one a script plays.
 - Cloudflare Access against a deployed ID.
 - The OpenID conformance suite, which Pocket ID has passed and ID should too.
