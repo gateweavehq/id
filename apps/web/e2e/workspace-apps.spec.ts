@@ -261,6 +261,24 @@ test("names with nowhere to break stay on a phone, whatever is open", async ({ p
 	await expect(page.getByRole("button", { name: `Save ${groupName}` })).toBeVisible();
 	expect(await sticksOut()).toEqual([]);
 	await page.getByRole("button", { name: "Cancel" }).first().click();
+	await page.getByRole("button", { name: "Cancel" }).click();
+
+	await page.getByRole("button", { name: `Edit ${appName}` }).click();
+	await expect(page.getByRole("button", { name: `Save ${appName}` })).toBeVisible();
+	expect(await sticksOut()).toEqual([]);
+	await page.getByRole("button", { name: "Cancel" }).first().click();
+
+	await page.getByRole("button", { name: `Replace the secret of ${appName}` }).click();
+	await expect(
+		page.getByRole("button", { name: `Yes, replace the secret of ${appName}` }),
+	).toBeVisible();
+	expect(await sticksOut()).toEqual([]);
+	await page.getByRole("button", { name: "Keep it" }).click();
+
+	await page.getByRole("button", { name: `Delete ${appName}`, exact: true }).click();
+	await expect(page.getByRole("button", { name: `Yes, delete ${appName}` })).toBeVisible();
+	expect(await sticksOut()).toEqual([]);
+	await page.getByRole("button", { name: "Keep it" }).click();
 
 	await page.getByRole("button", { name: `Delete ${groupName}`, exact: true }).click();
 	await expect(page.getByRole("button", { name: `Yes, delete ${groupName}` })).toBeVisible();

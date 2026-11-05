@@ -451,8 +451,13 @@ function LeaveWorkspace({ details }: { details: WorkspaceDetails }) {
 			)}
 			{asked ? (
 				<div className="flex flex-wrap gap-2">
-					<Button variant="destructive" size="sm" onClick={leave}>
-						Yes, leave {details.workspace.name}
+					<Button
+						variant="destructive"
+						size="sm"
+						aria-label={`Yes, leave ${details.workspace.name}`}
+						onClick={leave}
+					>
+						Yes, leave
 					</Button>
 					<Button variant="ghost" size="sm" onClick={() => setAsked(false)}>
 						Stay
