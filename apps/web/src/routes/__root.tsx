@@ -2,9 +2,11 @@ import { TanStackDevtools } from "@tanstack/react-devtools";
 import { createRootRoute, HeadContent, Link, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import type { ReactNode } from "react";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { Notice } from "#/components/notice";
 import { Button } from "#/components/ui/button";
 import { Toaster } from "#/components/ui/sonner";
+import { getLegalLinks } from "#/lib/session";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -24,6 +26,10 @@ export const Route = createRootRoute({
 			{ rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
 		],
 	}),
+	// The same for every page and set when the Worker is deployed, so fetched once per visit.
+	loader: () => getLegalLinks(),
+	staleTime: Number.POSITIVE_INFINITY,
+	shouldReload: false,
 	shellComponent: RootDocument,
 	notFoundComponent: NotFound,
 });
@@ -62,6 +68,7 @@ function NotFound() {
 			>
 				Check the address, or start from the home page.
 			</Notice>
+			<LegalLinks links={useLegalLinks()} />
 		</main>
 	);
 }

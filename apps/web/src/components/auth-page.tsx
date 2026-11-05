@@ -1,15 +1,20 @@
 import type { ReactNode } from "react";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 
 /** The narrow centered column of the pages around signing in. */
 export function AuthPage({
 	title,
 	description,
 	children,
+	agreeing,
 }: {
 	title: string;
 	description?: ReactNode;
 	children: ReactNode;
+	/** Where an account can be made: see `LegalLinks`. */
+	agreeing?: boolean;
 }) {
+	const legal = useLegalLinks();
 	return (
 		<main className="flex min-h-svh items-center justify-center p-6">
 			<div className="w-full max-w-sm space-y-6">
@@ -18,6 +23,7 @@ export function AuthPage({
 					{description && <p className="text-sm text-muted-foreground">{description}</p>}
 				</div>
 				{children}
+				<LegalLinks links={legal} agreeing={agreeing} />
 			</div>
 		</main>
 	);
