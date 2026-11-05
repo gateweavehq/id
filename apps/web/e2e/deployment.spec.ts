@@ -18,7 +18,7 @@ test("the owner invites someone, who makes their account from the link", async (
 	const problems = await watch(page);
 	await signIn(page, PERSON.email, PERSON.password);
 	await page.getByRole("link", { name: "Open settings" }).click();
-	await expect(page.getByRole("heading", { name: "This server" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "This server", exact: true })).toBeVisible();
 	await expect(page.getByText("Anyone can make an account here")).toBeVisible();
 
 	const email = address("invited");
@@ -85,7 +85,7 @@ test("anyone else finds no such page, and no way to it from their account", asyn
 	await expect(page.getByRole("link", { name: "Open settings" })).toHaveCount(0);
 
 	await page.goto("/server", { waitUntil: "networkidle" });
-	await expect(page.getByRole("heading", { name: "This server" })).toHaveCount(0);
+	await expect(page.getByRole("heading", { name: "This server", exact: true })).toHaveCount(0);
 	await expect(page.getByLabel("Their email")).toHaveCount(0);
 });
 
