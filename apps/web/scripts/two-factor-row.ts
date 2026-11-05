@@ -1,4 +1,4 @@
-import { sqlValue } from "./app-row.ts";
+import { sqlValue } from "../src/server/auth/app-row.ts";
 
 /** One row for the person, whether or not it is on. None for an address nobody has. */
 export function twoFactorStateQuery(email: string): string {

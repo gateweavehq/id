@@ -21,6 +21,9 @@ export const AUDIT_EVENT_TYPES = [
 	"provider_linked",
 	"provider_unlinked",
 	"app_added",
+	"app_changed",
+	"app_secret_replaced",
+	"app_deleted",
 	"workspace_created",
 	"workspace_renamed",
 	"workspace_deleted",
@@ -62,6 +65,20 @@ function workspaceDetail(detail: string | null): { workspace: string; role: stri
 	return {
 		workspace: typeof parsed?.workspace === "string" ? parsed.workspace : "a workspace",
 		role: typeof parsed?.role === "string" ? roleName(parsed.role).toLowerCase() : undefined,
+	};
+}
+
+/** What an app's event keeps in `detail`: its name is all that is left once it is deleted. */
+function appDetail(detail: string | null, app: string | null): { app: string; workspace?: string } {
+	let parsed: { workspace?: unknown; name?: unknown } = {};
+	try {
+		parsed = JSON.parse(detail ?? "{}");
+	} catch {
+		// Words without the names are still better than nothing.
+	}
+	return {
+		app: typeof parsed?.name === "string" ? parsed.name : (app ?? "an app"),
+		...(typeof parsed?.workspace === "string" && { workspace: parsed.workspace }),
 	};
 }
 
@@ -122,8 +139,16 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			return `Connected ${detail === "github" ? "GitHub" : (detail ?? "a sign-in provider")}`;
 		case "provider_unlinked":
 			return `Disconnected ${detail === "github" ? "GitHub" : (detail ?? "a sign-in provider")}`;
-		case "app_added":
-			return `Added ${theApp}`;
+		case "app_added": {
+			const added = appDetail(detail, app);
+			return added.workspace ? `Added ${added.app} to ${added.workspace}` : `Added ${added.app}`;
+		}
+		case "app_changed":
+			return `Changed the app ${appDetail(detail, app).app}`;
+		case "app_secret_replaced":
+			return `Replaced the secret of ${appDetail(detail, app).app}`;
+		case "app_deleted":
+			return `Deleted the app ${appDetail(detail, app).app}`;
 		case "workspace_created":
 			return `Created the workspace ${workspaceDetail(detail).workspace}`;
 		case "workspace_renamed":

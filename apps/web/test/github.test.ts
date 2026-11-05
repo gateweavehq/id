@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appRow, insertStatement } from "../scripts/app-row";
+import { appRow, insertStatement } from "../src/server/auth/app-row";
 import { type GitHubPerson, gitHubCode, startId } from "./id-worker";
 
 // Signing in with GitHub, through the public routes of the built Worker, with a stand-in for GitHub.

@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { unstable_readConfig } from "wrangler";
-import { appRow, insertStatement } from "../scripts/app-row";
+import { appRow, insertStatement } from "../src/server/auth/app-row";
 import { startId } from "./id-worker";
 
 const origin = "https://id.test";

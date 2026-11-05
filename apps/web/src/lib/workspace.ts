@@ -29,6 +29,9 @@ export const workspaceName = z
 	.refine((name) => !name.includes("://"), "A name cannot hold a link.")
 	.refine((name) => !HIDDEN_CHARACTERS.test(name), "A name cannot hold control characters.");
 
+/** An app's name is shown to people when they are asked about it, so it follows the same rules. */
+export const appName = workspaceName;
+
 export const workspaceSlug = z
 	.string()
 	.regex(
@@ -61,6 +64,7 @@ export interface Resources {
 	invite: undefined;
 	seeInvitations: undefined;
 	cancelInvitation: undefined;
+	manageApps: undefined;
 	changeRole: { role: string; to: WorkspaceRole };
 	removeMember: { role: string };
 }
@@ -93,6 +97,7 @@ export function can<Action extends WorkspaceAction>(
 		case "invite":
 		case "seeInvitations":
 		case "cancelInvitation":
+		case "manageApps":
 			return admin;
 		case "delete":
 			return owner;
@@ -155,6 +160,13 @@ export interface PendingInvitation {
 	expiresAt: string | Date;
 }
 
+/** An app as a workspace's admins see it. Its secret is shown once, and is not in here. */
+export interface WorkspaceApp {
+	clientId: string;
+	name: string;
+	redirectUris: string[];
+}
+
 export interface WorkspaceDetails {
 	workspace: { id: string; name: string; slug: string };
 	/** Who is asking. */
@@ -162,6 +174,10 @@ export interface WorkspaceDetails {
 	members: WorkspaceMember[];
 	/** Empty for someone who may not see them. */
 	invitations: PendingInvitation[];
+	/** Empty for someone who may not see them. */
+	apps: WorkspaceApp[];
+	/** Whether this deployment can sign people in to apps at all. */
+	appsEnabled: boolean;
 }
 
 const FAILURES: Record<string, string> = {

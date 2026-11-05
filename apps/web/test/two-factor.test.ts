@@ -1,7 +1,7 @@
 import * as oauth from "oauth4webapi";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { appRow, insertStatement } from "../scripts/app-row";
 import { removeTwoFactorStatements, twoFactorStateQuery } from "../scripts/two-factor-row";
+import { appRow, insertStatement } from "../src/server/auth/app-row";
 import { gitHubCode, startId } from "./id-worker";
 import { totp, wrongCode } from "./totp";
 

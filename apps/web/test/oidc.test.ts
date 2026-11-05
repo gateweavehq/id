@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import * as oauth from "oauth4webapi";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { appRow, insertStatement } from "../scripts/app-row";
+import { appRow, insertStatement } from "../src/server/auth/app-row";
 import { PAIRWISE_SECRET, startId } from "./id-worker";
 
 // The provider as an app meets it: a real OIDC client library (oauth4webapi) against the built
@@ -899,14 +899,23 @@ describe("what nobody gets", () => {
 	it("keeps an app's secret out of what the sign-in pages may read", async () => {
 		const app = await newApp();
 		const person = await newPerson();
-		const response = await api(`/oauth2/public-client?client_id=${app.clientId}`, {
-			client: person.client,
-			cookie: person.cookie,
+		const row = await id.db
+			.prepare("SELECT client_secret FROM oauth_client WHERE client_id = ?")
+			.bind(app.clientId)
+			.first<{ client_secret: string }>();
+		expect(row?.client_secret).toBeTruthy();
+		const page = await id.fetch(`${origin}/consent?client_id=${app.clientId}&scope=openid`, {
+			headers: { "cf-connecting-ip": person.client, cookie: person.cookie, accept: "text/html" },
 		});
-		expect(response.status).toBe(200);
-		const body = await response.text();
-		expect(body).toContain(app.host.replace("app-", "App ").split(".")[0]?.slice(4) ?? "");
-		expect(body).not.toContain("client_secret");
+		expect(page.status).toBe(200);
+		const html = await page.text();
+		// The page itself, which is given what it needs of the app and has to say so.
+		expect(html).toContain(`Allow ${app.name} to use your account?`);
+		expect(html).toContain(app.host);
+		expect(html).not.toContain("client_secret");
+		expect(html).not.toContain("clientSecret");
+		expect(html).not.toContain(app.clientSecret);
+		expect(html).not.toContain(row?.client_secret);
 	});
 });
 
