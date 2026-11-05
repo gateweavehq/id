@@ -1,4 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { Button } from "#/components/ui/button";
 import { getSession } from "#/lib/session";
 
@@ -10,6 +11,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
+	const legal = useLegalLinks();
 	return (
 		<main className="flex min-h-svh items-center justify-center p-6">
 			<div className="w-full max-w-sm space-y-6">
@@ -28,6 +30,7 @@ function Home() {
 						<Link to="/signup">Create an account</Link>
 					</Button>
 				</div>
+				<LegalLinks links={legal} />
 			</div>
 		</main>
 	);

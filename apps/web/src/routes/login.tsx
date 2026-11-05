@@ -3,6 +3,7 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { z } from "zod";
 import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { LiveButton } from "#/components/live-button";
 import { PasskeySignIn } from "#/components/passkey-sign-in";
 import { SignInDivider } from "#/components/sign-in-divider";
@@ -45,6 +46,7 @@ function SignInForm() {
 	const [error, setError] = useState<ReactNode>(null);
 	const [pending, setPending] = useState(false);
 	const turnstile = useTurnstile(options.turnstileSiteKey);
+	const legal = useLegalLinks();
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -162,6 +164,8 @@ function SignInForm() {
 						Create an account
 					</Link>
 				</p>
+
+				<LegalLinks links={legal} agreeing />
 			</div>
 		</main>
 	);

@@ -32,5 +32,13 @@ declare namespace Cloudflare {
 		 * password's SHA-1 to Have I Been Pwned, so a deployment has to choose it.
 		 */
 		CHECK_BREACHED_PASSWORDS?: string;
+		/**
+		 * The addresses of this deployment's legal pages, linked from the sign-in pages, the page that
+		 * asks to allow an app, and the account and workspace pages. Each is left out when unset, or
+		 * when it is not an http(s) address.
+		 */
+		LEGAL_NOTICE_URL?: string;
+		PRIVACY_POLICY_URL?: string;
+		TERMS_URL?: string;
 	}
 }

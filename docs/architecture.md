@@ -532,6 +532,16 @@ for why this replaced a shared session.
   Workers takes `waitUntil`, or that request is cancelled along with the logout. And when it cannot fetch
   ID's keys at that moment it answers 503, not 400, so that ID tries again.
 
+## Legal pages
+
+A deployment's legal notice, privacy policy and terms are its own, so ID ships none and never links
+to Gateweave's. `LEGAL_NOTICE_URL`, `PRIVACY_POLICY_URL` and `TERMS_URL` are unset by default; any
+that is set, and is an http(s) address, is linked from every page, through the root route's loader,
+which runs once per visit. Where an account can be made (sign-in and sign-up, as GitHub and a
+passkey can make one too), `TERMS_URL` also adds that continuing means agreeing to them, since terms
+bind only someone told of them. Links open in a new tab with no referrer: some of these pages carry
+a token or an app's signed request in their address. Track and Agents have the same settings.
+
 ## Security baseline
 
 - The session cookie stays on ID's own host. Nothing is shared on a parent domain.

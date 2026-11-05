@@ -1,5 +1,6 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { LiveButton } from "#/components/live-button";
 import { Notice } from "#/components/notice";
 import { Button } from "#/components/ui/button";
@@ -50,6 +51,7 @@ function WorkspacePage() {
 	const { slug } = Route.useParams();
 	const [details, setDetails] = useState<WorkspaceDetails | null>(null);
 	const [state, setState] = useState<"loading" | "ready" | "missing" | "failed">("loading");
+	const legal = useLegalLinks();
 	useDocumentTitle(details?.workspace.name ?? "Workspace");
 
 	const load = useCallback(async () => {
@@ -118,6 +120,8 @@ function WorkspacePage() {
 					{can(details.you, "delete") && <DeleteWorkspace details={details} />}
 				</>
 			)}
+
+			<LegalLinks links={legal} />
 		</main>
 	);
 }

@@ -25,6 +25,11 @@ export const getAuthOptions = createServerFn({ method: "GET" }).handler(async ()
 	};
 });
 
+export const getLegalLinks = createServerFn({ method: "GET" }).handler(async () => {
+	const { legalLinks } = await import("#/server/legal");
+	return legalLinks();
+});
+
 /** How the signed-in person can sign in: `credential` for a password, `github`, `passkey`. */
 export const signInMethods = createServerFn({ method: "GET" }).handler(async () => {
 	const { db, getAuth } = await import("#/server/auth");

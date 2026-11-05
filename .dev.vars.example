@@ -32,3 +32,9 @@ BETTER_AUTH_SECRET=
 # where nothing is sent: each email is saved under apps/web/.wrangler/tmp/email, and its path is
 # printed in the terminal.
 # EMAIL_FROM=
+
+# Optional: the addresses of your legal pages, linked from the sign-in pages, the page that asks to
+# allow an app, and the account and workspace pages. Nothing is linked when they are unset.
+# LEGAL_NOTICE_URL=
+# PRIVACY_POLICY_URL=
+# TERMS_URL=

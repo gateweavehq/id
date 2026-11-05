@@ -1,5 +1,6 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { LiveButton } from "#/components/live-button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -39,6 +40,7 @@ interface Listing {
 function WorkspacesPage() {
 	const [listing, setListing] = useState<Listing | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const legal = useLegalLinks();
 	useDocumentTitle("Workspaces");
 
 	const load = useCallback(async () => {
@@ -125,6 +127,8 @@ function WorkspacesPage() {
 			</section>
 
 			<NewWorkspace />
+
+			<LegalLinks links={legal} />
 		</main>
 	);
 }

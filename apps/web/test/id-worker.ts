@@ -188,6 +188,8 @@ function builtModules(): V4ModuleDefinition[] {
  * their back-channel logouts at any https address ending in `.apps.test`, and `outboundBodies` has
  * what they were sent. With `pinned` false it runs with no `BETTER_AUTH_URL`.
  *
+ * `settings` adds plain settings, such as the legal pages' addresses.
+ *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
  */
@@ -201,6 +203,7 @@ export async function startId(
 		breachedPasswords = false,
 		oidc = true,
 		pinned = true,
+		settings = {},
 	}: {
 		isolates?: number;
 		email?: boolean;
@@ -209,6 +212,7 @@ export async function startId(
 		breachedPasswords?: boolean;
 		oidc?: boolean;
 		pinned?: boolean;
+		settings?: Record<string, string>;
 	} = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
@@ -254,6 +258,7 @@ export async function startId(
 							: {}),
 						...(breachedPasswords ? { CHECK_BREACHED_PASSWORDS: "1" } : {}),
 						...(oidc ? { OIDC_PAIRWISE_SECRET: PAIRWISE_SECRET } : {}),
+						...settings,
 					},
 					serviceBindings: { EMAIL: "outbox" },
 					d1Databases: { DB: "id-test" },

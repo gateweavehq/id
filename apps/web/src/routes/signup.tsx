@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { LiveButton } from "#/components/live-button";
 import { SignInDivider } from "#/components/sign-in-divider";
 import { Input } from "#/components/ui/input";
@@ -45,6 +46,7 @@ function SignUpPage() {
 	const [notice, setNotice] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const turnstile = useTurnstile(options.turnstileSiteKey);
+	const legal = useLegalLinks();
 	useDocumentTitle("Create your account");
 
 	/** Sends a code, and returns what went wrong if it did. */
@@ -108,6 +110,7 @@ function SignUpPage() {
 	if (!options.email) {
 		return (
 			<AuthPage
+				agreeing
 				title="Create your account"
 				description="This server does not send email, so it cannot check an address. Ask whoever runs it for an invitation."
 			>
@@ -125,6 +128,7 @@ function SignUpPage() {
 	if (person) {
 		return (
 			<AuthPage
+				agreeing
 				title="Enter the code"
 				description={
 					<>
@@ -229,6 +233,8 @@ function SignUpPage() {
 				</form>
 
 				<BackToSignIn search={search} />
+
+				<LegalLinks links={legal} agreeing />
 			</div>
 		</main>
 	);

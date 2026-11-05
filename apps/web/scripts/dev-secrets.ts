@@ -12,6 +12,9 @@ export const OPTIONAL_SECRETS = [
 	"TURNSTILE_SECRET_KEY",
 	"CHECK_BREACHED_PASSWORDS",
 	"OIDC_PAIRWISE_SECRET",
+	"LEGAL_NOTICE_URL",
+	"PRIVACY_POLICY_URL",
+	"TERMS_URL",
 ] as const;
 
 /** What local dev loads from .dev.vars: the required secrets, and the optional ones it sets. */

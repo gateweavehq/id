@@ -6,6 +6,7 @@ import { AccountPassword } from "#/components/account-password";
 import { AccountProfile } from "#/components/account-profile";
 import { AccountSessions } from "#/components/account-sessions";
 import { AccountTwoFactor } from "#/components/account-two-factor";
+import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
 import { carriesASignature } from "#/lib/oauth-flow";
@@ -30,6 +31,7 @@ function AccountPage() {
 	const { session } = Route.useRouteContext();
 	const data = Route.useLoaderData();
 	const router = useRouter();
+	const legal = useLegalLinks();
 	useDocumentTitle("Account");
 
 	return (
@@ -74,6 +76,8 @@ function AccountPage() {
 			{data.apps && <AccountApps />}
 
 			<AccountActivity />
+
+			<LegalLinks links={legal} />
 		</main>
 	);
 }

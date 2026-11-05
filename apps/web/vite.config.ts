@@ -22,7 +22,7 @@ export default defineConfig(({ command }) => ({
 			config: (config) => {
 				// The browser tests' build has email on, because signing up takes a code (see
 				// e2e/build.mjs). Nothing is sent: each message is saved to a file. It has GitHub on
-				// too, and those tests stop the browser at GitHub's door.
+				// too, and those tests stop the browser at GitHub's door, and links to legal pages.
 				const e2e = process.env.ID_E2E
 					? {
 							vars: {
@@ -32,6 +32,9 @@ export default defineConfig(({ command }) => ({
 								EMAIL_FROM: "Gateweave ID <id@example.com>",
 								GITHUB_CLIENT_ID: "client-for-browser-tests",
 								GITHUB_CLIENT_SECRET: "secret-for-browser-tests",
+								LEGAL_NOTICE_URL: "https://legal.example/notice",
+								PRIVACY_POLICY_URL: "https://legal.example/privacy",
+								TERMS_URL: "https://legal.example/terms",
 							},
 						}
 					: {};
