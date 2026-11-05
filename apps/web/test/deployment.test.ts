@@ -239,19 +239,22 @@ describe("a new deployment", () => {
 		await signUp(newAddress());
 		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
 		const email = `k-${newAddress()}`;
-		const storedCode = () =>
-			id.db
+		// All of them: a new code is a new row beside the old ones, and the newest is what counts.
+		const storedCodes = async () => {
+			const { results } = await id.db
 				.prepare("SELECT value FROM verification WHERE identifier LIKE ?")
 				.bind(`%${email}%`)
-				.first<{ value: string }>();
+				.all<{ value: string }>();
+			return results.map(({ value }) => value).sort();
+		};
 
 		await Promise.all(Array.from({ length: SIGN_UP_CODES_AN_HOUR }, () => requestCode(email)));
-		const before = await storedCode();
-		expect(before?.value).toEqual(expect.any(String));
+		const before = await storedCodes();
+		expect(before).not.toEqual([]);
 
 		// A new code would reset the attempts, which is what the cap is there to stop.
 		expect((await requestCode(email.replace("k", KELVIN))).status).toBe(200);
-		expect(await storedCode()).toEqual(before);
+		expect(await storedCodes()).toEqual(before);
 	});
 
 	it("still tells an address with an account so", async () => {
