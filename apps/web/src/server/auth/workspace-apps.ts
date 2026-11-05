@@ -1,6 +1,6 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AuditEventType } from "../../lib/audit-event";
 import { appName, can, comparableName, type WorkspaceApp } from "../../lib/workspace";
@@ -56,11 +56,36 @@ export async function appsOf(db: Database, workspaceId: string): Promise<Workspa
 			clientId: schema.oauthClient.clientId,
 			name: schema.oauthClient.name,
 			redirectUris: schema.oauthClient.redirectUris,
+			createdAt: schema.oauthClient.createdAt,
+			// Not in the provider's schema, which is generated: see migrations/0012_app_added_by.sql.
+			addedBy: sql<string | null>`"oauth_client"."added_by"`,
 		})
 		.from(schema.oauthClient)
 		.where(eq(schema.oauthClient.referenceId, workspaceId))
 		.orderBy(asc(schema.oauthClient.createdAt))
 		.all();
+	const adders = [...new Set(rows.flatMap(({ addedBy }) => (addedBy ? [addedBy] : [])))];
+	const people =
+		adders.length === 0
+			? []
+			: await db
+					.select({ id: schema.user.id, name: schema.user.name })
+					.from(schema.user)
+					.where(inArray(schema.user.id, adders))
+					.all();
+	const staying =
+		adders.length === 0
+			? []
+			: await db
+					.select({ userId: schema.member.userId })
+					.from(schema.member)
+					.where(
+						and(
+							eq(schema.member.organizationId, workspaceId),
+							inArray(schema.member.userId, adders),
+						),
+					)
+					.all();
 	const named = await db
 		.select({
 			clientId: schema.workspaceAppGroup.clientId,
@@ -69,11 +94,18 @@ export async function appsOf(db: Database, workspaceId: string): Promise<Workspa
 		.from(schema.workspaceAppGroup)
 		.where(eq(schema.workspaceAppGroup.organizationId, workspaceId))
 		.all();
-	return rows.map(({ clientId, name, redirectUris }) => ({
+	return rows.map(({ clientId, name, redirectUris, createdAt, addedBy }) => ({
 		clientId,
 		name: name ?? "",
 		redirectUris: urisIn(redirectUris),
 		groups: named.filter((row) => row.clientId === clientId).map((row) => row.groupId),
+		addedAt: createdAt?.getTime() ?? null,
+		addedBy: addedBy
+			? {
+					name: people.find((person) => person.id === addedBy)?.name ?? null,
+					stillMember: staying.some((row) => row.userId === addedBy),
+				}
+			: null,
 	}));
 }
 
@@ -192,6 +224,7 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 						workspace: organizationId,
 						name,
 						redirectUris,
+						addedBy: session.user.id,
 					});
 					const entries = Object.entries(row);
 					const columns = sql.raw(entries.map(([column]) => `"${column}"`).join(", "));

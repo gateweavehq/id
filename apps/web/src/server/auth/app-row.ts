@@ -15,6 +15,8 @@ export interface NewWorkspaceApp {
 	workspace: string;
 	name: string;
 	redirectUris: string[];
+	/** The user id of the admin adding it, which the app list shows once they have left. */
+	addedBy: string;
 }
 
 /**
@@ -111,6 +113,7 @@ export function workspaceAppRow(app: NewWorkspaceApp, now = new Date()) {
 		backchannel_logout_session_required: 0,
 		reference_id: app.workspace,
 		metadata: JSON.stringify({ app: clientId, workspace: app.workspace }),
+		added_by: app.addedBy,
 	};
 	return { row, clientId, clientSecret };
 }

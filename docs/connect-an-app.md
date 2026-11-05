@@ -141,4 +141,5 @@ A workspace can have up to 20 apps, and an app up to 5 redirect URIs. A name can
 an app cannot take the name of one that everyone on this deployment can use.
 
 An app belongs to its workspace, not to whoever added it, so it stays when they leave. When someone who
-ran an app leaves, delete it or replace its secret.
+ran an app leaves, delete it or replace its secret. The app list says who added each app, and says so when
+they are no longer in the workspace.
