@@ -106,7 +106,7 @@ asks it, and the triggers in `0014_deployment_hold.sql` hold it.
 
 Two people cannot both be first: D1 runs writes one at a time, and the second finds an account there. Until
 the first account exists, though, the first to arrive is the owner, whoever they are, so a new server should
-be claimed as soon as it is up.
+be claimed as soon as it is up, as [self-hosting.md](self-hosting.md) says.
 
 **The owner has a page, `/server`, linked from their account,** and its paths under `/deployment/` answer
 everyone else with a 404, as if they were not there. Opening sign-up and making an invitation also want a
@@ -734,6 +734,14 @@ in the background already avoids. A write that fails stops nothing, and logs
 `audit: could not record <type>` with the kind of error, and nothing about whose it was.
 
 ## What has been proven
+
+**A new server, deployed, on 2026-11-05.** A clean clone under names of its own went through
+[self-hosting.md](self-hosting.md) with no email and no GitHub: `pnpm run deploy` made the database, the queue and
+the secret, then a person claimed it, invited someone who joined from the link in a phone-sized browser, and moved
+the ownership with the guide's statement. With the provider turned on, an app registered with `apps:add` signed
+someone in through a real authorization code flow, with its ID token checked against the published keys. Signing out
+while that app could not be reached put the logout on the real queue, which tried again a minute later and two
+minutes after that. The button itself was not pressed, though its form asks for what the guide says.
 
 A throwaway Worker on workerd, driven by `oauth4webapi` and by Chromium's WebAuthn, checked these on
 2026-11-04 with Better Auth 1.7.14. All of them were local, none on a deployed Worker:
