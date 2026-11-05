@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { hashPassword } from "better-auth/crypto";
-import { appRow, insertStatement } from "../scripts/app-row.ts";
+import { appRow, insertStatement } from "../src/server/auth/app-row.ts";
 import { APP, PERSON } from "./fixtures.ts";
 
 const root = resolve(import.meta.dirname, "..");

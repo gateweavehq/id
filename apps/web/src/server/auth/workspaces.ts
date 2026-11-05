@@ -5,7 +5,6 @@ import {
 	createAuthMiddleware,
 	getSessionFromCtx,
 	isAPIError,
-	NO_STORE_HEADERS,
 	sessionMiddleware,
 } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
@@ -29,6 +28,18 @@ import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { workspaceInvitationEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
+import {
+	type Member,
+	memberOf,
+	NO_WORKSPACE,
+	noStore,
+	parseBody,
+	requireFreshSession,
+	requireMember,
+	requireRight,
+	type Session,
+} from "./workspace-access";
+import { appsOf } from "./workspace-apps";
 
 // "Workspaces" in docs/architecture.md. The organization plugin keeps the rows; every request to it
 // comes through the gate below first, so what a person can do is what this file lets through.
@@ -40,31 +51,16 @@ export const WORKSPACES_PER_OWNER = 10;
 const MEMBERS_PER_WORKSPACE = 500;
 const INVITATION_LIFETIME_DAYS = 7;
 
-const NO_WORKSPACE = {
-	code: "WORKSPACE_NOT_FOUND",
-	message: "That workspace does not exist, or you are not a member of it.",
-};
 const NO_INVITATION = {
 	code: "INVITATION_NOT_FOUND",
 	message:
 		"That invitation does not exist, or it is not for this account. It may have expired or been withdrawn.",
 };
 const NO_MEMBER = { code: "MEMBER_NOT_FOUND", message: "That person is not in this workspace." };
-const NOT_ALLOWED = {
-	code: "NOT_ALLOWED",
-	message: "Your role in this workspace does not allow this.",
-};
 const LAST_OWNER = {
 	code: "LAST_OWNER",
 	message: "A workspace needs an owner. Make someone else an owner first.",
 };
-
-interface Member {
-	id: string;
-	role: string;
-}
-
-type Session = NonNullable<Awaited<ReturnType<typeof getSessionFromCtx>>>;
 
 interface WorkspacesConfig {
 	db: Database;
@@ -72,16 +68,10 @@ interface WorkspacesConfig {
 	/** Without it, no invitation can reach anyone, so none can be made. */
 	mailer: Mailer | undefined;
 	record: RecordEvent;
+	/** Whether this deployment has a provider for apps to sign people in through. */
+	appsEnabled: boolean;
 	/** Whether this person may send another invitation, to this address. Unlimited without it. */
 	allowInvitation: ((inviterId: string, email: string) => Promise<boolean>) | undefined;
-}
-
-function memberOf(db: Database, workspaceId: string, userId: string): Promise<Member | undefined> {
-	return db
-		.select({ id: schema.member.id, role: schema.member.role })
-		.from(schema.member)
-		.where(and(eq(schema.member.organizationId, workspaceId), eq(schema.member.userId, userId)))
-		.get();
 }
 
 async function ownersOf(db: Database, workspaceId: string): Promise<number> {
@@ -91,17 +81,6 @@ async function ownersOf(db: Database, workspaceId: string): Promise<number> {
 		.where(and(eq(schema.member.organizationId, workspaceId), eq(schema.member.role, "owner")))
 		.get();
 	return row?.owners ?? 0;
-}
-
-/** Whoever is not a member hears what they would hear of a workspace that does not exist. */
-async function requireMember(db: Database, workspaceId: string, session: Session): Promise<Member> {
-	const member = await memberOf(db, workspaceId, session.user.id);
-	if (!member) throw APIError.from("NOT_FOUND", NO_WORKSPACE);
-	return member;
-}
-
-function requireRight(allowed: boolean) {
-	if (!allowed) throw APIError.from("FORBIDDEN", NOT_ALLOWED);
 }
 
 /** A member of this workspace. Another workspace's member is nobody here. */
@@ -158,14 +137,7 @@ function rule<Body>(
 	allow: (input: Body, session: Session, ctx: GenericEndpointContext) => Promise<void>,
 ): Check {
 	return async (raw, session, ctx) => {
-		const parsed = body.safeParse(raw);
-		if (!parsed.success) {
-			throw APIError.from("BAD_REQUEST", {
-				code: "INVALID_REQUEST",
-				message: parsed.error.issues[0]?.message ?? "That request is not valid.",
-			});
-		}
-		await allow(parsed.data, session, ctx);
+		await allow(parseBody(body, raw), session, ctx);
 	};
 }
 
@@ -194,15 +166,8 @@ function gateRules({ db, mailer, allowInvitation }: WorkspacesConfig): Record<st
 			z.strictObject(inWorkspace),
 			async ({ organizationId }, session, ctx) => {
 				requireRight(can(await requireMember(db, organizationId, session), "delete"));
-				// It cannot be undone and takes every member's place with it, so it outlasts a stolen
-				// cookie as setting a password does.
-				const age = Date.now() - new Date(session.session.createdAt).getTime();
-				if (age > ctx.context.sessionConfig.freshAge * 1000) {
-					throw APIError.from("FORBIDDEN", {
-						code: "SESSION_NOT_FRESH",
-						message: "Session is not fresh",
-					});
-				}
+				// It cannot be undone and takes every member's place with it.
+				requireFreshSession(session, ctx);
 			},
 		),
 		"/organization/leave": rule(
@@ -372,10 +337,6 @@ const WORKSPACE_EVENTS: Record<
 	}),
 };
 
-function noStore(ctx: { setHeader(name: string, value: string): void }) {
-	for (const [name, value] of Object.entries(NO_STORE_HEADERS)) ctx.setHeader(name, value);
-}
-
 /** Everywhere the person belongs, and what is waiting for them. */
 function listWorkspaces(db: Database) {
 	return createAuthEndpoint(
@@ -402,7 +363,7 @@ function listWorkspaces(db: Database) {
 }
 
 /** One workspace, for a member of it. To anyone else, it does not exist. */
-function getWorkspace(db: Database) {
+function getWorkspace(db: Database, appsEnabled: boolean) {
 	return createAuthEndpoint(
 		"/workspaces/get",
 		{ method: "GET", query: z.object({ slug: z.string() }), use: [sessionMiddleware] },
@@ -451,7 +412,15 @@ function getWorkspace(db: Database) {
 						.orderBy(asc(schema.invitation.createdAt))
 						.all()
 				: [];
-			return { workspace, you: { memberId: you.id, role: you.role }, members, invitations };
+			const apps = appsEnabled && can(you, "manageApps") ? await appsOf(db, workspace.id) : [];
+			return {
+				workspace,
+				you: { memberId: you.id, role: you.role },
+				members,
+				invitations,
+				apps,
+				appsEnabled,
+			};
 		},
 	);
 }
@@ -471,7 +440,7 @@ function getInvitation(db: Database) {
 }
 
 export function workspacePlugins(config: WorkspacesConfig) {
-	const { db, baseURL, mailer, record } = config;
+	const { db, baseURL, mailer, record, appsEnabled } = config;
 	const rules = gateRules(config);
 
 	return [
@@ -526,7 +495,7 @@ export function workspacePlugins(config: WorkspacesConfig) {
 			id: "workspaces",
 			endpoints: {
 				listWorkspaces: listWorkspaces(db),
-				getWorkspace: getWorkspace(db),
+				getWorkspace: getWorkspace(db, appsEnabled),
 				getInvitation: getInvitation(db),
 			},
 			hooks: {

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { appAddedStatement } from "../scripts/app-row";
+import { appAddedStatement } from "../src/server/auth/app-row";
 import { type AuditEventRow, startId } from "./id-worker";
 
 // The audit log, through the public routes of the built Worker. Events are written after the

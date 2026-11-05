@@ -265,6 +265,16 @@ async function appNames(db: Database, apps: string[]): Promise<Map<string, strin
 	return new Map(rows.flatMap(({ app, name }) => (name ? [[app, name] as const] : [])));
 }
 
+/** The workspaces someone is in now. */
+async function workspacesOf(db: Database, userId: string): Promise<Set<string>> {
+	const rows = await db
+		.select({ workspaceId: schema.member.organizationId })
+		.from(schema.member)
+		.where(eq(schema.member.userId, userId))
+		.all();
+	return new Set(rows.map(({ workspaceId }) => workspaceId));
+}
+
 /** Names the people in these events, as they are called now. */
 async function peopleNames(db: Database, people: string[]): Promise<Map<string, string>> {
 	if (people.length === 0) return new Map();
@@ -310,18 +320,28 @@ export function auditLog(db: Database, record: RecordEvent): BetterAuthPlugin {
 					const names = await appNames(db, [
 						...new Set(events.flatMap(({ app }) => (app ? [app] : []))),
 					]);
+					const workspaces = await workspacesOf(db, me);
 					const people = await peopleNames(db, [
 						...new Set(events.flatMap((event) => asSeenBy(me, event).other ?? [])),
 					]);
 					return {
 						events: events.map((event): AuditActivity => {
-							const { id, at, type, app, ip, device, detail } = event;
+							const { id, at, type, app, workspaceId, ip, device, detail } = event;
 							const { byOther, other } = asSeenBy(me, event);
 							return {
 								id,
 								at,
 								type,
-								app: app && (names.get(app) ?? app),
+								// A workspace's app is called something only to its members, as on the page that
+								// asks them. Someone it turned away has its id, which should not get them its name,
+								// and its id alone means nothing to anyone once it is gone.
+								app:
+									app &&
+									(workspaceId
+										? workspaces.has(workspaceId)
+											? (names.get(app) ?? null)
+											: null
+										: (names.get(app) ?? app)),
 								// Where someone else did it, this is where they were, and not this person's to see.
 								ip: byOther ? null : ip,
 								device: byOther ? null : device,

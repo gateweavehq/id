@@ -5,7 +5,7 @@ import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { LiveButton } from "#/components/live-button";
 import { authClient } from "#/lib/auth-client";
-import { getAppName } from "#/lib/oauth-app";
+import { getAppToAllow } from "#/lib/oauth-app";
 import { flowSearch, onItsWay } from "#/lib/oauth-flow";
 import { getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
@@ -36,9 +36,9 @@ function hostOf(uri: string | undefined): string | null {
 
 /**
  * Asks whether an app may have what it asked for. First-party apps only come here when they ask to,
- * with `prompt=consent`. Apps a workspace adds always will (see the architecture notes). What this
- * page shows is not what is decided: the answer goes back with the signed query, and the provider
- * reads that alone.
+ * with `prompt=consent`. Apps a workspace adds always do, the first time, and this says whose they are
+ * and where they go, as their names are whatever an admin chose. What this page shows is not what is
+ * decided: the answer goes back with the signed query, and the provider reads that alone.
  */
 export const Route = createFileRoute("/consent")({
 	validateSearch: consentSearch,
@@ -48,18 +48,18 @@ export const Route = createFileRoute("/consent")({
 		return { session };
 	},
 	loaderDeps: ({ search }) => ({ clientId: search.client_id }),
-	loader: ({ deps }) => (deps.clientId ? getAppName({ data: deps.clientId }) : null),
+	loader: ({ deps }) => (deps.clientId ? getAppToAllow({ data: deps.clientId }) : null),
 	component: ConsentPage,
 });
 
 function ConsentPage() {
 	const { session } = Route.useRouteContext();
-	const appName = Route.useLoaderData();
+	const about = Route.useLoaderData();
 	const search = Route.useSearch();
 	const [error, setError] = useState<ReactNode>(null);
 	const [pending, setPending] = useState(false);
-	const app = appName ?? "This app";
-	const host = hostOf(search.redirect_uri);
+	const app = about?.name ?? "This app";
+	const host = about?.host ?? hostOf(search.redirect_uri);
 	const scopes = scopeWords(search.scope);
 	useDocumentTitle("Allow access");
 
@@ -90,6 +90,12 @@ function ConsentPage() {
 						<li key={words}>{words}</li>
 					))}
 				</ul>
+			)}
+			{about?.workspace && (
+				<p className="text-sm text-muted-foreground">
+					An admin of <span className="text-foreground">{about.workspace}</span> added this app.
+					Nobody has checked who runs it, so allow it only if you know what it is.
+				</p>
 			)}
 			{host && (
 				<p className="text-sm text-muted-foreground">

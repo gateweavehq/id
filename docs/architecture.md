@@ -26,11 +26,11 @@ Building on Track's sync engine here would add moving parts and solve nothing.
 There is one issuer per deployment. Gateweave Cloud's is `https://id.gateweave.com`.
 
 - **An account** is global, with one verified email address.
-- **A workspace** is a Better Auth organization, behind a gate of ID's own (see "Workspaces"). It will
-  own apps and groups. What its owners and admins may do is decided with `can`, never by comparing a
+- **A workspace** is a Better Auth organization, behind a gate of ID's own (see "Workspaces"). It owns
+  apps, and will own groups. What its owners and admins may do is decided with `can`, never by comparing a
   role with `member`.
-- **An app** is an OAuth client. All of them are first-party for now. A workspace's will be made through
-  ID's own endpoints, which can put the workspace in the app's `metadata`. The provider's own way,
+- **An app** is an OAuth client. A workspace's are made through ID's own endpoints, which put the
+  workspace in the app's `metadata` (see "Apps a workspace adds"). The provider's own way,
   `clientReference`, reads the session's active workspace, which a person cannot see and ID does not use.
 - **A first-party app** has no workspace. The deployment registers it. Track and Agents are
   first-party in Gateweave Cloud. Anyone with an account may use one, because the product checks its
@@ -188,7 +188,7 @@ own check at authorization.
 
 A workspace is a group of people who will share apps. Better Auth's organization plugin keeps the rows,
 and `apps/web/src/server/auth/workspaces.ts` decides what reaches it. Today a workspace has a name, an
-address, members and invitations. The apps and groups that give it a point come next.
+address, members, invitations and apps. Groups come next.
 
 **Every request to the plugin goes through a gate first.** Ten paths have a rule. Anything else answers
 404, including the plugin's teams and custom roles and whatever a later version adds, so an upgrade
@@ -269,12 +269,15 @@ It runs in two places:
   their access, and a code issued a moment before someone was refused would still work. This hook sees
   the client's metadata and not its id, so every app carries its own id in `metadata.app`.
 
-Removing someone from a workspace or group also deletes their refresh tokens for its apps, so access
-ends at the next expiry of a short-lived access token rather than at some later refresh.
+Someone out of a workspace also loses what they already hold from its apps, in the same statement: a
+trigger on `member` deletes their access tokens, refresh tokens and consent for them. Without that, an
+access token would carry on for up to an hour. A token request that passes the check at the very moment
+someone is removed can still leave an access token for up to that hour, and the next refresh is refused.
 
 **Consent.** First-party apps skip the consent screen. Workspace apps never do, because `skip_consent`
 on them would let any workspace's admin receive a member's address silently. The screen names the app,
-the workspace that owns it and the host it sends people back to.
+the workspace that owns it and the host it sends people back to, from the app's own row, and says that
+nobody has checked who runs it. Asked about an app they cannot use, it tells a person nothing.
 
 ## Signing in to an app
 
@@ -364,14 +367,14 @@ Other rules:
 - **Apps need PKCE and exact redirect URIs.** There is no open dynamic client registration: admins
   choose apps. A pairwise app's redirect URIs must share one host.
 - **`sid` is the session's own id, in the ID token and the logout token,** so two apps can match up a
-  person for as long as one session lasts. All apps are first-party for now. Workspace apps (who may
+  person for as long as one session lasts. Workspace apps (who may
   not trust each other) need this looked at before they get `backchannel_logout_uri`.
 - **Limits on the token and userinfo endpoints are high on purpose,** at 600 a minute per address. Apps'
   servers call them, and apps on Workers all come from one Cloudflare address.
 
 ## Registering an app
 
-First-party apps are registered by whoever runs the deployment, and nothing else can add one. Signed-in
+First-party apps are registered by whoever runs the deployment, and only they can add one. Signed-in
 people get no client endpoint (`clientPrivileges` is always false), and Better Auth's admin function can
 only run inside the Worker, which no route offers:
 
@@ -382,9 +385,49 @@ pnpm --filter @gateweave/id-web apps:add --env staging --app track --name "Gatew
 ```
 
 It writes the row with `wrangler d1 execute`, keeps only a hash of the secret, and prints the secret once.
-Since this writes what the provider would, `scripts/app-row.ts` is the one part of ID that knows the
-provider's table. `test/oidc.test.ts` signs in through a row it builds, so an upgrade that changes what
+Since this writes what the provider would, `src/server/auth/app-row.ts` is the one part of ID that knows
+the provider's table. `test/oidc.test.ts` signs in through a row it builds, so an upgrade that changes what
 the provider reads fails there.
+
+## Apps a workspace adds
+
+An owner or admin can add an app from the workspace's page, and [connect-an-app.md](connect-an-app.md) is
+what they read next. `workspace-apps.ts` has four endpoints, to add, change, replace a secret and delete.
+The provider's own client endpoints stay closed, because they take fields from the caller. These take a
+name and redirect URIs, in strict bodies, and write a fixed row that `workspaceAppRow` builds. So nothing
+anyone sends can decide `skip_consent`, `metadata` or `reference_id`, and the row is what the check for
+who may sign in trusts.
+
+- **Two columns say whose an app is.** `reference_id` finds a workspace's apps, and the triggers below use
+  it. `metadata.workspace` is what the token hooks can see of the same fact, as they get the client's
+  metadata and not its row. Both are written once, together.
+- **An app stays on its host.** People agreed to that host, and it is where their `sub` comes from. If it
+  could change, an admin could move everyone's consent to a host they never saw, and every person would
+  look new to the app there. Paths on the host can change. To move, add a new app.
+- **A code never comes back here.** No app may send people to this server, on any port, because whatever
+  this host serves could read the code. On a machine running everything locally, other ports are other
+  programs, so they are allowed.
+- **A name is whatever an admin chooses,** so the screen always says whose the app is and where it goes,
+  and it reaches only people who accepted an invitation to that workspace. It only takes the names people
+  already trust off the table: `Gateweave`, and any first-party app's, compared after folding away what
+  merely looks different. It is not a defence against every lookalike.
+- **The secret is shown once.** Only its hash is kept, and the app list reads named columns, so the hash
+  stays out of it too.
+- **Adding, replacing a secret and deleting want a recent sign-in,** as deleting a workspace does. A new
+  secret gets at every member who agrees, so it should outlast a stolen cookie. Renaming does not.
+- **No `sid`, and no logout URIs.** `enable_end_session` is off, so the provider emits no `sid`, which two
+  apps that do not trust each other could use to match someone up across a session. Back-channel logout
+  for these apps is ID-20.
+- **`/oauth2/public-client` and `-prelogin` are closed.** They name any app to anyone who has its id.
+  What a person may be told about an app is on the consent page, and it depends on who they are. The same
+  rule holds in someone's own activity: an app a workspace added is named only to its members, so being
+  refused by one tells nobody what it is called. Its id alone means nothing to anyone, so it is not shown
+  in its place.
+
+**Removal is in the database, not in hooks.** Migration `0007` has a trigger on `member` that ends what
+someone holds, and one on `organization` that deletes its apps, whose tokens and consents follow by their
+foreign keys. A hook would hold only for the paths someone remembered, and cascades from deleting a user
+or a workspace would pass it by.
 
 ## A patched dependency
 

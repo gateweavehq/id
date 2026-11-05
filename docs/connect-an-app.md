@@ -1,0 +1,101 @@
+# Connect an app
+
+Your own app can sign people in with Gateweave ID. It works with any library that speaks OpenID Connect,
+and only members of the workspace that added it can use it.
+
+Gateweave ID has not been through the OpenID conformance suite yet, so check that it does what you need
+before you rely on it.
+
+## Add it
+
+You need to be an owner or admin of the workspace, and to have signed in within the last day. If you
+signed in longer ago than that, sign out and in again.
+
+1. Open the workspace, and find **Apps**.
+2. Give the app a name. People see it when they are asked about the app.
+3. Enter its redirect URIs, one to a line: the exact addresses your app takes the code back at.
+4. Save the three values it shows you: the issuer, the client ID and the client secret. The secret is
+   not kept, so it cannot be shown again. If you lose it, replace it.
+
+A redirect URI must be an exact `https` address, or plain `http` on `localhost` or `127.0.0.1` while you
+try things out. All of an app's URIs must be on one host, which cannot be this server's own, and an app
+keeps that host for good. To move, add a new app there and delete the old one. People are asked again,
+and your app sees them as new people, because their ids in an app are computed from its host.
+
+## Configure your app
+
+| Setting           | Value                                                        |
+| ----------------- | ------------------------------------------------------------ |
+| Issuer            | What the page showed, such as `https://id.gateweave.com`     |
+| Discovery         | `<issuer>/.well-known/openid-configuration`                  |
+| Client ID, secret | What the page showed                                         |
+| Client auth       | `client_secret_basic`: HTTP Basic at the token endpoint      |
+| Flow              | Authorization code, with PKCE (`S256`), which is required    |
+| Scopes            | `openid`, and any of `profile`, `email` and `offline_access` |
+
+Let your library read everything else from discovery. For example, with
+[`oauth4webapi`](https://github.com/panva/oauth4webapi):
+
+```ts
+import * as oauth from "oauth4webapi";
+
+const issuer = new URL(process.env.GATEWEAVE_ISSUER);
+const as = await oauth.processDiscoveryResponse(issuer, await oauth.discoveryRequest(issuer));
+const client = { client_id: process.env.GATEWEAVE_CLIENT_ID };
+const auth = oauth.ClientSecretBasic(process.env.GATEWEAVE_CLIENT_SECRET);
+```
+
+## What your app gets
+
+The ID token is signed with ES256, and your library checks it against the keys in discovery.
+
+| Claim                     | With scope | What it is                                           |
+| ------------------------- | ---------- | ---------------------------------------------------- |
+| `sub`                     | `openid`   | This person's id in your app. Key your data on this. |
+| `email`, `email_verified` | `email`    | Their address, which ID has always verified          |
+| `name`, `picture`         | `profile`  | Their name, and a picture if they have one           |
+
+`sub` is the same for one person every time, and different in every app, so two apps cannot match people
+up by it. It is not their account id, and it is not an address that could change.
+
+An ID token does not say which workspace someone is in, or their role in it. Anyone who gets as far as
+your app is a member of the workspace that added it.
+
+`offline_access` gets a refresh token, which rotates each time it is used.
+
+## What people see
+
+The first time, each person is asked whether your app may have what it asked for. The page says what the
+app is called, which workspace's admin added it, and which host it goes to. It also says that nobody has
+checked who runs it, because nobody has. After they say yes, they are not asked again unless your app
+asks for more.
+
+Someone outside the workspace is turned away before they are asked, and is told nothing about your app.
+Your app hears nothing either, unless it sent them with `prompt=none`, which gets an error back.
+
+## When someone leaves
+
+When someone leaves a workspace or is removed, they lose its apps at once. Their access tokens, refresh
+tokens and consent are deleted, so anything your app does with those tokens starts failing. If they
+come back, they are asked again.
+
+Your app is not told, and its own sessions are its own to end. **If your app keeps people signed in
+longer than an access token lasts, use `offline_access` and refresh, and end the session when a refresh
+fails.** Without that, someone removed from the workspace stays signed in to your app until its own
+session ends. Back-channel logout is not available to apps a workspace adds yet.
+
+## Changing it later
+
+Under **Apps** you can:
+
+- **Edit** its name and redirect URIs, on the same host.
+- **Replace the secret.** The old one stops working at once, so your app cannot refresh or sign anyone in
+  until it has the new one. People stay signed in, and tokens already issued keep working until they
+  expire.
+- **Delete** it. Everyone is signed out of it at once, and this cannot be undone. Deleting a workspace
+  deletes its apps.
+
+Each of these is in the activity of whoever did it.
+
+A workspace can have up to 20 apps, and an app up to 5 redirect URIs. An app cannot take the name of
+Gateweave, or of an app that everyone on this deployment can use.

@@ -6,13 +6,19 @@
 //     --env staging
 //
 // Without --env it uses the top-level environment. With --local it uses the local dev database.
-// Nothing else in this repository can add an app: no route offers it, on purpose.
+// Nothing else can add a first-party app: no route offers it, on purpose. A workspace's admins add
+// apps of their own, which only its members can use, through `src/server/auth/workspace-apps.ts`.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { appAddedStatement, appRow, insertStatement, problemWithRedirectUri } from "./app-row.ts";
+import {
+	appAddedStatement,
+	appRow,
+	insertStatement,
+	problemWithRedirectUri,
+} from "../src/server/auth/app-row.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -36,7 +42,7 @@ const redirectUris = values["redirect-uri"];
 if (!app || !name || !redirectUris?.length) {
 	fail("--app, --name and at least one --redirect-uri are required.");
 }
-// The check for who may sign in goes by this id, and workspace rules will too.
+// The check for who may sign in goes by this id.
 if (!/^[a-z0-9][a-z0-9-]*$/.test(app)) fail("--app takes lowercase letters, digits and hyphens.");
 
 const hosts = new Set(redirectUris.map((uri) => URL.canParse(uri) && new URL(uri).host));

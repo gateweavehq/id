@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appRow, insertStatement } from "../scripts/app-row";
+import { appRow, insertStatement } from "../src/server/auth/app-row";
 import { type Ceremony, FakeAuthenticator } from "./fake-authenticator";
 import { type GitHubPerson, gitHubCode, startId } from "./id-worker";
 

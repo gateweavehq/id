@@ -30,6 +30,25 @@ describe("describeActivity", () => {
 		expect(describeActivity(activity({ type, detail: inAcme }))).toBe(words);
 	});
 
+	it.each([
+		["app_added", "Added Tool to Acme"],
+		["app_changed", "Changed the app Tool"],
+		["app_secret_replaced", "Replaced the secret of Tool"],
+		["app_deleted", "Deleted the app Tool"],
+	])("says what %s was, by the name it had", (type, words) => {
+		const detail = JSON.stringify({ workspace: "Acme", name: "Tool" });
+		expect(describeActivity(activity({ type, detail, app: "client-id" }))).toBe(words);
+	});
+
+	it("says what an app added by a deployment was, which has no details", () => {
+		expect(describeActivity(activity({ type: "app_added", app: "Track" }))).toBe("Added Track");
+	});
+
+	it("gets by when an app's details cannot be read", () => {
+		const words = describeActivity(activity({ type: "app_deleted", detail: "{", app: "Tool" }));
+		expect(words).toBe("Deleted the app Tool");
+	});
+
 	it("says a change of role from each side", () => {
 		const type = "member_role_changed";
 		expect(describeActivity(activity({ type, detail: inAcme, other: "Bob" }))).toBe(

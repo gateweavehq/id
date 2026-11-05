@@ -7,7 +7,7 @@ import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
 import { hasPasskey } from "./passkeys";
-import { maySignIn } from "./who-may-sign-in";
+import { type AppIdentity, appIn, maySignIn } from "./who-may-sign-in";
 
 export interface OidcConfig {
 	/** The deployment's origin. Apps have it in their settings, so it can never change. */
@@ -20,25 +20,20 @@ const DAY = 86_400;
 
 /**
  * `/token` hands a signed-in person a JWT that holds their real id, which pairwise subjects exist to
- * keep from apps. The apps have no use for it, since they get tokens from the provider.
+ * keep from apps. The apps have no use for it, since they get tokens from the provider. The other two
+ * name any app to anyone who has its id, and no page here uses them. What the consent page asks for
+ * instead tells someone only about an app they could reach.
  */
-export const OIDC_CLOSED_PATHS = ["/token"];
+export const OIDC_CLOSED_PATHS = [
+	"/token",
+	"/oauth2/public-client",
+	"/oauth2/public-client-prelogin",
+];
 
-/**
- * Every app carries its own id in its metadata, because the token hooks see the metadata and not
- * the client id. Nothing here can be read from a client that lacks it, so such a client gets nobody.
- */
-function appIn(metadata: unknown): string | undefined {
-	try {
-		const parsed = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
-		const app = (parsed as { app?: unknown } | null | undefined)?.app;
-		return typeof app === "string" && app ? app : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-async function appOfClient(db: Database, clientId: string | null | undefined) {
+async function appOfClient(
+	db: Database,
+	clientId: string | null | undefined,
+): Promise<AppIdentity | undefined> {
 	if (!clientId) return undefined;
 	const client = await db
 		.select({ metadata: schema.oauthClient.metadata })
@@ -49,7 +44,7 @@ async function appOfClient(db: Database, clientId: string | null | undefined) {
 }
 
 /** The app an authorization is for, from the provider's state. Undefined if it cannot be named. */
-async function appBeingAuthorized(db: Database): Promise<string | undefined> {
+async function appBeingAuthorized(db: Database): Promise<AppIdentity | undefined> {
 	const state = await getOAuthProviderState();
 	// `query` is a serialized query string, not an object. Reading it wrongly gets nothing here, which
 	// must refuse rather than let everyone through.
@@ -120,19 +115,23 @@ function auditOfApps(db: Database, record: RecordEvent): BetterAuthPlugin {
 						if (ctx.path === "/oauth2/revoke") {
 							// No person: an app's server is asking, and the token it names is stored hashed.
 							const clientId = clientRevoking(ctx.headers, ctx.body);
-							record("token_revoked", async () => ({
-								app: await appOfClient(db, clientId),
-								...from,
-							}));
+							record("token_revoked", async () => {
+								const app = await appOfClient(db, clientId);
+								return { app: app?.app, workspaceId: app?.workspace, ...from };
+							});
 							return;
 						}
 						const session = await getSessionFromCtx(ctx);
 						const clientId = new URLSearchParams(ctx.body?.oauth_query ?? "").get("client_id");
-						record(ctx.body?.accept === true ? "consent_granted" : "consent_denied", async () => ({
-							userId: session?.user.id,
-							app: await appOfClient(db, clientId),
-							...from,
-						}));
+						record(ctx.body?.accept === true ? "consent_granted" : "consent_denied", async () => {
+							const app = await appOfClient(db, clientId);
+							return {
+								userId: session?.user.id,
+								app: app?.app,
+								workspaceId: app?.workspace,
+								...from,
+							};
+						});
 					}),
 				},
 			],
@@ -174,8 +173,9 @@ export function oidcPlugins(
 				refreshToken: "gwid_rt_",
 				clientSecret: "gwid_cs_",
 			},
-			// Apps are registered by the deployment (scripts/add-app.ts). Nobody can make or change one
-			// through the API until workspaces have admins to decide who may.
+			// Nobody makes or changes an app through the provider's API, which takes fields from the caller
+			// that nothing here should. A deployment has scripts/add-app.ts, and a workspace's admins have
+			// workspace-apps.ts, which writes a fixed row.
 			clientPrivileges: () => false,
 			// Limits count per address, and these two are called by apps' servers. Apps on Workers all
 			// come from Cloudflare's one address, so the defaults (20 and 60 a minute) would stop every
@@ -194,10 +194,15 @@ export function oidcPlugins(
 				}),
 			}),
 			// Authorization does not run on refresh, so without this a removed person keeps their access.
-			customTokenResponseFields: ({ grantType, user, metadata }) => {
+			customTokenResponseFields: async ({ grantType, user, metadata }) => {
 				const app = appIn(metadata);
-				if (!maySignIn({ user, app })) {
-					record("refused", { userId: user?.id, app, detail: grantType });
+				if (!(await maySignIn(db, { user, app }))) {
+					record("refused", {
+						userId: user?.id,
+						app: app?.app,
+						workspaceId: app?.workspace,
+						detail: grantType,
+					});
 					throw new APIError("BAD_REQUEST", {
 						error: "invalid_grant",
 						error_description: "This person may not use this app",
@@ -205,7 +210,9 @@ export function oidcPlugins(
 				}
 				// The moment an app learns who someone is. A refresh tells it nothing new. This request is
 				// the app's server, so it says nothing of where the person is.
-				if (grantType === "authorization_code") record("app_sign_in", { userId: user?.id, app });
+				if (grantType === "authorization_code") {
+					record("app_sign_in", { userId: user?.id, app: app?.app, workspaceId: app?.workspace });
+				}
 				return {};
 			},
 			signup: {
@@ -219,10 +226,11 @@ export function oidcPlugins(
 				// Runs on every path to a code, and again when someone continues past the page.
 				shouldRedirect: async ({ user, headers }) => {
 					const app = await appBeingAuthorized(db);
-					if (maySignIn({ user, app })) return false;
+					if (await maySignIn(db, { user, app })) return false;
 					record("refused", {
 						userId: user.id,
-						app,
+						app: app?.app,
+						workspaceId: app?.workspace,
 						detail: "authorization",
 						...whereFrom(headers),
 					});

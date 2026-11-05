@@ -5,6 +5,7 @@ import { Notice } from "#/components/notice";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { WorkspaceApps } from "#/components/workspace-apps";
 import { authClient } from "#/lib/auth-client";
 import { getAuthOptions, getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
@@ -108,6 +109,9 @@ function WorkspacePage() {
 					{can(details.you, "rename") && <RenameWorkspace details={details} reload={load} />}
 					<Members details={details} reload={load} />
 					{can(details.you, "invite") && <Invitations details={details} reload={load} />}
+					{details.appsEnabled && can(details.you, "manageApps") && (
+						<WorkspaceApps details={details} reload={load} />
+					)}
 					<LeaveWorkspace details={details} />
 					{can(details.you, "delete") && <DeleteWorkspace details={details} />}
 				</>
