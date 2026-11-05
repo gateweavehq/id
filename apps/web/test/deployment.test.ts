@@ -239,18 +239,19 @@ describe("a new deployment", () => {
 		await signUp(newAddress());
 		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
 		const email = `k-${newAddress()}`;
-		const typed = email.replace("k", KELVIN);
+		const storedCode = () =>
+			id.db
+				.prepare("SELECT value FROM verification WHERE identifier LIKE ?")
+				.bind(`%${email}%`)
+				.first<{ value: string }>();
 
-		const answers = await Promise.all(Array.from({ length: 8 }, () => requestCode(typed)));
-		expect(answers.map(({ status }) => status)).toEqual(answers.map(() => 200));
+		await Promise.all(Array.from({ length: SIGN_UP_CODES_AN_HOUR }, () => requestCode(email)));
+		const before = await storedCode();
+		expect(before?.value).toEqual(expect.any(String));
 
-		for (let attempt = 0; attempt < 100; attempt++) {
-			if ((await emailsTo(email, CODE_EMAIL)).length >= SIGN_UP_CODES_AN_HOUR) break;
-			await new Promise((resolve) => setTimeout(resolve, 50));
-		}
-		// Long enough for a sixth to have arrived, had the requests been let through.
-		await new Promise((resolve) => setTimeout(resolve, 500));
-		expect((await emailsTo(email, CODE_EMAIL)).length).toBe(SIGN_UP_CODES_AN_HOUR);
+		// A new code would reset the attempts, which is what the cap is there to stop.
+		expect((await requestCode(email.replace("k", KELVIN))).status).toBe(200);
+		expect(await storedCode()).toEqual(before);
 	});
 
 	it("still tells an address with an account so", async () => {
@@ -470,18 +471,15 @@ describe("the time an answer about a code takes", () => {
 		}
 	});
 
-	it("is the same however the path is written", async () => {
-		await firstAccount();
-		const { status, took } = await timeOf("/email-otp/send-verification-otp/", {
-			email: newAddress(),
-			type: "sign-in",
-		});
-		if (status === 200) expect(took).toBeGreaterThanOrEqual(FLOOR);
-		const encoded = await timeOf("/email-otp/send%2Dverification%2Dotp", {
-			email: newAddress(),
-			type: "sign-in",
-		});
-		if (encoded.status === 200) expect(encoded.took).toBeGreaterThanOrEqual(FLOOR);
+	// The floor is on the exact path. Were one of these ever to reach the same code, it would have none.
+	it.each([
+		"/email-otp/send-verification-otp/",
+		"/email-otp/send%2Dverification%2Dotp",
+		"/EMAIL-OTP/send-verification-otp",
+		"//email-otp/send-verification-otp",
+	])("has no other way in by writing the path as %s", async (path) => {
+		const { status } = await timeOf(path, { email: newAddress(), type: "sign-in" });
+		expect(status).toBe(404);
 	});
 });
 

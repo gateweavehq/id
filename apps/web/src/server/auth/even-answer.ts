@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { SEND_CODE, USE_CODE } from "./sign-up";
 
-const PATHS = [SEND_CODE, USE_CODE];
+const PATHS = [SEND_CODE, USE_CODE].map((path) => `/api/auth${path}`);
 
 /** More than the work behind these answers normally takes on a deployed Worker. */
 const FLOOR_MS = 1000;
@@ -13,8 +13,7 @@ const FLOOR_MS = 1000;
  * already spending on waiting for an email. "Sign-up" in docs/architecture.md.
  */
 export function evenAnswer(request: Request, answer: Promise<Response>): Promise<Response> {
-	const { pathname } = new URL(request.url);
-	if (!PATHS.some((path) => pathname.includes(path))) return answer;
+	if (!PATHS.includes(new URL(request.url).pathname)) return answer;
 	const floor = Number(env.ANSWER_FLOOR_MS || FLOOR_MS);
 	return Promise.all([answer, new Promise((resolve) => setTimeout(resolve, floor))]).then(
 		([response]) => response,
