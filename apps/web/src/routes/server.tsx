@@ -7,7 +7,8 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { carriesASignature } from "#/lib/oauth-flow";
-import { getSession, ownsThisServer } from "#/lib/session";
+import { getAuthOptions, getSession, ownsThisServer } from "#/lib/session";
+import { signUpWords } from "#/lib/sign-up-words";
 import { useDocumentTitle } from "#/lib/title";
 import { workspaceFailure } from "#/lib/workspace";
 
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/server")({
 		if (!(await getSession())) throw redirect({ to: "/login", search: { redirect: "/server" } });
 		if (!(await ownsThisServer())) throw notFound();
 	},
+	loader: () => getAuthOptions(),
 	component: ServerPage,
 });
 
@@ -41,6 +43,7 @@ async function send(path: string, body: object) {
 }
 
 function ServerPage() {
+	const options = Route.useLoaderData();
 	const [settings, setSettings] = useState<Settings | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const legal = useLegalLinks();
@@ -74,7 +77,12 @@ function ServerPage() {
 				!error && <p className="text-sm text-muted-foreground">Loading…</p>
 			) : (
 				<>
-					<SignUp signUp={settings.signUp} reload={load} />
+					<SignUp
+						signUp={settings.signUp}
+						email={options.email}
+						github={options.github}
+						reload={load}
+					/>
 					<Invite settings={settings} reload={load} />
 				</>
 			)}
@@ -83,9 +91,20 @@ function ServerPage() {
 	);
 }
 
-function SignUp({ signUp, reload }: { signUp: Settings["signUp"]; reload: () => Promise<void> }) {
+function SignUp({
+	signUp,
+	email,
+	github,
+	reload,
+}: {
+	signUp: Settings["signUp"];
+	email: boolean;
+	github: boolean;
+	reload: () => Promise<void>;
+}) {
 	const [asked, setAsked] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const words = signUpWords({ signUp, email, github });
 
 	async function change(to: Settings["signUp"]) {
 		setError(null);
@@ -101,11 +120,7 @@ function SignUp({ signUp, reload }: { signUp: Settings["signUp"]; reload: () => 
 				Who can make an account
 			</h2>
 			<div className="space-y-3 rounded-lg border p-4">
-				<p className="text-sm">
-					{signUp === "open"
-						? "Anyone can make an account here, and make workspaces."
-						: "Only people invited, by you or by a workspace, can make an account here. Only you can make workspaces."}
-				</p>
+				<p className="text-sm">{words.now}</p>
 				{error && (
 					<p role="alert" className="text-sm text-destructive">
 						{error}
@@ -115,11 +130,9 @@ function SignUp({ signUp, reload }: { signUp: Settings["signUp"]; reload: () => 
 					<Button variant="outline" size="sm" onClick={() => change("closed")}>
 						Close sign-up
 					</Button>
-				) : asked ? (
+				) : words.opening === null ? null : asked ? (
 					<div className="space-y-3">
-						<p className="text-sm text-muted-foreground">
-							Anyone who finds this server could then make an account and a workspace.
-						</p>
+						<p className="text-sm text-muted-foreground">{words.opening}</p>
 						<div className="flex flex-wrap gap-2">
 							<Button variant="destructive" size="sm" onClick={() => change("open")}>
 								Yes, open it
