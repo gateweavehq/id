@@ -1,5 +1,5 @@
 diff --git a/dist/authorize-BnSO_Slc.mjs b/dist/authorize-BnSO_Slc.mjs
-index ad180217ca750e4dcba1992ebc9a588b1d80a196..2d9612dce50e7e91195693dcd5b904ff1b554fbd 100644
+index ad180217ca750e4dcba1992ebc9a588b1d80a196..d0658c87b7ce9c004e36059cbc6e2b93945cdb40 100644
 --- a/dist/authorize-BnSO_Slc.mjs
 +++ b/dist/authorize-BnSO_Slc.mjs
 @@ -2746,6 +2746,8 @@ const BACKCHANNEL_LOGOUT_EVENT_URI = "http://schemas.openid.net/event/backchanne
@@ -11,7 +11,15 @@ index ad180217ca750e4dcba1992ebc9a588b1d80a196..2d9612dce50e7e91195693dcd5b904ff
  /**
  * Signs a Back-Channel Logout Token per OIDC Back-Channel Logout 1.0 §2.4.
  *
-@@ -2903,17 +2905,26 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
+@@ -2827,6 +2829,7 @@ async function prepareBackchannelLogoutPlan(ctx, opts, input) {
+ 			accessTokenIds: accessToRevokeIds,
+ 			refreshTokenIds: refreshToRevokeIds,
+ 			sessionId,
++			onUndelivered: opts.backchannelLogoutUndelivered,
+ 			targets: (await Promise.all(eligibleClients.map(async (client) => {
+ 				try {
+ 					return {
+@@ -2903,17 +2906,31 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
  				exp,
  				jti
  			});
@@ -24,8 +32,6 @@ index ad180217ca750e4dcba1992ebc9a588b1d80a196..2d9612dce50e7e91195693dcd5b904ff
 -				body: new URLSearchParams({ logout_token: token }),
 -				signal: AbortSignal.timeout(BACKCHANNEL_DISPATCH_TIMEOUT_MS),
 -				redirect: "error"
--			});
--			if (response.status !== 200 && response.status !== 204) logger.warn(`back-channel logout to client ${client.clientId} returned ${response.status}`);
 +			for (let attempt = 1; attempt <= BACKCHANNEL_DISPATCH_ATTEMPTS; attempt++) {
 +				if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, BACKCHANNEL_DISPATCH_RETRY_DELAY_MS));
 +				try {
@@ -46,6 +52,12 @@ index ad180217ca750e4dcba1992ebc9a588b1d80a196..2d9612dce50e7e91195693dcd5b904ff
 +					logger.warn(`back-channel logout to client ${client.clientId} failed`, error);
 +				}
 +			}
++			await plan.onUndelivered?.({
++				clientId: client.clientId,
++				sub,
++				sid: plan.sessionId
+ 			});
+-			if (response.status !== 200 && response.status !== 204) logger.warn(`back-channel logout to client ${client.clientId} returned ${response.status}`);
  		} catch (error) {
  			logger.warn(`back-channel logout to client ${client.clientId} failed`, error);
  		}

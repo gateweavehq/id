@@ -38,3 +38,6 @@ BETTER_AUTH_SECRET=
 # LEGAL_NOTICE_URL=
 # PRIVACY_POLICY_URL=
 # TERMS_URL=
+
+# Optional. Seconds before a back-channel logout an app missed is first tried again (default 60).
+# LOGOUT_RETRY_SECONDS=

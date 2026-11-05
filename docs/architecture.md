@@ -589,8 +589,21 @@ has fixed, and move the rest.
   apart, when the answer is a failure of the app's (5xx) or no answer at all, and all of them fit in the 30
   seconds Workers give work after a response. That is the recoverable case the specification allows sending
   again for (section 2.5). A 4xx would only repeat. The token is the same each time, and a person already
-  signed out counts as a success (section 2.7). An app down for longer than that still misses it, and the
-  person stays signed in there until that session runs out.
+  signed out counts as a success (section 2.7). An app down for longer than that is handed on (below).
+- **`backchannelLogoutUndelivered`,** an option of ours, which the provider calls when all three tries of
+  a logout failed that way, with the app's client id, the `sub` and the session's id.
+
+## Logouts an app missed
+
+Signing out of ID promises to end the person's session in every app, so a logout an app missed goes on
+a Cloudflare Queue (`LOGOUTS`, `apps/web/src/server/logouts.ts`) rather than only a warning in the log.
+The message holds who and which session, not the token: a logout token lives two minutes and apps refuse
+old ones, so each try signs a new one with the same `iss`, `aud`, `sub` and `sid` and a new `jti`. The
+queue tries again after a minute, then twice as long each time up to six hours, for about 20 hours. A 4xx
+ends it, as it would only repeat, and so does an app that was deleted or no longer takes logouts. Then
+the person's session in that app is left to run out. A Queue rather than the cron: the daily cron is too
+slow, and a cron every minute would run all day for something that rarely happens. A deployment without
+the binding keeps the old behaviour, a warning in the log.
 
 ## Products as clients
 
