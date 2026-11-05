@@ -87,6 +87,8 @@ const SIGN_IN_METHODS: Record<string, string> = {
 	"/passkey/verify-authentication": "passkey",
 	"/two-factor/verify-totp": "totp",
 	"/two-factor/verify-backup-code": "recovery_code",
+	"/deployment/invitations/accept": "invitation",
+	"/deployment/claim": "claim",
 };
 const PROVIDER_CALLBACK = "/callback/:id";
 

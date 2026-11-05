@@ -331,7 +331,11 @@ function Invitations({ details, reload }: SectionProps) {
 			setError(failure);
 			return;
 		}
-		setSent(`An invitation is on its way to ${email}.`);
+		setSent(
+			canSendEmail
+				? `An invitation is on its way to ${email}.`
+				: `${email} is invited. Tell them yourself: this server does not send email. It waits for them under Workspaces once they have an account here, which only the person who runs this server can give them.`,
+		);
 		formElement.reset();
 		await reload();
 	}
@@ -349,46 +353,35 @@ function Invitations({ details, reload }: SectionProps) {
 			<h2 id="invite-heading" className="text-sm font-semibold">
 				Invite someone
 			</h2>
-			{canSendEmail ? (
-				<form onSubmit={onSubmit} className="space-y-4 rounded-lg border p-4">
-					<div className="space-y-2">
-						<Label htmlFor="invite-email">Their email</Label>
-						<Input id="invite-email" name="email" type="email" autoComplete="off" required />
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="invite-role">Role</Label>
-						<select
-							id="invite-role"
-							name="role"
-							defaultValue="member"
-							className={`${SELECT} w-full`}
-						>
-							{INVITED_ROLES.map((role) => (
-								<option key={role} value={role}>
-									{roleName(role)}
-								</option>
-							))}
-						</select>
-					</div>
-					{error && (
-						<p role="alert" className="text-sm text-destructive">
-							{error}
-						</p>
-					)}
-					{sent && (
-						<p role="status" className="text-sm break-words text-muted-foreground">
-							{sent}
-						</p>
-					)}
-					<LiveButton type="submit" variant="outline" size="sm" disabled={pending}>
-						Send invitation
-					</LiveButton>
-				</form>
-			) : (
-				<p className="text-sm text-muted-foreground">
-					This server does not send email, so it cannot send invitations.
-				</p>
-			)}
+			<form onSubmit={onSubmit} className="space-y-4 rounded-lg border p-4">
+				<div className="space-y-2">
+					<Label htmlFor="invite-email">Their email</Label>
+					<Input id="invite-email" name="email" type="email" autoComplete="off" required />
+				</div>
+				<div className="space-y-2">
+					<Label htmlFor="invite-role">Role</Label>
+					<select id="invite-role" name="role" defaultValue="member" className={`${SELECT} w-full`}>
+						{INVITED_ROLES.map((role) => (
+							<option key={role} value={role}>
+								{roleName(role)}
+							</option>
+						))}
+					</select>
+				</div>
+				{error && (
+					<p role="alert" className="text-sm text-destructive">
+						{error}
+					</p>
+				)}
+				{sent && (
+					<p role="status" className="text-sm break-words text-muted-foreground">
+						{sent}
+					</p>
+				)}
+				<LiveButton type="submit" variant="outline" size="sm" disabled={pending}>
+					{canSendEmail ? "Send invitation" : "Invite"}
+				</LiveButton>
+			</form>
 
 			{details.invitations.length > 0 && (
 				<ul aria-label="Open invitations" className="divide-y rounded-lg border text-sm">

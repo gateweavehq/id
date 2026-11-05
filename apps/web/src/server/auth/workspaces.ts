@@ -67,7 +67,7 @@ const LAST_OWNER = {
 interface WorkspacesConfig {
 	db: Database;
 	baseURL: string | undefined;
-	/** Without it, no invitation can reach anyone, so none can be made. */
+	/** Without it, an invitation waits to be found, and whoever made it says so themselves. */
 	mailer: Mailer | undefined;
 	record: RecordEvent;
 	/** Whether this deployment has a provider for apps to sign people in through. */
@@ -160,7 +160,7 @@ const invitationOnly = z.strictObject({ invitationId: id });
  * later version adds, and each reads what it needs from a strict body rather than the session's
  * "active" workspace, which a person cannot see and this does not use.
  */
-function gateRules({ db, mailer, allowInvitation }: WorkspacesConfig): Record<string, Check> {
+function gateRules({ db, allowInvitation }: WorkspacesConfig): Record<string, Check> {
 	return {
 		"/organization/create": rule(
 			z.strictObject({ name: workspaceName, slug: workspaceSlug }),
@@ -203,12 +203,6 @@ function gateRules({ db, mailer, allowInvitation }: WorkspacesConfig): Record<st
 			async ({ organizationId, email, role }, session, ctx) => {
 				requireRight(can(await requireMember(db, organizationId, session), "invite"));
 				requireFreshToGrant(role, session, ctx);
-				if (!mailer) {
-					throw APIError.from("BAD_REQUEST", {
-						code: "EMAIL_NOT_CONFIGURED",
-						message: "This server does not send email, so it cannot send invitations.",
-					});
-				}
 				if (allowInvitation && !(await allowInvitation(session.user.id, email.toLowerCase()))) {
 					throw APIError.from("TOO_MANY_REQUESTS", {
 						code: "TOO_MANY_INVITATIONS",

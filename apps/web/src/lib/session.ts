@@ -32,6 +32,14 @@ export const getSignUpState = createServerFn({ method: "GET" }).handler(async ()
 	return signUpState(db);
 });
 
+/** Whether the signed-in person is the one who runs this server. */
+export const ownsThisServer = createServerFn({ method: "GET" }).handler(async () => {
+	const { db, getAuth } = await import("#/server/auth");
+	const { ownsDeployment } = await import("#/server/auth/deployment");
+	const signedIn = await getAuth().api.getSession({ headers: getRequestHeaders() });
+	return signedIn ? ownsDeployment(db, signedIn.user.id) : false;
+});
+
 export const getLegalLinks = createServerFn({ method: "GET" }).handler(async () => {
 	const { legalLinks } = await import("#/server/legal");
 	return legalLinks();

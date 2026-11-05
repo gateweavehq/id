@@ -25,8 +25,8 @@
 		"RateLimiter": { "type": "durable-object", "storage": "sqlite" }
 	},
 	// Email through Cloudflare Email Service. Nothing is sent until EMAIL_FROM names a sender on a
-	// domain onboarded to Email Sending; without it, ID runs with email off, and then nobody can
-	// sign up with an address or reset a password.
+	// domain onboarded to Email Sending; without it, ID runs with email off: no sign-up codes, no
+	// password reset, and the owner hands out invitation links.
 	"send_email": [{ "name": "EMAIL" }],
 	// Once a day, deletes expired sessions, verifications and tokens (apps/web/src/server/db/prune.ts).
 	"triggers": { "crons": ["17 3 * * *"] },

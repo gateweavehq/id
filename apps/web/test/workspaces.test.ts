@@ -1157,7 +1157,7 @@ describe("invitations", () => {
 });
 
 describe("on a deployment that sends no email", () => {
-	it("still has workspaces, and says that it cannot invite anyone", async () => {
+	it("still has workspaces, and an invitation waits to be found", async () => {
 		const bare = await startId("https://bare.test", { email: false, github: true });
 		const barePost = (path: string, client: string, body: object, cookie?: string) =>
 			bare.fetch(`https://bare.test/api/auth${path}`, {
@@ -1208,11 +1208,11 @@ describe("on a deployment that sends no email", () => {
 				{ organizationId, email: "someone@example.com", role: "member" },
 				cookie,
 			);
-			expect(invited.status).toBe(400);
-			expect(((await invited.json()) as { code: string }).code).toBe("EMAIL_NOT_CONFIGURED");
+			expect(invited.status).toBe(200);
 			expect(await bare.db.prepare("SELECT count(*) AS n FROM invitation").first<number>("n")).toBe(
-				0,
+				1,
 			);
+			expect(await bare.emails()).toEqual([]);
 		} finally {
 			await bare.dispose();
 		}

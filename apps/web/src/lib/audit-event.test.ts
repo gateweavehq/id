@@ -41,6 +41,15 @@ describe("describeActivity", () => {
 		expect(describeActivity(activity({ type, detail, app: "client-id" }))).toBe(words);
 	});
 
+	it.each([
+		["deployment_sign_up_changed", "open", "Opened sign-up on this server"],
+		["deployment_sign_up_changed", "closed", "Closed sign-up on this server"],
+		["deployment_invitation_created", null, "Invited someone to this server"],
+		["deployment_invitation_canceled", null, "Withdrew an invitation to this server"],
+	])("says what %s with %s was", (type, detail, words) => {
+		expect(describeActivity(activity({ type, detail }))).toBe(words);
+	});
+
 	it("says what an app added by a deployment was, which has no details", () => {
 		expect(describeActivity(activity({ type: "app_added", app: "Track" }))).toBe("Added Track");
 	});

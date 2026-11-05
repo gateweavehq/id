@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { type GitHubPerson, gitHubCode, type SentEmail, startId } from "./id-worker";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	type GitHubPerson,
+	gitHubCode,
+	PWNED_PASSWORDS,
+	type SentEmail,
+	startId,
+} from "./id-worker";
 
 // Who owns a deployment and who may make an account on it, through the public routes of the built
 // Worker. What this protects is in "Who owns a deployment" in docs/architecture.md.
@@ -12,6 +19,7 @@ const origin = "https://id.test";
 const CODE_EMAIL = "is your Gateweave ID code";
 const EXISTS_EMAIL = "You already have a Gateweave ID account";
 const HOUR = 60 * 60 * 1000;
+const PASSWORD = "a-long-password-for-tests";
 
 let id: Awaited<ReturnType<typeof startId>>;
 
@@ -24,8 +32,8 @@ afterAll(async () => {
 });
 
 /** Each test starts on a server nobody has used. */
-beforeEach(async () => {
-	await id.db.batch(
+function startOver(db: typeof id.db) {
+	return db.batch(
 		[
 			"DELETE FROM organization",
 			"DELETE FROM user",
@@ -33,8 +41,12 @@ beforeEach(async () => {
 			"DELETE FROM verification",
 			`INSERT OR REPLACE INTO deployment (id, owner_id, sign_up, updated_at)
 				VALUES (1, NULL, 'closed', 0)`,
-		].map((statement) => id.db.prepare(statement)),
+		].map((statement) => db.prepare(statement)),
 	);
+}
+
+beforeEach(async () => {
+	await startOver(id.db);
 });
 
 let clients = 0;
@@ -133,7 +145,7 @@ async function codesStoredFor(email: string) {
 	return row?.codes;
 }
 
-/** The owner vouching for an address. The owner has no page for this yet, and `invited_by` is theirs. */
+/** The owner vouching for an address, with no link to go with it, for what is not about the link. */
 async function ownerInvites(email: string, expiresAt = Date.now() + HOUR) {
 	const owner = (await theDeployment())?.ownerId;
 	if (!owner) throw new Error("No owner to invite anyone");
@@ -489,6 +501,577 @@ describe("making workspaces", () => {
 
 		expect(await canCreate(member.cookie)).toBe(true);
 		expect((await makeWorkspace(member.cookie, "now-theirs")).status).toBe(200);
+	});
+});
+
+describe("the owner's paths", () => {
+	const OWNER_ONLY: [string, string, object | undefined][] = [
+		["GET", "/deployment/get", undefined],
+		["POST", "/deployment/sign-up", { signUp: "open" }],
+		["POST", "/deployment/invitations/create", { email: "someone@example.com" }],
+		["POST", "/deployment/invitations/cancel", { id: "any" }],
+	];
+
+	function call(method: string, path: string, body: object | undefined, cookie?: string) {
+		if (method === "POST" && body) return post(path, body, cookie);
+		return id.fetch(`${origin}/api/auth${path}`, {
+			headers: { "cf-connecting-ip": newClient(), ...(cookie && { cookie }) },
+		});
+	}
+
+	/** The owner and someone they let in, each signed in. */
+	async function ownerAndMember() {
+		const owner = await signUp(newAddress());
+		const invited = newAddress();
+		await ownerInvites(invited);
+		return { owner, member: await signUp(invited) };
+	}
+
+	async function invite(cookie: string, email = newAddress()) {
+		const response = await post("/deployment/invitations/create", { email }, cookie);
+		expect(response.status).toBe(200);
+		return { email, made: (await response.json()) as { id: string; link?: string } };
+	}
+
+	async function linkTo(email: string) {
+		const link = /https:\S+\/join#\S+/.exec((await emailTo(email, "An invitation to")).text)?.[0];
+		if (!link) throw new Error("No link in the invitation");
+		return { link, token: new URL(link).hash.slice(1) };
+	}
+
+	it.each(OWNER_ONLY)("%s %s is not there for anyone else", async (method, path, body) => {
+		const { member } = await ownerAndMember();
+		expect((await call(method, path, body, member.cookie)).status).toBe(404);
+		expect((await call(method, path, body)).status).toBe(401);
+	});
+
+	it("lets the owner open sign-up and close it, and says so in their activity", async () => {
+		const { userId, cookie } = await signUp(newAddress());
+		const opened = await post("/deployment/sign-up", { signUp: "open" }, cookie);
+		expect(opened.status).toBe(200);
+		expect((await theDeployment())?.signUp).toBe("open");
+		await signUp(newAddress());
+
+		expect((await post("/deployment/sign-up", { signUp: "closed" }, cookie)).status).toBe(200);
+		expect((await theDeployment())?.signUp).toBe("closed");
+		const stranger = newAddress();
+		await requestCode(stranger);
+		expect(await codesStoredFor(stranger)).toBe(0);
+
+		await id.auditEventRecorded(userId, { type: "deployment_sign_up_changed", detail: "open" });
+		await id.auditEventRecorded(userId, { type: "deployment_sign_up_changed", detail: "closed" });
+	});
+
+	it.each([
+		["a word it does not know", { signUp: "perhaps" }],
+		["anything else beside it", { signUp: "open", ownerId: "someone" }],
+	])("refuses %s", async (_what, body) => {
+		const { cookie } = await signUp(newAddress());
+		expect((await post("/deployment/sign-up", body, cookie)).status).toBe(400);
+		expect(await theDeployment()).toMatchObject({ signUp: "closed" });
+	});
+
+	it("wants a recent sign-in to let anyone in, though not to shut the door", async () => {
+		const { userId, cookie } = await signUp(newAddress());
+		const { made } = await invite(cookie);
+		await id.db
+			.prepare("UPDATE session SET created_at = ? WHERE user_id = ?")
+			.bind(Date.now() - 2 * 24 * HOUR, userId)
+			.run();
+
+		await refused(
+			await post("/deployment/sign-up", { signUp: "open" }, cookie),
+			"SESSION_NOT_FRESH",
+		);
+		expect((await theDeployment())?.signUp).toBe("closed");
+		await refused(
+			await post("/deployment/invitations/create", { email: newAddress() }, cookie),
+			"SESSION_NOT_FRESH",
+		);
+
+		expect((await post("/deployment/sign-up", { signUp: "closed" }, cookie)).status).toBe(200);
+		const withdrawn = await post("/deployment/invitations/cancel", { id: made.id }, cookie);
+		expect(withdrawn.status).toBe(200);
+	});
+
+	it("emails the link to the address, and gives it to nobody else", async () => {
+		const { userId, cookie } = await signUp(newAddress());
+		const { email, made } = await invite(cookie);
+		expect(made).not.toHaveProperty("link");
+
+		const { link, token } = await linkTo(email);
+		expect(link.startsWith(`${origin}/join#`)).toBe(true);
+		const stored = await id.db
+			.prepare("SELECT token_hash AS hash FROM deployment_invitation WHERE email = ?")
+			.bind(email)
+			.first<{ hash: string }>();
+		expect(stored?.hash).toEqual(expect.any(String));
+		expect(stored?.hash).not.toBe(token);
+		expect(token.length).toBeGreaterThanOrEqual(43);
+
+		await id.auditEventRecorded(userId, { type: "deployment_invitation_created" });
+		const listed = await id.fetch(`${origin}/api/auth/deployment/get`, {
+			headers: { "cf-connecting-ip": newClient(), cookie },
+		});
+		const settings = await listed.text();
+		expect(settings).toContain(email);
+		expect(settings).not.toContain(token);
+		expect(settings).not.toContain(stored?.hash ?? "?");
+		expect(listed.headers.get("cache-control")).toContain("no-store");
+	});
+
+	it("takes the address however it is typed", async () => {
+		const { cookie } = await signUp(newAddress());
+		const email = newAddress();
+		await invite(cookie, email.toUpperCase());
+		const row = await id.db
+			.prepare("SELECT COUNT(*) AS rows FROM deployment_invitation WHERE email = ?")
+			.bind(email)
+			.first<{ rows: number }>();
+		expect(row?.rows).toBe(1);
+	});
+
+	it("refuses to invite an address that has an account", async () => {
+		const owner = newAddress();
+		const { cookie } = await signUp(owner);
+		await refused(
+			await post("/deployment/invitations/create", { email: owner }, cookie),
+			"ALREADY_HAS_ACCOUNT",
+			400,
+		);
+	});
+
+	it("does not let an invitation be a way to mail someone over and over", async () => {
+		const { cookie } = await signUp(newAddress());
+		const email = newAddress();
+		const answers: number[] = [];
+		for (let asked = 0; asked < 5; asked++) {
+			answers.push((await post("/deployment/invitations/create", { email }, cookie)).status);
+		}
+		expect(answers.slice(0, 3)).toEqual([200, 200, 200]);
+		expect(answers.slice(3)).toEqual([429, 429]);
+	});
+
+	it("makes the old link stop working when asked again", async () => {
+		const { cookie } = await signUp(newAddress());
+		const email = newAddress();
+		await invite(cookie, email);
+		const { token: old } = await linkTo(email);
+		await invite(cookie, email);
+		await vi.waitFor(async () => {
+			expect(await emailsTo(email, "An invitation to")).toHaveLength(2);
+		});
+		const [, second] = await emailsTo(email, "An invitation to");
+		const token = new URL(/https:\S+\/join#\S+/.exec(second?.text ?? "")?.[0] ?? "").hash.slice(1);
+
+		await refused(
+			await post("/deployment/invitations/read", { token: old }),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		const read = await post("/deployment/invitations/read", { token });
+		expect(await read.json()).toEqual({ email });
+	});
+
+	it("makes a withdrawn link stop working", async () => {
+		const { userId, cookie } = await signUp(newAddress());
+		const { email, made } = await invite(cookie);
+		const { token } = await linkTo(email);
+
+		expect((await post("/deployment/invitations/cancel", { id: made.id }, cookie)).status).toBe(
+			200,
+		);
+		await refused(
+			await post("/deployment/invitations/read", { token }),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		await refused(
+			await post("/deployment/invitations/accept", {
+				token,
+				name: "Too Late",
+				newPassword: PASSWORD,
+			}),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		expect(await accountsWith(email)).toBe(0);
+		await refused(
+			await post("/deployment/invitations/cancel", { id: made.id }, cookie),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		await id.auditEventRecorded(userId, { type: "deployment_invitation_canceled" });
+	});
+
+	it("makes a link that has run out stop working", async () => {
+		const { cookie } = await signUp(newAddress());
+		const { email } = await invite(cookie);
+		const { token } = await linkTo(email);
+		await id.db
+			.prepare("UPDATE deployment_invitation SET expires_at = ? WHERE email = ?")
+			.bind(Date.now() - 1000, email)
+			.run();
+
+		await refused(
+			await post("/deployment/invitations/read", { token }),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		await refused(
+			await post("/deployment/invitations/accept", {
+				token,
+				name: "Too Late",
+				newPassword: PASSWORD,
+			}),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		expect(await accountsWith(email)).toBe(0);
+	});
+
+	it("lets the person in, once, with the password they chose and a proven address", async () => {
+		const { cookie } = await signUp(newAddress());
+		const { email } = await invite(cookie);
+		const { token } = await linkTo(email);
+
+		const read = await post("/deployment/invitations/read", { token });
+		expect(await read.json()).toEqual({ email });
+		expect(read.headers.get("cache-control")).toContain("no-store");
+
+		const accepted = await post("/deployment/invitations/accept", {
+			token,
+			name: "  Invited Person  ",
+			newPassword: PASSWORD,
+		});
+		expect(accepted.status).toBe(200);
+		const session = await id.fetch(`${origin}/api/auth/get-session`, {
+			headers: { "cf-connecting-ip": newClient(), cookie: cookieOf(accepted) },
+		});
+		expect(await session.json()).toMatchObject({
+			user: { email, name: "Invited Person", emailVerified: true },
+		});
+		const made = await id.db
+			.prepare("SELECT id FROM user WHERE email = ?")
+			.bind(email)
+			.first<{ id: string }>();
+		await id.auditEventRecorded(made?.id ?? "?", { type: "account_created", detail: "invitation" });
+		await id.auditEventRecorded(made?.id ?? "?", { type: "sign_in", detail: "invitation" });
+
+		const signedIn = await post("/sign-in/email", { email, password: PASSWORD });
+		expect(signedIn.status).toBe(200);
+
+		await refused(
+			await post("/deployment/invitations/accept", {
+				token,
+				name: "Again",
+				newPassword: PASSWORD,
+			}),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+	});
+
+	it("does not spend the link on a password it refuses, or a name", async () => {
+		const { cookie } = await signUp(newAddress());
+		const { email } = await invite(cookie);
+		const { token } = await linkTo(email);
+
+		await refused(
+			await post("/deployment/invitations/accept", { token, name: "Short", newPassword: "short" }),
+			"INVALID_PASSWORD_LENGTH",
+			400,
+		);
+		await refused(
+			await post("/deployment/invitations/accept", {
+				token,
+				name: "Long",
+				newPassword: "a".repeat(129),
+			}),
+			"INVALID_PASSWORD_LENGTH",
+			400,
+		);
+		await refused(
+			await post("/deployment/invitations/accept", { token, name: "  ", newPassword: PASSWORD }),
+			"INVALID_REQUEST",
+			400,
+		);
+		expect(await accountsWith(email)).toBe(0);
+		expect(
+			(
+				await post("/deployment/invitations/accept", {
+					token,
+					name: "Right",
+					newPassword: PASSWORD,
+				})
+			).status,
+		).toBe(200);
+	});
+
+	it("does not let a link take over an account that has appeared since", async () => {
+		const { cookie } = await signUp(newAddress());
+		const { email } = await invite(cookie);
+		const { token } = await linkTo(email);
+		const made = await signUp(email);
+
+		await refused(
+			await post("/deployment/invitations/accept", {
+				token,
+				name: "Thief",
+				newPassword: PASSWORD,
+			}),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		// Nor if something puts an invitation back, for an address that has one.
+		const owner = (await theDeployment())?.ownerId;
+		await id.db
+			.prepare(
+				`INSERT INTO deployment_invitation (id, email, token_hash, invited_by, expires_at, created_at)
+					VALUES ('back', ?, 'back-hash', ?, ?, 0)`,
+			)
+			.bind(email, owner, Date.now() + HOUR)
+			.run();
+		await id.db
+			.prepare("UPDATE deployment_invitation SET token_hash = ? WHERE id = 'back'")
+			.bind(createHash("sha256").update("put-back").digest("base64url"))
+			.run();
+		await refused(
+			await post("/deployment/invitations/accept", {
+				token: "put-back",
+				name: "Thief",
+				newPassword: PASSWORD,
+			}),
+			"INVITATION_NOT_FOUND",
+			404,
+		);
+		const session = await id.fetch(`${origin}/api/auth/get-session`, {
+			headers: { "cf-connecting-ip": newClient(), cookie: made.cookie },
+		});
+		expect(await session.json()).toMatchObject({ user: { name: "A Person" } });
+	});
+
+	it("does not answer a wrong token, however it is shaped", async () => {
+		for (const token of ["wrong", "", "a".repeat(201)]) {
+			const response = await post("/deployment/invitations/read", { token });
+			expect([400, 404]).toContain(response.status);
+			expect(await response.text()).not.toContain("@");
+		}
+	});
+
+	it("limits guesses at a link", async () => {
+		const client = newClient();
+		const answers: number[] = [];
+		for (let asked = 0; asked < 12; asked++) {
+			const response = await id.fetch(`${origin}/api/auth/deployment/invitations/read`, {
+				method: "POST",
+				headers: { origin, "cf-connecting-ip": client, "content-type": "application/json" },
+				body: JSON.stringify({ token: "guess" }),
+			});
+			answers.push(response.status);
+		}
+		expect(answers.slice(0, 10)).toEqual(Array(10).fill(404));
+		expect(answers).toContain(429);
+	});
+
+	it("clears away invitations that have run out", async () => {
+		await signUp(newAddress());
+		const late = newAddress();
+		const fine = newAddress();
+		await ownerInvites(late, Date.now() - 1000);
+		await ownerInvites(fine);
+		await id.runCron();
+		const { results } = await id.db
+			.prepare("SELECT email FROM deployment_invitation")
+			.all<{ email: string }>();
+		expect(results.map(({ email }: { email: string }) => email)).toEqual([fine]);
+	});
+
+	it("offers the page to its owner, and to nobody else", async () => {
+		const { owner, member } = await ownerAndMember();
+		const page = (path: string, cookie?: string) =>
+			id.fetch(`${origin}${path}`, {
+				headers: { "cf-connecting-ip": newClient(), ...(cookie && { cookie }) },
+			});
+
+		expect((await page("/server", owner.cookie)).status).toBe(200);
+		expect((await page("/server", member.cookie)).status).toBe(404);
+		const away = await page("/server");
+		expect(away.status).toBe(307);
+		expect(away.headers.get("location")).toContain("/login");
+
+		const OPEN_SETTINGS = "Open settings";
+		expect(await (await page("/account", owner.cookie)).text()).toContain(OPEN_SETTINGS);
+		expect(await (await page("/account", member.cookie)).text()).not.toContain(OPEN_SETTINGS);
+	});
+});
+
+describe("a server that sends no email", () => {
+	const bareOrigin = "https://bare.test";
+	let bare: Awaited<ReturnType<typeof startId>>;
+
+	beforeAll(async () => {
+		bare = await startId(bareOrigin, {
+			email: false,
+			newDeployment: true,
+			breachedPasswords: true,
+		});
+	});
+
+	afterAll(async () => {
+		await bare?.dispose();
+	});
+
+	beforeEach(async () => {
+		await startOver(bare.db);
+	});
+
+	function barePost(path: string, body: object, cookie?: string) {
+		return bare.fetch(`${bareOrigin}/api/auth${path}`, {
+			method: "POST",
+			headers: {
+				origin: bareOrigin,
+				"cf-connecting-ip": newClient(),
+				"content-type": "application/json",
+				...(cookie && { cookie }),
+			},
+			body: JSON.stringify(body),
+		});
+	}
+
+	function claim(email = newAddress()) {
+		return barePost("/deployment/claim", { email, name: "The Owner", newPassword: PASSWORD });
+	}
+
+	it("can be claimed by the first to come, who owns it, and then by nobody", async () => {
+		const page = await bare.fetch(`${bareOrigin}/signup`);
+		expect(await page.text()).toContain("Claim this server");
+
+		const email = newAddress();
+		const claimed = await claim(email.toUpperCase());
+		expect(claimed.status).toBe(200);
+		expect(cookieOf(claimed)).toContain("session_token");
+		const owner = await bare.db
+			.prepare("SELECT id, email_verified AS verified FROM user WHERE email = ?")
+			.bind(email)
+			.first<{ id: string; verified: number }>();
+		expect(owner?.verified).toBe(1);
+		const row = await bare.db
+			.prepare("SELECT owner_id AS ownerId, sign_up AS signUp FROM deployment")
+			.first();
+		expect(row).toEqual({ ownerId: owner?.id, signUp: "closed" });
+
+		const signedIn = await barePost("/sign-in/email", { email, password: PASSWORD });
+		expect(signedIn.status).toBe(200);
+
+		const next = newAddress();
+		expect((await claim(next)).status).toBe(404);
+		const count = await bare.db
+			.prepare("SELECT COUNT(*) AS accounts FROM user WHERE email = ?")
+			.bind(next)
+			.first<{ accounts: number }>();
+		expect(count?.accounts).toBe(0);
+
+		const after = await (await bare.fetch(`${bareOrigin}/signup`)).text();
+		expect(after).not.toContain("Claim this server");
+		expect(after).toContain("does not send email");
+	});
+
+	it("does not let an open one be claimed", async () => {
+		await bare.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
+		expect((await claim()).status).toBe(404);
+	});
+
+	it("refuses a password known from a breach, at both ways in", async () => {
+		await refused(
+			await barePost("/deployment/claim", {
+				email: newAddress(),
+				name: "The Owner",
+				newPassword: PWNED_PASSWORDS.breached,
+			}),
+			"PASSWORD_COMPROMISED",
+			400,
+		);
+		const claimed = await claim();
+		const asked = await barePost(
+			"/deployment/invitations/create",
+			{ email: newAddress() },
+			cookieOf(claimed),
+		);
+		const { link } = (await asked.json()) as { link: string };
+		const token = new URL(link).hash.slice(1);
+		await refused(
+			await barePost("/deployment/invitations/accept", {
+				token,
+				name: "Someone",
+				newPassword: PWNED_PASSWORDS.breached,
+			}),
+			"PASSWORD_COMPROMISED",
+			400,
+		);
+	});
+
+	it("gives the owner a link to pass on, and sends nothing", async () => {
+		const cookie = cookieOf(await claim());
+		const email = newAddress();
+		const asked = await barePost("/deployment/invitations/create", { email }, cookie);
+		expect(asked.status).toBe(200);
+		const { link } = (await asked.json()) as { link: string };
+		expect(link.startsWith(`${bareOrigin}/join#`)).toBe(true);
+		expect(await bare.emails()).toEqual([]);
+
+		const accepted = await barePost("/deployment/invitations/accept", {
+			token: new URL(link).hash.slice(1),
+			name: "Someone",
+			newPassword: PASSWORD,
+		});
+		expect(accepted.status).toBe(200);
+		expect(cookieOf(accepted)).toContain("session_token");
+		const row = await bare.db
+			.prepare("SELECT email_verified AS verified FROM user WHERE email = ?")
+			.bind(email)
+			.first<{ verified: number }>();
+		expect(row?.verified).toBe(1);
+	});
+
+	it("keeps a workspace's invitation for someone to find, and sends nothing", async () => {
+		const cookie = cookieOf(await claim());
+		const made = await barePost("/organization/create", { name: "Solo", slug: "solo" }, cookie);
+		const { id: organizationId } = (await made.json()) as { id: string };
+		const email = newAddress();
+		const invited = await barePost(
+			"/organization/invite-member",
+			{ organizationId, email, role: "member" },
+			cookie,
+		);
+		expect(invited.status).toBe(200);
+		expect(await bare.emails()).toEqual([]);
+
+		const asked = await barePost("/deployment/invitations/create", { email }, cookie);
+		const { link } = (await asked.json()) as { link: string };
+		const accepted = await barePost("/deployment/invitations/accept", {
+			token: new URL(link).hash.slice(1),
+			name: "Someone",
+			newPassword: PASSWORD,
+		});
+		const listed = await bare.fetch(`${bareOrigin}/api/auth/workspaces/list`, {
+			headers: { "cf-connecting-ip": newClient(), cookie: cookieOf(accepted) },
+		});
+		const { invitations } = (await listed.json()) as { invitations: { workspace: string }[] };
+		expect(invitations.map(({ workspace }) => workspace)).toEqual(["Solo"]);
+	});
+});
+
+describe("claiming a server that sends email", () => {
+	it("is not there: the first account proves its address with a code", async () => {
+		const email = newAddress();
+		const claimed = await post("/deployment/claim", {
+			email,
+			name: "The Owner",
+			newPassword: PASSWORD,
+		});
+		expect(claimed.status).toBe(404);
+		expect(await accountsWith(email)).toBe(0);
 	});
 });
 

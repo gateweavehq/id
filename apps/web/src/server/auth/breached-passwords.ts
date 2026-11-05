@@ -3,7 +3,13 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { isPasswordCompromised } from "better-auth/plugins/haveibeenpwned";
 
 /** Everywhere someone chooses a password. */
-const PATHS = ["/change-password", "/reset-password", "/account/first-password"];
+const PATHS = [
+	"/change-password",
+	"/reset-password",
+	"/account/first-password",
+	"/deployment/invitations/accept",
+	"/deployment/claim",
+];
 
 /** Long enough for a slow answer, and short enough that the form does not seem stuck. */
 const TIMEOUT_MS = 3000;

@@ -91,6 +91,31 @@ export function workspaceInvitationEmail({
 	});
 }
 
+/** Who runs this server vouching for an address. Its link is an account, so nothing else carries it. */
+export function serverInvitationEmail({
+	url,
+	inviter,
+	email,
+	days,
+}: {
+	url: string;
+	inviter: string;
+	email: string;
+	days: number;
+}): Message {
+	return compose({
+		subject: `An invitation to ${PRODUCT}`,
+		heading: "You have been invited",
+		body: [
+			`${inviter} invited you to make an account on the ${PRODUCT} server at ${new URL(url).host}, with this address: ${email}.`,
+			`The link works once, for ${days} days.`,
+		],
+		action: { label: "Make your account", url },
+		footer:
+			"If you do not know this person, ignore this email. Nothing happens unless you use the link.",
+	});
+}
+
 function compose({
 	subject,
 	heading,

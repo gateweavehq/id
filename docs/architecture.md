@@ -107,6 +107,23 @@ Two people cannot both be first: D1 runs writes one at a time, and the second fi
 the first account exists, though, the first to arrive is the owner, whoever they are, so a new server should
 be claimed as soon as it is up.
 
+**The owner has a page, `/server`, linked from their account,** and its paths under `/deployment/` answer
+everyone else with a 404, as if they were not there. Opening sign-up and making an invitation also want a
+recent sign-in, because each lets others in and would outlast a stolen cookie.
+
+**An invitation from the owner is a link, `/join#<token>`.** The token is 32 random bytes, of which only the
+SHA-256 is kept. In the part after the `#` a browser sends it to nobody, and the page reads it with a POST,
+so no URL in a log or a Referer holds it. It works once, for 7 days, and asking again replaces it. Whoever
+opens it chooses a name and a password in one go, and the account exists only then. With email the link goes
+to the address, so opening it proves the mailbox as a code would, and that address can use a code or GitHub
+instead. An address that already has an account cannot be invited.
+
+**A server that sends no email has no way to prove an address.** So there the owner's word stands in for it:
+the owner gets the link to pass on, and whoever opens it has an account verified as that address. That is
+the owner's to answer for, as they could write the row themselves. And the first account is claimed at
+`/signup` with a name, an address and a password, a path that answers 404 once there is an account and on
+any server that does send email.
+
 ## Signing in with GitHub
 
 GitHub is a second way to prove an address, under the same rule: no account without a verified one.
@@ -270,8 +287,9 @@ above proves it, and the invitation is waiting.
   ones, since an address in one may have nothing to do with this deployment.
 - **It outlives the person who sent it** leaving the workspace, until someone withdraws it or it expires.
   They may have gone for reasons that have nothing to do with it, and admins can see and withdraw it.
-- **A deployment that sends no email has no invitations,** and the page says why. A workspace there stays
-  one person.
+- **On a deployment that sends no email, an invitation waits to be found.** It is under Workspaces for
+  someone once they have an account with that address, and the page tells whoever made it to say so
+  themselves. See "Who owns a deployment" for how someone gets an account there.
 
 ## Who may sign in
 

@@ -41,6 +41,9 @@ export const AUDIT_EVENT_TYPES = [
 	"member_role_changed",
 	"member_removed",
 	"member_left",
+	"deployment_sign_up_changed",
+	"deployment_invitation_created",
+	"deployment_invitation_canceled",
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -253,6 +256,12 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			if (byOther) return `${someone} removed you from ${workspace}`;
 			return `Removed ${other ?? "someone"} from ${workspace}`;
 		}
+		case "deployment_sign_up_changed":
+			return detail === "open" ? "Opened sign-up on this server" : "Closed sign-up on this server";
+		case "deployment_invitation_created":
+			return "Invited someone to this server";
+		case "deployment_invitation_canceled":
+			return "Withdrew an invitation to this server";
 		default:
 			return type;
 	}
