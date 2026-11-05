@@ -240,9 +240,65 @@ test("stops rather than point the copy at another Worker", () => {
 	const head = run(copy, "rev-parse", "HEAD");
 	const result = update();
 	assert.equal(result.status, 1);
-	assert.match(result.stderr, /another Worker or database/);
+	assert.match(result.stderr, /another Worker, database or queue/);
 	assert.equal(run(copy, "rev-parse", "HEAD"), head);
 	assert.equal(run(copy, "status", "--porcelain"), "");
+});
+
+for (const [what, renamed] of [
+	[
+		"database",
+		(text) => text.replace('"binding": "DB"', '"binding": "DB", "database_name": "renamed-by-us"'),
+	],
+	[
+		"queue",
+		(text) =>
+			text.replace(
+				'"vars": {}',
+				'"queues": { "producers": [{ "queue": "renamed-by-us" }] },\n\t"vars": {}',
+			),
+	],
+]) {
+	test(`stops rather than point the copy at another ${what}`, () => {
+		writeTree(copy, {
+			...Object.fromEntries(
+				Object.entries(RELEASES["v0.9.0"]).filter(([file]) => !file.includes("workflows")),
+			),
+		});
+		run(copy, "commit", "--quiet", "-m", "back to the original names");
+		release("v0.11.0", {
+			...RELEASES["v0.10.0"],
+			"CHANGELOG.md": "# Changelog\n\n## [0.11.0] - 2026-03-01\n",
+			"wrangler.jsonc": renamed(wrangler("gateweave-id")),
+		});
+		const head = run(copy, "rev-parse", "HEAD");
+		const result = update();
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /another Worker, database or queue/);
+		assert.equal(run(copy, "rev-parse", "HEAD"), head);
+		assert.equal(run(copy, "status", "--porcelain"), "");
+	});
+}
+
+test("minds nothing a release changes in its own environments", () => {
+	const withEnv = (id) =>
+		wrangler("gateweave-id", {
+			comment: `"env": { "staging": { "name": "x", "database_id": "${id}" } },`,
+		});
+	writeTree(copy, {
+		...Object.fromEntries(
+			Object.entries(RELEASES["v0.9.0"]).filter(([file]) => !file.includes("workflows")),
+		),
+	});
+	run(copy, "commit", "--quiet", "-m", "back to the original names");
+	release("v0.11.0", {
+		...RELEASES["v0.10.0"],
+		"CHANGELOG.md": "# Changelog\n\n## [0.11.0] - 2026-03-01\n",
+		"wrangler.jsonc": withEnv("new-staging-database"),
+	});
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(read("wrangler.jsonc"), /new-staging-database/);
 });
 
 test("leaves wrangler.jsonc to a person when the copy did more than rewrite lines", () => {

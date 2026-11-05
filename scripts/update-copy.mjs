@@ -61,10 +61,16 @@ function currentRelease() {
 	return `v${match[1]}`;
 }
 
-/** What says which Worker and database a deploy reaches. A change here would look like lost data. */
+/**
+ * What says which Worker, database and queue a deploy reaches. A change here would look like lost
+ * data. Only the top level: a release's own environments are nothing to a copy.
+ */
 function identity(wrangler) {
-	return ["name", "database_id"]
-		.map((key) => new RegExp(`"${key}":\\s*"([^"]*)"`).exec(wrangler)?.[1] ?? "")
+	const [topLevel = ""] = wrangler.split(/"env"\s*:/);
+	return ["name", "database_id", "database_name", "queue"]
+		.flatMap((key) =>
+			[...topLevel.matchAll(new RegExp(`"${key}":\\s*"([^"]*)"`, "g"))].map((found) => found[1]),
+		)
 		.join(" ");
 }
 
@@ -167,7 +173,7 @@ const after = identity(git("show", ":wrangler.jsonc"));
 if (before !== after) {
 	git("reset", "--hard", "--quiet");
 	stop(
-		"The update would point wrangler.jsonc at another Worker or database, so nothing was changed.",
+		"The update would point wrangler.jsonc at another Worker, database or queue, so nothing was changed.",
 	);
 }
 
