@@ -160,13 +160,21 @@ interface DeploymentConfig {
 	db: Database;
 	/** Without it, the owner passes the link on themselves. */
 	mailer: Mailer | undefined;
+	/** Whether someone can prove an address with GitHub here. */
+	gitHub: boolean;
 	record: RecordEvent;
 	/** Whether this person may send another invitation, to this address. Unlimited without it. */
 	allowInvitation: ((inviterId: string, email: string) => Promise<boolean>) | undefined;
 }
 
 /** What the owner has, and the way in for those they invite. */
-export function deploymentPlugin({ db, mailer, record, allowInvitation }: DeploymentConfig) {
+export function deploymentPlugin({
+	db,
+	mailer,
+	gitHub,
+	record,
+	allowInvitation,
+}: DeploymentConfig) {
 	const { deployment, deploymentInvitation: invitation } = schema;
 
 	return {
@@ -329,8 +337,8 @@ export function deploymentPlugin({ db, mailer, record, allowInvitation }: Deploy
 			),
 			claimDeployment: createAuthEndpoint("/deployment/claim", { method: "POST" }, async (ctx) => {
 				noStore(ctx);
-				// With a mailer, the first account proves its address with a code like any other.
-				if (mailer || (await signUpState(db)) !== "unclaimed") {
+				// Where an address can be proven, the first account proves its own like any other.
+				if (mailer || gitHub || (await signUpState(db)) !== "unclaimed") {
 					throw APIError.fromStatus("NOT_FOUND");
 				}
 				const body = parseBody(

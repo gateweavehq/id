@@ -49,10 +49,11 @@ applies the migrations. Every later `pnpm run deploy` builds, applies new migrat
 **Until a server has an account, whoever reaches it first owns it.** So open it as soon as it is up, and go to
 `/signup`.
 
-With no email set up, which is how a new deployment starts, the page offers to claim the server: a name, an
-address and a password, or GitHub if you have [set that up](#sign-in-with-github). Nothing checks the address,
-since the server cannot write to it, so use your real one. With email on, you sign up with a code like anyone
-else, and the first to do so is the owner.
+With neither email nor GitHub set up, which is how a new deployment starts, the page offers to claim the server:
+a name, an address and a password. Nothing checks the address, since the server cannot write to it, so use your
+real one. With [GitHub set up](#sign-in-with-github) and no email, the page offers only GitHub, and your first
+sign-in with it claims the server. With email on, you sign up with a code like anyone else, and the first to do
+so is the owner.
 
 ## Who can get in
 
@@ -93,6 +94,9 @@ ID works without email, with less. Compared with a server that sends it:
 
 - **A workspace's invitations are not sent.** They wait for the person under Workspaces, once they have an
   account here, which only the owner can give them. Tell them yourself.
+- **GitHub does not reach an account that already has its address.** Nothing proved that address, so whoever
+  opened a stray link could otherwise share the account of the person who later signs in with GitHub. The person
+  signs in with the account's password or a passkey instead, and the sign-in page says so.
 
 ## Settings
 
@@ -176,7 +180,8 @@ away.
 
 Create a [GitHub OAuth App](https://github.com/settings/developers) with the callback URL
 `https://id.example.com/api/auth/callback/github` (your address), then set `GITHUB_CLIENT_ID` and
-`GITHUB_CLIENT_SECRET`.
+`GITHUB_CLIENT_SECRET`. The form that claims a server goes away here too, since GitHub can prove an address and
+the form cannot.
 
 ### Turnstile
 

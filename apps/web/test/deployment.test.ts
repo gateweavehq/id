@@ -541,41 +541,41 @@ describe("the database, whatever makes an account", () => {
 	});
 });
 
+function person(email: string): GitHubPerson {
+	const number = ++gitHubIds;
+	return {
+		id: number,
+		login: `person-${number}`,
+		name: "Grace Hopper",
+		emails: [{ email, primary: true, verified: true }],
+	};
+}
+
+async function signInAs(someone: GitHubPerson, server = id, at = origin) {
+	const client = newClient();
+	const started = await server.fetch(`${at}/api/auth/sign-in/social`, {
+		method: "POST",
+		headers: { origin: at, "cf-connecting-ip": client, "content-type": "application/json" },
+		body: JSON.stringify({ provider: "github", callbackURL: "/account" }),
+	});
+	expect(started.status).toBe(200);
+	const { url } = (await started.json()) as { url: string };
+	const query = new URLSearchParams({
+		code: gitHubCode(someone),
+		state: new URL(url).searchParams.get("state") ?? "",
+	});
+	return server.fetch(`${at}/api/auth/callback/github?${query}`, {
+		headers: { "cf-connecting-ip": client, cookie: cookieOf(started) },
+	});
+}
+
+function expectIn(response: Response) {
+	expect(response.status).toBe(302);
+	expect(new URL(response.headers.get("location") ?? "", origin).pathname).toBe("/account");
+	expect(cookieOf(response)).toContain("session_token");
+}
+
 describe("GitHub on a new deployment", () => {
-	function person(email: string): GitHubPerson {
-		const number = ++gitHubIds;
-		return {
-			id: number,
-			login: `person-${number}`,
-			name: "Grace Hopper",
-			emails: [{ email, primary: true, verified: true }],
-		};
-	}
-
-	async function signInAs(someone: GitHubPerson) {
-		const client = newClient();
-		const started = await id.fetch(`${origin}/api/auth/sign-in/social`, {
-			method: "POST",
-			headers: { origin, "cf-connecting-ip": client, "content-type": "application/json" },
-			body: JSON.stringify({ provider: "github", callbackURL: "/account" }),
-		});
-		expect(started.status).toBe(200);
-		const { url } = (await started.json()) as { url: string };
-		const query = new URLSearchParams({
-			code: gitHubCode(someone),
-			state: new URL(url).searchParams.get("state") ?? "",
-		});
-		return id.fetch(`${origin}/api/auth/callback/github?${query}`, {
-			headers: { "cf-connecting-ip": client, cookie: cookieOf(started) },
-		});
-	}
-
-	function expectIn(response: Response) {
-		expect(response.status).toBe(302);
-		expect(new URL(response.headers.get("location") ?? "", origin).pathname).toBe("/account");
-		expect(cookieOf(response)).toContain("session_token");
-	}
-
 	it("gives the server to the first person, who can come back", async () => {
 		const first = person(newAddress());
 		expectIn(await signInAs(first));
@@ -1190,6 +1190,101 @@ describe("a server that sends no email", () => {
 	});
 });
 
+describe("a server with GitHub and no email", () => {
+	const hubOrigin = "https://hub.test";
+	let hub: Awaited<ReturnType<typeof startId>>;
+
+	beforeAll(async () => {
+		hub = await startId(hubOrigin, { email: false, github: true, newDeployment: true });
+	});
+
+	afterAll(async () => {
+		await hub?.dispose();
+	});
+
+	beforeEach(async () => {
+		await startOver(hub.db);
+	});
+
+	function hubPost(path: string, body: object, cookie?: string) {
+		return hub.fetch(`${hubOrigin}/api/auth${path}`, {
+			method: "POST",
+			headers: {
+				origin: hubOrigin,
+				"cf-connecting-ip": newClient(),
+				"content-type": "application/json",
+				...(cookie && { cookie }),
+			},
+			body: JSON.stringify(body),
+		});
+	}
+
+	it("is claimed by proving an address, and no other way", async () => {
+		const page = await (await hub.fetch(`${hubOrigin}/signup`)).text();
+		expect(page).toContain("Claim this server");
+		expect(page).toContain("GitHub");
+		expect(page).not.toContain("nothing checks the address");
+		expect(page).not.toContain('type="password"');
+
+		const email = newAddress();
+		const claimed = await hubPost("/deployment/claim", {
+			email,
+			name: "Not Them",
+			newPassword: PASSWORD,
+		});
+		expect(claimed.status).toBe(404);
+		const row = await hub.db.prepare("SELECT COUNT(*) AS accounts FROM user").first();
+		expect(row).toEqual({ accounts: 0 });
+
+		expectIn(await signInAs(person(email), hub, hubOrigin));
+		const owner = await hub.db.prepare("SELECT owner_id AS ownerId FROM deployment").first<{
+			ownerId: string | null;
+		}>();
+		expect(owner?.ownerId).toEqual(expect.any(String));
+	});
+
+	it("does not hand someone an account whose password a stray link already chose", async () => {
+		const first = await signInAs(person(newAddress()), hub, hubOrigin);
+		const asked = await hubPost(
+			"/deployment/invitations/create",
+			{ email: newAddress() },
+			cookieOf(first),
+		);
+		const { link, email } = (await asked.json()) as { link: string; email: string };
+		const accepted = await hubPost("/deployment/invitations/accept", {
+			token: new URL(link).hash.slice(1),
+			name: "Whoever Held The Link",
+			newPassword: PASSWORD,
+		});
+		expect(accepted.status).toBe(200);
+
+		const response = await signInAs(person(email), hub, hubOrigin);
+		expect(response.status).toBe(302);
+		const location = new URL(response.headers.get("location") ?? "", hubOrigin);
+		expect(location.pathname).toBe("/login");
+		expect(location.searchParams.get("error")).toBe("account_not_linked");
+		expect(cookieOf(response)).not.toContain("session_token");
+		const linked = await hub.db
+			.prepare(
+				`SELECT COUNT(*) AS accounts FROM account
+					JOIN user ON user.id = account.user_id
+					WHERE user.email = ? AND account.provider_id = 'github'`,
+			)
+			.bind(email)
+			.first();
+		expect(linked).toEqual({ accounts: 0 });
+	});
+
+	it("lets someone invited make their account with GitHub, and come back", async () => {
+		const first = await signInAs(person(newAddress()), hub, hubOrigin);
+		const email = newAddress();
+		await hubPost("/deployment/invitations/create", { email }, cookieOf(first));
+		const invited = person(email);
+		expectIn(await signInAs(invited, hub, hubOrigin));
+		expectIn(await signInAs(invited, hub, hubOrigin));
+	});
+});
+
 describe("claiming a server that sends email", () => {
 	it("is not there: the first account proves its address with a code", async () => {
 		const email = newAddress();
@@ -1237,6 +1332,11 @@ describe("the pages", () => {
 	it("explain a refusal at the sign-in page", async () => {
 		const response = await id.fetch(`${origin}/login?error=SIGN_UP_CLOSED`);
 		expect(await response.text()).toContain(BY_INVITATION);
+	});
+
+	it("explain why GitHub did not reach an account", async () => {
+		const response = await id.fetch(`${origin}/login?error=account_not_linked`);
+		expect(await response.text()).toContain("An account here already has that address");
 	});
 });
 
