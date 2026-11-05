@@ -12,6 +12,7 @@ import type { AuditActivity, AuditEventType } from "../../lib/audit-event";
 import { describeDevice } from "../../lib/device";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { isAWorkersAddress } from "./workers-address";
 
 export interface AuditDetails {
 	userId?: string | null | undefined;
@@ -68,8 +69,9 @@ async function write(
 /** Where a request came from, in the form this log keeps. */
 export function whereFrom(headers: Headers | undefined | null) {
 	const userAgent = headers?.get("user-agent");
+	const address = headers?.get("cf-connecting-ip");
 	return {
-		ip: headers?.get("cf-connecting-ip") ?? null,
+		ip: address && !isAWorkersAddress(address) ? address : null,
 		device: userAgent ? describeDevice(userAgent) : null,
 	};
 }

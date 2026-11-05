@@ -66,6 +66,28 @@ it("tells clients apart by the address Cloudflare saw, not one they claim", asyn
 	expect(statuses).toEqual([401, 401, 401, 429]);
 });
 
+// Every Worker reaches another zone from one address, whoever's it is: see workers-address.ts.
+const WORKERS = "2a06:98c0:3600::103";
+
+it("counts Workers on different zones apart", async () => {
+	const junk = { "cf-connecting-ip": WORKERS, "cf-worker": "junk.example" };
+	const statuses = [];
+	for (let attempt = 0; attempt < 4; attempt++) statuses.push(await signIn(junk));
+	expect(statuses).toEqual([401, 401, 401, 429]);
+
+	expect(await signIn({ "cf-connecting-ip": WORKERS, "cf-worker": "gateweave.com" })).toBe(401);
+});
+
+it("gives nobody a way out of a limit by saying they are a Worker", async () => {
+	const statuses = [];
+	for (let attempt = 0; attempt < 4; attempt++) {
+		statuses.push(
+			await signIn({ "cf-connecting-ip": "198.51.100.40", "cf-worker": `${attempt}.example` }),
+		);
+	}
+	expect(statuses).toEqual([401, 401, 401, 429]);
+});
+
 it("counts a client's attempts in every isolate together", async () => {
 	const client = { "cf-connecting-ip": "203.0.113.30" };
 	const statuses = [];

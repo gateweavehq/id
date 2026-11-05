@@ -297,9 +297,9 @@ export function oidcPlugins(
 			// that nothing here should. A deployment has scripts/add-app.ts, and a workspace's admins have
 			// workspace-apps.ts, which writes a fixed row.
 			clientPrivileges: () => false,
-			// Limits count per address, and these two are called by apps' servers. Apps on Workers all
-			// come from Cloudflare's one address, so the defaults (20 and 60 a minute) would stop every
-			// app's sign-ins together. A request here is authenticated, and a code works once.
+			// Limits count per address, and these two are called by apps' servers, which can share one on
+			// a cloud or a zone's Workers (`countedByWhoSentIt`). The defaults (20 and 60 a minute) would stop
+			// all of those apps' sign-ins together. A request here is authenticated, and a code works once.
 			rateLimit: { token: { window: 60, max: 600 }, userinfo: { window: 60, max: 600 } },
 			// The provider leaves these to userinfo. Apps read them from the ID token, and Cloudflare Access
 			// reads nothing else, so they are here too, for the scopes that ask for them.
