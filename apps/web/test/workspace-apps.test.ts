@@ -3083,6 +3083,42 @@ describe("groups", () => {
 			expect(await heldBy(inside, app)).toEqual([0, 0, 0]);
 		});
 
+		// An access token goes with the refresh token behind it, so holding one without the other
+		// shows that it goes by itself.
+		describe.each([
+			["tokens of both kinds", (app: App, person: Person) => signInToApp(app, person)],
+			[
+				"an access token alone",
+				async (app: App, person: Person) =>
+					exchange(app, await agree(await authorize(app, person, { scope: "openid" }), person)),
+			],
+		] as const)("holding %s", (_holding, signIn) => {
+			it("ends it, though someone else is in another group the app names", async () => {
+				const { owner, workspace, app, group, inside, insideId, outsideId } = await aWorkspace();
+				const second = await newGroup(owner, workspace, "Designers");
+				await putIn(owner, workspace, second, outsideId);
+				await narrow(owner, workspace, app, [group, second]);
+				await signIn(app, inside);
+				expect((await heldBy(inside, app))[0]).toBe(1);
+
+				await takeOut(owner, workspace, group, insideId);
+				expect(await heldBy(inside, app)).toEqual([0, 0, 0]);
+			});
+
+			it("ends it, though another of their groups opens another app", async () => {
+				const { owner, workspace, app, group, inside, insideId } = await aNarrowedApp();
+				const second = await newGroup(owner, workspace, "Designers");
+				await putIn(owner, workspace, second, insideId);
+				const elsewhere = await newApp(owner, workspace);
+				await narrow(owner, workspace, elsewhere, [second]);
+				await signIn(app, inside);
+				expect((await heldBy(inside, app))[0]).toBe(1);
+
+				await takeOut(owner, workspace, group, insideId);
+				expect(await heldBy(inside, app)).toEqual([0, 0, 0]);
+			});
+		});
+
 		it("takes only what that group opened, and only from them", async () => {
 			const { owner, workspace, app, group, inside, insideId } = await aNarrowedApp();
 			const open = await newApp(owner, workspace);
