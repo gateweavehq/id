@@ -369,8 +369,15 @@ Other rules:
 - **`sid` is the session's own id, in the ID token and the logout token,** so two apps can match up a
   person for as long as one session lasts. Workspace apps (who may
   not trust each other) need this looked at before they get `backchannel_logout_uri`.
-- **Limits on the token and userinfo endpoints are high on purpose,** at 600 a minute per address. Apps'
-  servers call them, and apps on Workers all come from one Cloudflare address.
+- **Limits on the token and userinfo endpoints are high on purpose,** at 600 a minute per address, because
+  apps' servers call them, and a cloud's customers can share an address.
+- **A Worker is counted by its zone, not its address.** Every Worker reaches another zone from one address,
+  anyone's, so counting by that let any Worker on Cloudflare stop people signing in to Track and Agents. The
+  `cf-worker` header says which zone, and a Worker cannot change it: both were measured on 2026-11-05, as was the
+  harm. Nothing else is told by that header, as anyone can send it. Track and Agents share a zone, and so a limit,
+  which only their own Workers can spend. Apps on another cloud can still share an address and a limit.
+- **Being limited costs an app little.** Track and Agents keep no tokens from ID, so nobody is signed out: a
+  sign-in fails and works when tried again. A refresh that was limited was never read, so its token still works.
 
 ## Registering an app
 
@@ -500,7 +507,7 @@ for why this replaced a shared session.
   and password sign-in. It is off unless `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are both set.
   The server requires success, the expected action and the expected hostname, and refuses when
   Siteverify cannot answer. Entering a code needs no pass, since the code is the proof.
-- Rate limits are durable and keyed by `cf-connecting-ip`.
+- Rate limits are durable and keyed by `cf-connecting-ip`, or by zone for a Worker.
 - Changing a password ends every other session, since whoever knew the old one may be why it changed.
   The account page lists a person's sessions, and they can end any of them.
 - The cookie keeps the session token away from scripts, so the session a page carries leaves it out.

@@ -135,10 +135,16 @@ describe("the daily cron", () => {
 	});
 
 	it("gets through more than one batch", async () => {
-		const expired = Array.from({ length: 2500 }, (_, index) =>
-			addVerification(`old-${index}`, Date.now() - HOUR),
-		);
-		await id.db.batch(expired);
+		// One statement, not one for each row: preparing 2,500 through the test's connection takes long
+		// enough when other suites are busy that the connection is lost before they can be sent.
+		await id.db
+			.prepare(
+				`WITH RECURSIVE row(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM row WHERE n < 2500)
+				INSERT INTO verification (id, identifier, value, expires_at, created_at, updated_at)
+				SELECT 'old-' || n, 'someone', 'something', ?1, ?1, ?1 FROM row`,
+			)
+			.bind(Date.now() - HOUR)
+			.run();
 		await id.runCron();
 		const left = await id.db
 			.prepare("SELECT COUNT(*) AS count FROM verification WHERE id LIKE 'old-%'")

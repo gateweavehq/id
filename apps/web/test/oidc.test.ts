@@ -16,7 +16,7 @@ const SCOPE = "openid profile email offline_access";
 let id: Awaited<ReturnType<typeof startId>>;
 let as: oauth.AuthorizationServer;
 
-/** An app's server calling ID. Apps share an address, as apps on Workers do. */
+/** An app's server calling ID. Apps share an address, as apps on one cloud can. */
 const appFetch: typeof fetch = (input, init) =>
 	id.fetch(input as string, {
 		...init,
@@ -172,7 +172,7 @@ async function authorize(app: App, person: Person | null, params: Record<string,
 type Authorized = Awaited<ReturnType<typeof authorize>>;
 
 /** What an app's server does with the redirect: exchanges the code and checks all of what it gets. */
-async function exchange(app: App, authorized: Authorized, client = as) {
+async function exchange(app: App, authorized: Authorized, client = as, from = fromApp) {
 	const params = oauth.validateAuthResponse(
 		client,
 		app.client,
@@ -186,7 +186,7 @@ async function exchange(app: App, authorized: Authorized, client = as) {
 		params,
 		app.redirectUri,
 		authorized.verifier,
-		fromApp,
+		from,
 	);
 	const tokens = await oauth.processAuthorizationCodeResponse(client, app.client, response, {
 		expectedNonce: authorized.nonce,
@@ -194,7 +194,7 @@ async function exchange(app: App, authorized: Authorized, client = as) {
 	});
 	// Through the JWKS, though a client that got this over TLS may skip it, because the products
 	// and Cloudflare Access can rely on it only if it holds.
-	await oauth.validateApplicationLevelSignature(client, response, fromApp);
+	await oauth.validateApplicationLevelSignature(client, response, from);
 	const claims = oauth.getValidatedIdTokenClaims(tokens);
 	if (!claims) throw new Error("No ID token");
 	return { tokens, claims };
@@ -1143,6 +1143,143 @@ describe("rate limits", () => {
 			stopped = response.status === 429;
 		}
 		expect(stopped).toBe(true);
+	});
+});
+
+// Every Worker reaches another zone from this one address, whoever's it is. It was measured on staging
+// that one with nothing to do with Gateweave could stop people signing in to Track by using up its limit.
+// That these are counted apart is in rate-limit.test.ts, at a limit that takes a few requests to reach.
+describe("Workers, which all come from one address", () => {
+	const WORKERS = "2a06:98c0:3600::103";
+	const onZone = (zone: string) => ({ "cf-connecting-ip": WORKERS, "cf-worker": zone });
+	const JUNK = onZone("junk.example");
+	const LONG = { timeout: 180_000 };
+
+	function workerOn(zone: string) {
+		const fetchFromWorker: typeof fetch = (input, init) =>
+			id.fetch(input as string, {
+				...init,
+				headers: { ...Object.fromEntries(new Headers(init?.headers)), ...onZone(zone) },
+			});
+		return { [oauth.customFetch]: fetchFromWorker };
+	}
+
+	/** A few at a time: this limit takes hundreds of requests, and other suites are running. */
+	const someJunk = (size: number) =>
+		Promise.all(
+			Array.from({ length: size }, () =>
+				id.fetch(`${origin}/api/auth/oauth2/token`, {
+					method: "POST",
+					headers: { "content-type": "application/x-www-form-urlencoded", ...JUNK },
+					body: "grant_type=authorization_code&code=junk&client_id=nobody&client_secret=junk&redirect_uri=https%3A%2F%2Fa.test%2Fcb",
+				}),
+			),
+		);
+
+	/**
+	 * An allowance comes back every tenth of a second, so what is being limited has to arrive while the
+	 * junk goes on, as it would. Waiting until the junk has stopped lets it through, whoever it counts as.
+	 */
+	async function whileJunkGoesOn<T>(work: () => Promise<T>) {
+		let spent = false;
+		for (let sent = 0; sent < 4000 && !spent; sent += 5) {
+			spent = (await someJunk(5)).some((answer) => answer.status === 429);
+		}
+		expect(spent).toBe(true);
+		let going = true;
+		const sending = (async () => {
+			while (going) await someJunk(2);
+		})();
+		try {
+			return await work();
+		} finally {
+			going = false;
+			await sending;
+		}
+	}
+
+	it("lets junk from one stop neither another's sign-ins nor its refreshes", LONG, async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const from = workerOn("gateweave.com");
+		// Its own copy of the keys: an earlier test replaced them, and a client keeps what it fetched.
+		const client = await discover();
+		await whileJunkGoesOn(async () => {
+			const { tokens } = await exchange(app, await authorize(app, person), client, from);
+			expect(tokens.access_token).toBeTruthy();
+			const refreshed = await oauth.refreshTokenGrantRequest(
+				client,
+				app.client,
+				app.auth,
+				tokens.refresh_token ?? "",
+				from,
+			);
+			expect(refreshed.status).toBe(200);
+		});
+	});
+
+	it("stops one that keeps sending junk, and spends no refresh token doing so", LONG, async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const client = await discover();
+		const signedIn = await exchange(
+			app,
+			await authorize(app, person),
+			client,
+			workerOn("gateweave.com"),
+		);
+		let refreshToken = signedIn.tokens.refresh_token ?? "";
+		const refreshing = () =>
+			oauth.refreshTokenGrantRequest(
+				client,
+				app.client,
+				app.auth,
+				refreshToken,
+				workerOn("junk.example"),
+			);
+
+		const limited = await whileJunkGoesOn(async () => {
+			for (let attempt = 0; attempt < 20; attempt++) {
+				const answer = await refreshing();
+				if (answer.status === 429) return true;
+				// It took an allowance as it came back, and so it was spent. On with the new one.
+				const next = await oauth.processRefreshTokenResponse(client, app.client, answer);
+				refreshToken = next.refresh_token ?? "";
+			}
+			return false;
+		});
+		expect(limited).toBe(true);
+
+		// With the junk gone, the very token that was limited gets through.
+		await vi.waitFor(
+			async () => {
+				expect((await refreshing()).status).toBe(200);
+			},
+			{ timeout: 10_000, interval: 500 },
+		);
+	});
+
+	it("puts no made-up address in the log, as a Worker says nothing of where anyone is", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const from = workerOn("logged.example");
+		const client = await discover();
+		const { tokens } = await exchange(app, await authorize(app, person), client, from);
+		const revoked = await oauth.revocationRequest(
+			client,
+			app.client,
+			app.auth,
+			tokens.refresh_token ?? "",
+			from,
+		);
+		expect(revoked.status).toBe(200);
+		await vi.waitFor(async () => {
+			const row = await id.db
+				.prepare("SELECT ip FROM audit_event WHERE type = 'token_revoked' AND app = ?")
+				.bind(app.appId)
+				.first<{ ip: string | null }>();
+			expect(row).toEqual({ ip: null });
+		});
 	});
 });
 
