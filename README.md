@@ -21,8 +21,9 @@ that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq
 - **Accounts.** Sign up with a code sent to your email, sign in with a password, GitHub or a passkey,
   reset a password, and see an account page with its recent activity.
 - **First-party apps.** Tokens for apps that a deployment registers itself. Gateweave's own products
-  sign in through it, next to their own sign-in. When someone signs out of ID, these apps are told
-  by a back-channel logout, and one that an app missed is tried again from a queue for about 20 hours.
+  sign in through it, next to their own sign-in. When someone signs out of ID, an app that gave a
+  back-channel logout address is told, and a logout it missed is tried again from a queue for about 20
+  hours.
 - **Workspaces.** People can make workspaces, invite each other and
   [connect their own apps](docs/connect-an-app.md), which only that workspace's members can use. Groups
   decide who in a workspace may sign in to which app, and an app can ask for them as a `groups` claim.
