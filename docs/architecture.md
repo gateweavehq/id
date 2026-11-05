@@ -639,8 +639,10 @@ name such as "Chrome on Windows". A workspace's rows also have its id, and its n
 own.
 
 Not recorded: signing out, a refresh that changes nothing, and a refresh token reused, which the provider
-answers and revokes with no hook to hear it. A request stopped by the rate limit or Turnstile never gets
-this far, which is what bounds the rows a person's account can collect.
+answers and revokes with no hook to hear it. A refused refresh token is not rotated, so an app can send
+it again and again: one `refused` row an hour stands for those, for each person and app. A request
+stopped by the rate limit or Turnstile never gets this far, which is what bounds the rows a person's
+account can collect.
 
 **This is personal data**, so what it keeps is decided on purpose:
 

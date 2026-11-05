@@ -2,7 +2,7 @@ import { getOAuthProviderState, oauthProvider } from "@better-auth/oauth-provide
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins/jwt";
-import { eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
@@ -365,11 +365,16 @@ export function oidcPlugins(
 					!(await maySignIn(db, { user, app })) ||
 					!(await stillAllowed(db, { user, app, scopes }))
 				) {
-					record("refused", {
-						userId: user?.id,
-						app: app?.app,
-						workspaceId: app?.workspace,
-						detail: grantType,
+					record("refused", async () => {
+						if (grantType === "refresh_token" && (await refusedLately(db, user?.id, app?.app))) {
+							return undefined;
+						}
+						return {
+							userId: user?.id,
+							app: app?.app,
+							workspaceId: app?.workspace,
+							detail: grantType,
+						};
 					});
 					throw new APIError("BAD_REQUEST", {
 						error: "invalid_grant",
@@ -409,3 +414,32 @@ export function oidcPlugins(
 		}),
 	];
 }
+
+/**
+ * A refused refresh token is not rotated, so an app can send it again and again, up to the token
+ * endpoint's limit. One row an hour says what a row a try would, and leaves the newest rows the
+ * account page shows to everything else.
+ */
+async function refusedLately(
+	db: Database,
+	userId: string | undefined,
+	app: string | undefined,
+): Promise<boolean> {
+	if (!userId || !app) return false;
+	const row = await db
+		.select({ id: schema.auditEvent.id })
+		.from(schema.auditEvent)
+		.where(
+			and(
+				eq(schema.auditEvent.userId, userId),
+				gt(schema.auditEvent.at, new Date(Date.now() - REFUSED_REFRESH_WINDOW)),
+				eq(schema.auditEvent.type, "refused"),
+				eq(schema.auditEvent.app, app),
+				eq(schema.auditEvent.detail, "refresh_token"),
+			),
+		)
+		.get();
+	return row !== undefined;
+}
+
+const REFUSED_REFRESH_WINDOW = 60 * 60 * 1000;

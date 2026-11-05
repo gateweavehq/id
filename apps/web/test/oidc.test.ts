@@ -704,6 +704,38 @@ describe("the audit log", () => {
 		});
 	});
 
+	it("records an app repeating a refused refresh once, not each time", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const { tokens } = await signInToApp(app, person);
+		await setEmailVerified(person, false);
+		await expect(refresh(app, tokens.refresh_token)).rejects.toMatchObject({
+			error: "invalid_grant",
+		});
+		await id.auditEventRecorded(person.userId, {
+			type: "refused",
+			app: app.appId,
+			detail: "refresh_token",
+		});
+
+		for (let attempt = 0; attempt < 3; attempt++) {
+			await expect(refresh(app, tokens.refresh_token)).rejects.toMatchObject({
+				error: "invalid_grant",
+			});
+		}
+		// Something later, by another path, so the repeats have had their chance to be written.
+		expectRefused(await authorize(app, person), app);
+		await id.auditEventRecorded(person.userId, {
+			type: "refused",
+			app: app.appId,
+			detail: "authorization",
+		});
+		const refreshes = (await id.auditEvents(person.userId)).filter(
+			({ type, detail }) => type === "refused" && detail === "refresh_token",
+		);
+		expect(refreshes).toHaveLength(1);
+	});
+
 	it.each([
 		[true, "consent_granted"],
 		[false, "consent_denied"],
