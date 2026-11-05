@@ -8,8 +8,10 @@ import {
 } from "better-auth/api";
 import { emailOTP } from "better-auth/plugins/email-otp";
 import { z } from "zod";
+import type { Database } from "../db";
 import type { Mailer } from "../email/mailer";
 import { accountExistsEmail, signUpCodeEmail } from "../email/templates";
+import { mayMakeAccount } from "./deployment";
 
 // Sign-up proves the address before an account exists, and the password comes after that. See
 // "Sign-up" in docs/architecture.md for the attack this closes.
@@ -113,8 +115,15 @@ export function signUpCodes(mailer: Mailer) {
  * `allowCode` caps the codes one address can be sent. It runs before a code is stored: each new
  * code resets the attempts, so the guesses against one address would otherwise be limited only by
  * how many clients ask.
+ *
+ * On a closed server, an address with no account and no way in gets no code either, with the same
+ * answer. That comes before the cap, so a stranger cannot use up a person's codes ahead of their
+ * invitation, or learn from running into the cap who has been invited.
  */
-export function signUpHooks(allowCode: ((email: string) => Promise<boolean>) | undefined) {
+export function signUpHooks(
+	db: Database,
+	allowCode: ((email: string) => Promise<boolean>) | undefined,
+) {
 	return {
 		before: createAuthMiddleware(async (ctx) => {
 			if (ctx.path === SEND_CODE) {
@@ -125,10 +134,18 @@ export function signUpHooks(allowCode: ((email: string) => Promise<boolean>) | u
 					});
 				}
 				const email = address.safeParse(ctx.body?.email);
-				// The plugin answers an address that is not one. Over the cap, nothing is stored or
-				// sent and the answer stays the same, as for an email the mailer drops.
-				if (email.success && allowCode && !(await allowCode(email.data.toLowerCase()))) {
-					return ctx.json({ success: true });
+				// The plugin answers an address that is not one. Otherwise, with no way in or over the
+				// cap, nothing is stored or sent and the answer stays the same, as for an email the
+				// mailer drops.
+				if (email.success) {
+					const asked = email.data.toLowerCase();
+					if (
+						!(await mayMakeAccount(db, asked)) &&
+						!(await ctx.context.internalAdapter.findUserByEmail(asked))
+					) {
+						return ctx.json({ success: true });
+					}
+					if (allowCode && !(await allowCode(asked))) return ctx.json({ success: true });
 				}
 			}
 

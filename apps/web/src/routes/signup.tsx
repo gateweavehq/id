@@ -12,7 +12,7 @@ import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, type Search } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
-import { getAuthOptions, getSession } from "#/lib/session";
+import { getAuthOptions, getSession, getSignUpState } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 import { useTurnstile } from "#/lib/turnstile";
 
@@ -31,7 +31,10 @@ export const Route = createFileRoute("/signup")({
 		if (inFlow(search)) return;
 		if (await getSession()) throw redirect({ href: safeRedirect(search.redirect) ?? "/account" });
 	},
-	loader: () => getAuthOptions(),
+	loader: async () => {
+		const [options, signUp] = await Promise.all([getAuthOptions(), getSignUpState()]);
+		return { ...options, signUp };
+	},
 	component: SignUpPage,
 });
 
@@ -131,11 +134,20 @@ function SignUpPage() {
 				agreeing
 				title="Enter the code"
 				description={
-					<>
-						We sent a code to <span className="text-foreground">{person.email}</span>. It works for
-						10 minutes. If that address already has an account, the email says so instead, and you
-						can sign in.
-					</>
+					options.signUp === "by-invitation" ? (
+						<>
+							If <span className="text-foreground">{person.email}</span> has an invitation, we sent
+							it a code that works for 10 minutes. If it already has an account, the email says so
+							instead, and you can sign in. If nothing comes, ask whoever runs this server to invite
+							you.
+						</>
+					) : (
+						<>
+							We sent a code to <span className="text-foreground">{person.email}</span>. It works
+							for 10 minutes. If that address already has an account, the email says so instead, and
+							you can sign in.
+						</>
+					)
 				}
 			>
 				<form onSubmit={onEnterCode} className="space-y-4">
@@ -196,6 +208,16 @@ function SignUpPage() {
 			<div className="w-full max-w-sm space-y-6">
 				<div className="space-y-1.5 text-center">
 					<h1 className="text-xl font-semibold tracking-tight">Create your account</h1>
+					{options.signUp === "by-invitation" && (
+						<p className="text-sm text-muted-foreground">
+							This server takes new accounts by invitation. Use the address your invitation went to.
+						</p>
+					)}
+					{options.signUp === "unclaimed" && (
+						<p className="text-sm text-muted-foreground">
+							This server has no accounts yet. The first one owns it, and decides who else can join.
+						</p>
+					)}
 				</div>
 
 				{options.github && (

@@ -31,6 +31,7 @@ export const Route = createFileRoute("/workspaces/")({
 interface Listing {
 	workspaces: WorkspaceSummary[];
 	invitations: InvitationForYou[];
+	canCreate: boolean;
 }
 
 /**
@@ -104,7 +105,9 @@ function WorkspacesPage() {
 					!error && <p className="text-sm text-muted-foreground">Loading…</p>
 				) : listing.workspaces.length === 0 ? (
 					<p className="text-sm text-muted-foreground">
-						You are not in a workspace yet. Make one below, or ask someone to invite you.
+						{listing.canCreate
+							? "You are not in a workspace yet. Make one below, or ask someone to invite you."
+							: "You are not in a workspace yet. Ask someone to invite you."}
 					</p>
 				) : (
 					<ul className="divide-y rounded-lg border text-sm">
@@ -126,7 +129,7 @@ function WorkspacesPage() {
 				)}
 			</section>
 
-			<NewWorkspace />
+			{listing?.canCreate && <NewWorkspace />}
 
 			<LegalLinks links={legal} />
 		</main>

@@ -12,6 +12,7 @@ import { passwordResetEmail } from "../email/templates";
 import { allowedAppsPlugin } from "./allowed-apps";
 import { auditDatabaseHooks, auditLog, auditRecorder, whereFrom } from "./audit";
 import { breachedPasswords } from "./breached-passwords";
+import { mayMakeAccount, SIGN_UP_CLOSED } from "./deployment";
 import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
@@ -157,6 +158,9 @@ export function createAuth(config: AuthConfig) {
 								message: "This email address is not verified",
 							});
 						}
+						if (!(await mayMakeAccount(config.db, user.email))) {
+							throw APIError.from("FORBIDDEN", SIGN_UP_CLOSED);
+						}
 					},
 					after: audit.user.afterCreate,
 				},
@@ -172,7 +176,7 @@ export function createAuth(config: AuthConfig) {
 			},
 			session: { create: { after: audit.session.afterCreate } },
 		},
-		hooks: signUpHooks(config.allowSignUpCode),
+		hooks: signUpHooks(config.db, config.allowSignUpCode),
 		plugins: [
 			...(config.turnstileSecretKey
 				? [
