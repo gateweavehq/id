@@ -7,6 +7,42 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.6.0] - 2026-11-05
+
+A workspace's admins can now keep an app to some of its people with groups, and an app can ask which groups someone is
+in. (#35)
+
+### Added
+
+- **Groups in a workspace.** Admins make groups, put members in them, and keep an app to one or more of them under **Who
+  can use it** on its page. An app that names no groups stays open to every member, as before. Someone in none of the
+  groups an app names cannot sign in to it, and hears nothing of the app from the page that turns them away or from
+  their own activity. Being an owner or an admin lets nobody in by itself, and a group with nobody in it admits nobody.
+  (#35)
+- **Losing access happens at once.** Taking someone out of a group, or changing an app's list, ends their tokens and
+  their consent for any app that no longer admits them, on every device. A group an app names cannot be deleted until no
+  app names it, so an app never opens to everyone by losing its last group. (#35)
+- **A `groups` scope for a workspace's apps.** Once someone agrees, the ID token and userinfo hold the names of their
+  groups in that workspace, and an empty list for someone in none. First-party apps cannot ask for it.
+  [`docs/connect-an-app.md`](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md) says how to use it.
+  (#35)
+
+### Changed
+
+- **A page left open cannot undo a choice.** Saving an app's list says what the page was showing, and a list that has
+  changed since is refused. (#35)
+- **Some group changes want a recent sign-in:** renaming a group, putting someone in one, and changing an app's list, as
+  making someone an admin already does. (#35)
+
+### Upgrading
+
+A deploy applies three migrations, `0009_group_parents`, `0010_groups` and `0011_groups_hold`. Existing workspace apps
+stay open to every member, no token is touched, and there are no new settings.
+
+An app a workspace added can now ask for `groups`. One that names its scopes gets nothing new. One that sends no `scope`
+asks for everything it may have, so its people are asked again, and their tokens end when they answer. Name the scopes
+you want.
+
 ## [0.5.0] - 2026-11-05
 
 ### Added
