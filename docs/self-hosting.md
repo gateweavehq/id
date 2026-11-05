@@ -66,7 +66,8 @@ Sign-up closes behind the first account. Your account page then has a **This ser
   workspace. Closing it again stops new accounts, and leaves the ones already made.
 
 While sign-up is closed, only the owner makes workspaces, because a workspace's invitation is a way in. Those
-the owner makes admins of a workspace can invite to it, and so let people in.
+the owner makes admins of a workspace can invite to it, and so let people in. A workspace you are not an admin
+of, made while sign-up was open, cannot invite anyone until it opens again.
 
 To hand the server to someone else, who needs an account already, run this from the repository root:
 

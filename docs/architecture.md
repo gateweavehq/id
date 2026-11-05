@@ -85,10 +85,11 @@ their team should not find later that anyone could make an account there, and ap
 may trust whoever has one.
 
 One row in `deployment` says who the owner is and whether sign-up is open. `apps/web/src/server/auth/deployment.ts`
-asks it, and the triggers in `0014_deployment_hold.sql` hold it.
+asks it, and the triggers in `0014_deployment_hold.sql` and `0015_workspace_way_in.sql` hold it.
 
 - **Closed means an address needs a way in:** an invitation from the owner, or a pending one from a
-  workspace. Neither lasts past its expiry, and an owner's goes with the account it made.
+  workspace the owner runs, as its owner or an admin. Neither lasts past its expiry, and an owner's goes with
+  the account it made.
 - **The database refuses the rest, whatever makes the account.** The hook in `auth/config.ts` asks first so
   that the answer has words, including at the sign-in page for someone coming back from GitHub. A way of
   making accounts added later that forgets to ask still cannot make one. A missing row counts as closed.
@@ -98,9 +99,11 @@ asks it, and the triggers in `0014_deployment_hold.sql` hold it.
   address is asked about as the plugin will read it, lowercased first, since the Kelvin sign is only a `k` then.
 - **A code does not outlast the way in.** If the invitation goes while a code is on its way, the right code
   is refused, and so is the second of two people who asked while the server had no accounts.
-- **On a closed server, only the owner makes workspaces.** A workspace's invitation is a way in, so anyone
-  who could make a workspace could let in anyone at all. Those the owner makes admins of a workspace can
-  invite to it.
+- **On a closed server, only the owner makes workspaces, and only those the owner runs can invite.** A
+  workspace's invitation is a way in, so anyone who could make a workspace could let in anyone at all. Those
+  the owner makes admins of a workspace can invite to it. One made while sign-up was open is its maker's, so
+  closing sign-up closes it: it can invite nobody, whoever they are, which tells its admin nothing about who
+  has an account, and what it already sent makes no accounts. Someone with an account can still accept.
 - **An upgrade changes nothing for a deployment that has accounts.** It stays open, with its oldest account
   as the owner, and only the owner's name is new.
 

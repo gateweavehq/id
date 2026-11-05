@@ -353,7 +353,17 @@ function Invitations({ details, reload }: SectionProps) {
 			<h2 id="invite-heading" className="text-sm font-semibold">
 				Invite someone
 			</h2>
-			<form onSubmit={onSubmit} className="space-y-4 rounded-lg border p-4">
+			{!details.mayInvite && (
+				<p className="text-sm text-muted-foreground">
+					Sign-up is closed on this server, and the person who runs it is not an admin of this
+					workspace, so it cannot invite anyone for now.
+				</p>
+			)}
+			<form
+				onSubmit={onSubmit}
+				hidden={!details.mayInvite}
+				className="space-y-4 rounded-lg border p-4"
+			>
 				<div className="space-y-2">
 					<Label htmlFor="invite-email">Their email</Label>
 					<Input id="invite-email" name="email" type="email" autoComplete="off" required />

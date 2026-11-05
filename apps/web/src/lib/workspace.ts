@@ -215,6 +215,8 @@ export interface WorkspaceDetails {
 	members: WorkspaceMember[];
 	/** Empty for someone who may not see them. */
 	invitations: PendingInvitation[];
+	/** Whether someone here may send one, and this workspace's can go out at all. */
+	mayInvite: boolean;
 	/** Empty for someone who may not see them. */
 	apps: WorkspaceApp[];
 	groups: WorkspaceGroup[];

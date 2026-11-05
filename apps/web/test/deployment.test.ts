@@ -632,6 +632,180 @@ describe("making workspaces", () => {
 	});
 });
 
+describe("a workspace's invitations on a closed server", () => {
+	/** Someone else's workspace, made while sign-up was open. It is left open for the test to close. */
+	async function someoneElsesWorkspace() {
+		const owner = await signUp(newAddress());
+		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
+		const admin = await signUp(newAddress());
+		const made = await makeWorkspace(admin.cookie, "someone-elses");
+		expect(made.status).toBe(200);
+		const { id: organizationId } = (await made.json()) as { id: string };
+		return { owner, admin, organizationId };
+	}
+
+	function closeSignUp() {
+		return id.db.prepare("UPDATE deployment SET sign_up = 'closed' WHERE id = 1").run();
+	}
+
+	function invite(cookie: string, organizationId: string, email: string, role = "member") {
+		return post("/organization/invite-member", { organizationId, email, role }, cookie);
+	}
+
+	function addMember(organizationId: string, userId: string, role: string) {
+		return id.db
+			.prepare(
+				`INSERT INTO member (id, organization_id, user_id, role, created_at)
+					VALUES (?, ?, ?, ?, ?)`,
+			)
+			.bind(crypto.randomUUID(), organizationId, userId, role, Date.now())
+			.run();
+	}
+
+	async function mayInvite(cookie: string, slug: string) {
+		const response = await id.fetch(`${origin}/api/auth/workspaces/get?slug=${slug}`, {
+			headers: { "cf-connecting-ip": newClient(), cookie },
+		});
+		expect(response.status).toBe(200);
+		return ((await response.json()) as { mayInvite: boolean }).mayInvite;
+	}
+
+	it("let nobody in from a workspace the owner does not run, once sign-up closes", async () => {
+		const { admin, organizationId } = await someoneElsesWorkspace();
+		const sentWhileOpen = newAddress();
+		expect((await invite(admin.cookie, organizationId, sentWhileOpen)).status).toBe(200);
+		expect(await mayInvite(admin.cookie, "someone-elses")).toBe(true);
+
+		await closeSignUp();
+
+		const after = newAddress();
+		await refused(await invite(admin.cookie, organizationId, after), "WORKSPACE_CANNOT_INVITE");
+		expect(await mayInvite(admin.cookie, "someone-elses")).toBe(false);
+		for (const email of [sentWhileOpen, after]) {
+			await requestCode(email);
+			expect(await codesStoredFor(email)).toBe(0);
+			await expect(insertAccount(email)).rejects.toThrow("sign-up is closed here");
+		}
+	});
+
+	it("tell an admin nothing about who has an account", async () => {
+		const { admin, organizationId } = await someoneElsesWorkspace();
+		const hasOne = newAddress();
+		await signUp(hasOne);
+		await closeSignUp();
+		await refused(await invite(admin.cookie, organizationId, hasOne), "WORKSPACE_CANNOT_INVITE");
+		await refused(
+			await invite(admin.cookie, organizationId, newAddress()),
+			"WORKSPACE_CANNOT_INVITE",
+		);
+	});
+
+	it("still reach someone with an account, if sent while it was open", async () => {
+		const { admin, organizationId } = await someoneElsesWorkspace();
+		const email = newAddress();
+		const person = await signUp(email);
+		const sent = await invite(admin.cookie, organizationId, email);
+		const { id: invitationId } = (await sent.json()) as { id: string };
+		await closeSignUp();
+
+		const accepted = await post("/organization/accept-invitation", { invitationId }, person.cookie);
+		expect(accepted.status).toBe(200);
+	});
+
+	it("let someone in from a workspace the owner runs, and from an admin of theirs", async () => {
+		const owner = await signUp(newAddress());
+		const made = await makeWorkspace(owner.cookie, "the-owners");
+		const { id: organizationId } = (await made.json()) as { id: string };
+		expect(await mayInvite(owner.cookie, "the-owners")).toBe(true);
+
+		const adminEmail = newAddress();
+		const sent = await invite(owner.cookie, organizationId, adminEmail, "admin");
+		expect(sent.status).toBe(200);
+		const { id: invitationId } = (await sent.json()) as { id: string };
+		const admin = await signUp(adminEmail);
+		const accepted = await post("/organization/accept-invitation", { invitationId }, admin.cookie);
+		expect(accepted.status).toBe(200);
+
+		const next = newAddress();
+		expect((await invite(admin.cookie, organizationId, next)).status).toBe(200);
+		await signUp(next);
+		expect(await accountsWith(next)).toBe(1);
+	});
+
+	it("count the owner as running a workspace only as its owner or an admin", async () => {
+		const { owner, admin, organizationId } = await someoneElsesWorkspace();
+		await addMember(organizationId, owner.userId, "member");
+		const pending = newAddress();
+		expect((await invite(admin.cookie, organizationId, pending)).status).toBe(200);
+		await closeSignUp();
+
+		await refused(
+			await invite(admin.cookie, organizationId, newAddress()),
+			"WORKSPACE_CANNOT_INVITE",
+		);
+		await requestCode(pending);
+		expect(await codesStoredFor(pending)).toBe(0);
+		await expect(insertAccount(pending)).rejects.toThrow("sign-up is closed here");
+
+		await id.db
+			.prepare("UPDATE member SET role = 'admin' WHERE user_id = ?")
+			.bind(owner.userId)
+			.run();
+		expect((await invite(admin.cookie, organizationId, newAddress())).status).toBe(200);
+		await requestCode(pending);
+		expect(await codesStoredFor(pending)).toBe(1);
+		await insertAccount(pending);
+		expect(await accountsWith(pending)).toBe(1);
+	});
+
+	it("stop being a way in if the owner stops running the workspace", async () => {
+		const { owner, admin, organizationId } = await someoneElsesWorkspace();
+		await addMember(organizationId, owner.userId, "admin");
+		await closeSignUp();
+		const pending = newAddress();
+		expect((await invite(admin.cookie, organizationId, pending)).status).toBe(200);
+
+		await id.db.prepare("DELETE FROM member WHERE user_id = ?").bind(owner.userId).run();
+
+		await refused(
+			await invite(admin.cookie, organizationId, newAddress()),
+			"WORKSPACE_CANNOT_INVITE",
+		);
+		await requestCode(pending);
+		expect(await codesStoredFor(pending)).toBe(0);
+		await expect(insertAccount(pending)).rejects.toThrow("sign-up is closed here");
+	});
+
+	it("look at the workspace in question, not another the owner runs", async () => {
+		const { owner, admin, organizationId } = await someoneElsesWorkspace();
+		expect((await makeWorkspace(owner.cookie, "the-owners")).status).toBe(200);
+		const pending = newAddress();
+		expect((await invite(admin.cookie, organizationId, pending)).status).toBe(200);
+		await closeSignUp();
+
+		await refused(
+			await invite(admin.cookie, organizationId, newAddress()),
+			"WORKSPACE_CANNOT_INVITE",
+		);
+		expect(await mayInvite(admin.cookie, "someone-elses")).toBe(false);
+		await requestCode(pending);
+		expect(await codesStoredFor(pending)).toBe(0);
+		await expect(insertAccount(pending)).rejects.toThrow("sign-up is closed here");
+	});
+
+	it("do not tell someone who may not send one that they may", async () => {
+		const owner = await signUp(newAddress());
+		const made = await makeWorkspace(owner.cookie, "the-owners");
+		const { id: organizationId } = (await made.json()) as { id: string };
+		const email = newAddress();
+		const sent = await invite(owner.cookie, organizationId, email);
+		const { id: invitationId } = (await sent.json()) as { id: string };
+		const member = await signUp(email);
+		await post("/organization/accept-invitation", { invitationId }, member.cookie);
+		expect(await mayInvite(member.cookie, "the-owners")).toBe(false);
+	});
+});
+
 describe("the owner's paths", () => {
 	const OWNER_ONLY: [string, string, object | undefined][] = [
 		["GET", "/deployment/get", undefined],
