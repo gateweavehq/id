@@ -42,6 +42,18 @@ export const workspaceName = z
 /** An app's name is shown to people when they are asked about it, so it follows the same rules. */
 export const appName = workspaceName;
 
+/**
+ * A group's name goes to apps in a claim, where they match on it. So it needs something to match, and
+ * nothing that hides what it says.
+ */
+export const groupName = z
+	.string()
+	.min(1, "Enter a name.")
+	.max(NAME_LIMIT, `Enter a name of at most ${NAME_LIMIT} characters.`)
+	.refine((name) => name === name.trim(), "A name cannot start or end with a space.")
+	.refine((name) => !HIDDEN_CHARACTERS.test(name), "A name cannot hold control characters.")
+	.refine((name) => comparableName(name) !== "", "A name needs a letter or a digit.");
+
 export const workspaceSlug = z
 	.string()
 	.regex(
@@ -75,6 +87,7 @@ export interface Resources {
 	seeInvitations: undefined;
 	cancelInvitation: undefined;
 	manageApps: undefined;
+	manageGroups: undefined;
 	changeRole: { role: string; to: WorkspaceRole };
 	removeMember: { role: string };
 }
@@ -108,6 +121,7 @@ export function can<Action extends WorkspaceAction>(
 		case "seeInvitations":
 		case "cancelInvitation":
 		case "manageApps":
+		case "manageGroups":
 			return admin;
 		case "delete":
 			return owner;
@@ -175,6 +189,16 @@ export interface WorkspaceApp {
 	clientId: string;
 	name: string;
 	redirectUris: string[];
+	/** The groups it is narrowed to. With none, every member can use it. */
+	groups: string[];
+}
+
+/** A group as someone in the workspace sees it. A member is told only of the groups they are in. */
+export interface WorkspaceGroup {
+	id: string;
+	name: string;
+	/** The members in it, by `WorkspaceMember.id`. A plain member is told only of themselves. */
+	members: string[];
 }
 
 export interface WorkspaceDetails {
@@ -186,6 +210,7 @@ export interface WorkspaceDetails {
 	invitations: PendingInvitation[];
 	/** Empty for someone who may not see them. */
 	apps: WorkspaceApp[];
+	groups: WorkspaceGroup[];
 	/** Whether this deployment can sign people in to apps at all. */
 	appsEnabled: boolean;
 }

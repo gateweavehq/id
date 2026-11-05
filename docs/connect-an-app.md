@@ -24,14 +24,14 @@ and your app sees them as new people, because their ids in an app are computed f
 
 ## Configure your app
 
-| Setting           | Value                                                        |
-| ----------------- | ------------------------------------------------------------ |
-| Issuer            | What the page showed, such as `https://id.gateweave.com`     |
-| Discovery         | `<issuer>/.well-known/openid-configuration`                  |
-| Client ID, secret | What the page showed                                         |
-| Client auth       | `client_secret_basic`: HTTP Basic at the token endpoint      |
-| Flow              | Authorization code, with PKCE (`S256`), which is required    |
-| Scopes            | `openid`, and any of `profile`, `email` and `offline_access` |
+| Setting           | Value                                                                  |
+| ----------------- | ---------------------------------------------------------------------- |
+| Issuer            | What the page showed, such as `https://id.gateweave.com`               |
+| Discovery         | `<issuer>/.well-known/openid-configuration`                            |
+| Client ID, secret | What the page showed                                                   |
+| Client auth       | `client_secret_basic`: HTTP Basic at the token endpoint                |
+| Flow              | Authorization code, with PKCE (`S256`), which is required              |
+| Scopes            | `openid`, and any of `profile`, `email`, `offline_access` and `groups` |
 
 People are asked about scopes, so scopes decide what your app gets. The `claims` request parameter is
 ignored. There is no introspection endpoint, because your app has what it needs in the ID token and from
@@ -58,13 +58,22 @@ The ID token is signed with ES256, and your library checks it against the keys i
 | `sub`                     | `openid`   | This person's id in your app. Key your data on this. |
 | `email`, `email_verified` | `email`    | Their address, which ID has always verified          |
 | `name`, `picture`         | `profile`  | Their name, and a picture if they have one           |
+| `groups`                  | `groups`   | The names of their groups in your workspace          |
 
 `sub` is the same for one person every time, and different on every host, so apps on two hosts cannot
 match people up by it. Apps on one host do share it, so every app on `localhost:3000` sees the same one.
 It is not their account id, and it is not an address that could change.
 
 An ID token does not say which workspace someone is in, or their role in it. Anyone who gets as far as
-your app is a member of the workspace that added it.
+your app is a member of the workspace that added it, and in one of its groups if an admin narrowed it to
+some.
+
+`groups` is an array, empty for someone in none, with all of their groups in the workspace that added your
+app, and never another workspace's. It is at userinfo as well. Admins can rename a group, and the new name
+is what your app sees at userinfo and in the next ID token, so a rule in your app that matches on a name
+follows it. Each person is asked about this scope like any other.
+
+Name the scopes you want. A request with no `scope` asks for every scope your app may have, `groups` included.
 
 `offline_access` gets a refresh token, which rotates each time it is used.
 
@@ -86,10 +95,19 @@ seems to go nowhere, try it signed in as a member, and you will see the error.
 `prompt=none` follows the same rule. A member gets the usual answer, with a code or an error. Someone
 signed out is asked to sign in instead of your app getting `login_required`, and then goes on to your app.
 
+## Keeping your app to some of a workspace
+
+An admin can narrow your app to some of the workspace's groups, under **Who can use it** on the workspace's
+page. Anyone else in the workspace is then treated like anyone outside it, and sees a page that names no
+app. Being an owner or an admin does not change that. An app narrowed to groups with nobody in them admits
+nobody, and a group an app names cannot be deleted until the app stops naming it, so an app only ever opens
+to everyone when an admin chooses that.
+
 ## When someone leaves or takes your app back
 
-When someone leaves a workspace or is removed, they lose its apps at once. Anyone can also take your app
-back from their account page, and stay in the workspace. Either way their access tokens, refresh tokens
+When someone leaves a workspace or is removed, they lose its apps at once. The same goes for someone taken
+out of the last group that opens your app, and for anyone an admin leaves out when narrowing it. Anyone can
+also take your app back from their account page, and stay in the workspace. Either way their access tokens, refresh tokens
 and consent are deleted, so anything your app does with those tokens starts failing, and a code you have
 not exchanged yet is refused, unless they have since allowed your app at least its scopes. If they come
 back, they are asked again.

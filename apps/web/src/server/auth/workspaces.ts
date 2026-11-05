@@ -40,6 +40,7 @@ import {
 	type Session,
 } from "./workspace-access";
 import { appsOf } from "./workspace-apps";
+import { groupsSeenBy } from "./workspace-groups";
 
 // "Workspaces" in docs/architecture.md. The organization plugin keeps the rows; every request to it
 // comes through the gate below first, so what a person can do is what this file lets through.
@@ -423,12 +424,14 @@ function getWorkspace(db: Database, appsEnabled: boolean) {
 						.all()
 				: [];
 			const apps = appsEnabled && can(you, "manageApps") ? await appsOf(db, workspace.id) : [];
+			const groups = appsEnabled ? await groupsSeenBy(db, workspace.id, you) : [];
 			return {
 				workspace,
 				you: { memberId: you.id, role: you.role },
 				members,
 				invitations,
 				apps,
+				groups,
 				appsEnabled,
 			};
 		},

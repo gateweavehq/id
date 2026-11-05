@@ -36,14 +36,25 @@ function newClientId(): string {
 	return randomBytes(24).toString("base64url");
 }
 
-function baseRow(clientId: string, hashedSecret: string, name: string, uris: string[], now: Date) {
+const FIRST_PARTY_SCOPES = ["openid", "profile", "email", "offline_access"];
+/** A group belongs to a workspace, so an app that belongs to none has nothing to ask about. */
+const WORKSPACE_APP_SCOPES = [...FIRST_PARTY_SCOPES, "groups"];
+
+function baseRow(
+	clientId: string,
+	hashedSecret: string,
+	name: string,
+	uris: string[],
+	scopes: string[],
+	now: Date,
+) {
 	return {
 		id: randomBytes(16).toString("hex"),
 		client_id: clientId,
 		client_secret: hashedSecret,
 		disabled: 0,
 		subject_type: "pairwise",
-		scopes: JSON.stringify(["openid", "profile", "email", "offline_access"]),
+		scopes: JSON.stringify(scopes),
 		created_at: now.getTime(),
 		updated_at: now.getTime(),
 		name,
@@ -65,7 +76,7 @@ export function appRow(app: NewApp, now = new Date()) {
 	const clientId = newClientId();
 	const { clientSecret, hashed } = newClientSecret();
 	const row = {
-		...baseRow(clientId, hashed, app.name, app.redirectUris, now),
+		...baseRow(clientId, hashed, app.name, app.redirectUris, FIRST_PARTY_SCOPES, now),
 		// First-party apps do not ask. An app a workspace adds always does.
 		skip_consent: 1,
 		enable_end_session: 1,
@@ -89,7 +100,7 @@ export function workspaceAppRow(app: NewWorkspaceApp, now = new Date()) {
 	const clientId = newClientId();
 	const { clientSecret, hashed } = newClientSecret();
 	const row = {
-		...baseRow(clientId, hashed, app.name, app.redirectUris, now),
+		...baseRow(clientId, hashed, app.name, app.redirectUris, WORKSPACE_APP_SCOPES, now),
 		// Otherwise any workspace's admin could receive a member's address without them being asked.
 		skip_consent: 0,
 		// With neither of these, the provider emits no `sid`, which two apps that do not trust each

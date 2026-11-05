@@ -12,7 +12,7 @@ and [Gateweave Agents](https://github.com/gateweavehq/agents), which will sign p
 
 It is early. Today it has accounts (sign-up, email verification, sign-in, passkeys, two-factor,
 password reset and an account page), the OIDC provider, for first-party apps a deployment registers
-itself, and workspaces with members and invitations. Groups and workspace apps come in later issues.
+itself and apps a workspace adds, and workspaces with members, invitations and groups.
 
 Read [docs/architecture.md](docs/architecture.md) before changing sign-in, tokens or who may use an
 app. A mistake in those places signs the wrong person in to someone else's app.
@@ -96,7 +96,8 @@ These are load-bearing. Breaking one breaks users' data or security, usually sil
 9. **The organization plugin is reached only through the gate.** Every path under `/organization/` needs
    a rule in `apps/web/src/server/auth/workspaces.ts`, with a strict body, or it answers 404. To someone
    outside a workspace, it does not exist. See "Workspaces" in [docs/architecture.md](docs/architecture.md)
-10. **A caller decides nothing about an app but its name and redirect URIs.** The provider's client
+10. **A caller decides nothing about an app but its name, its redirect URIs and which of its workspace's
+    groups may use it.** The provider's client
     endpoints stay closed (`clientPrivileges` is false), and `/workspaces/apps/*` writes a fixed row
     from `workspaceAppRow`. `skip_consent`, `metadata` and `reference_id` are what the check for who may
     sign in relies on. An app's host does not change. See "Apps a workspace adds" in the same document..

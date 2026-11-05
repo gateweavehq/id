@@ -7,7 +7,7 @@ import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
 import { hasPasskey } from "./passkeys";
-import { type AppIdentity, appIn, maySignIn, stillAllowed } from "./who-may-sign-in";
+import { type AppIdentity, appIn, groupsOf, maySignIn, stillAllowed } from "./who-may-sign-in";
 
 export interface OidcConfig {
 	/** The deployment's origin. Apps have it in their settings, so it can never change. */
@@ -17,6 +17,24 @@ export interface OidcConfig {
 }
 
 const DAY = 86_400;
+
+/** What the provider advertises by itself for the scopes it knows, which setting this replaces. */
+const STANDARD_CLAIMS_SUPPORTED = [
+	"sub",
+	"iss",
+	"aud",
+	"exp",
+	"iat",
+	"sid",
+	"scope",
+	"azp",
+	"name",
+	"picture",
+	"given_name",
+	"family_name",
+	"email",
+	"email_verified",
+];
 
 /**
  * `/token` hands a signed-in person a JWT that holds their real id, which pairwise subjects exist to
@@ -265,6 +283,17 @@ function auditOfApps(db: Database, record: RecordEvent): BetterAuthPlugin {
 	};
 }
 
+/** Only ever from the workspace that owns the app, which only the server writes on its row. */
+async function groupsClaim(
+	db: Database,
+	userId: string,
+	scopes: string[],
+	app: AppIdentity | undefined,
+) {
+	if (!scopes.includes("groups") || !app?.workspace) return {};
+	return { groups: await groupsOf(db, userId, app.workspace) };
+}
+
 /**
  * The OIDC provider and the signing keys under it. Why each value is what it is, and which can never
  * change, is in "Tokens" in docs/architecture.md.
@@ -293,7 +322,10 @@ export function oidcPlugins(
 			loginPage: "/login",
 			consentPage: "/consent",
 			pairwiseSecret,
-			scopes: ["openid", "profile", "email", "offline_access"],
+			// `groups` is on the row of a workspace's app and no other, so nothing else can ask for it.
+			scopes: ["openid", "profile", "email", "offline_access", "groups"],
+			// The provider works out the rest from the scopes it knows. This one it has not heard of.
+			advertisedMetadata: { claims_supported: [...STANDARD_CLAIMS_SUPPORTED, "groups"] },
 			grantTypes: ["authorization_code", "refresh_token"],
 			prefix: {
 				opaqueAccessToken: "gwid_at_",
@@ -310,7 +342,7 @@ export function oidcPlugins(
 			rateLimit: { token: { window: 60, max: 600 }, userinfo: { window: 60, max: 600 } },
 			// The provider leaves these to userinfo. Apps read them from the ID token, and Cloudflare Access
 			// reads nothing else, so they are here too, for the scopes that ask for them.
-			customIdTokenClaims: ({ user, scopes }) => ({
+			customIdTokenClaims: async ({ user, scopes, metadata }) => ({
 				...(scopes.includes("email") && {
 					email: user.email,
 					email_verified: Boolean(user.emailVerified),
@@ -319,7 +351,13 @@ export function oidcPlugins(
 					name: user.name,
 					...(user.image && { picture: user.image }),
 				}),
+				...(await groupsClaim(db, user.id, scopes, appIn(metadata))),
 			}),
+			// Userinfo is not told which app is asking except by the token.
+			customUserInfoClaims: async ({ user, scopes, jwt: { client_id: clientId } }) => {
+				if (!scopes.includes("groups") || typeof clientId !== "string") return {};
+				return groupsClaim(db, user.id, scopes, await appOfClient(db, clientId));
+			},
 			// Authorization does not run on refresh, so without this a removed person keeps their access.
 			customTokenResponseFields: async ({ grantType, user, metadata, scopes }) => {
 				const app = appIn(metadata);

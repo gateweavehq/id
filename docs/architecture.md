@@ -27,7 +27,7 @@ There is one issuer per deployment. Gateweave Cloud's is `https://id.gateweave.c
 
 - **An account** is global, with one verified email address.
 - **A workspace** is a Better Auth organization, behind a gate of ID's own (see "Workspaces"). It owns
-  apps, and will own groups. What its owners and admins may do is decided with `can`, never by comparing a
+  apps and groups. What its owners and admins may do is decided with `can`, never by comparing a
   role with `member`.
 - **An app** is an OAuth client. A workspace's are made through ID's own endpoints, which put the
   workspace in the app's `metadata` (see "Apps a workspace adds"). The provider's own way,
@@ -187,8 +187,8 @@ own check at authorization.
 ## Workspaces
 
 A workspace is a group of people who will share apps. Better Auth's organization plugin keeps the rows,
-and `apps/web/src/server/auth/workspaces.ts` decides what reaches it. Today a workspace has a name, an
-address, members, invitations and apps. Groups come next.
+and `apps/web/src/server/auth/workspaces.ts` decides what reaches it. A workspace has a name, an address,
+members, invitations, apps and groups.
 
 **Every request to the plugin goes through a gate first.** Ten paths have a rule. Anything else answers
 404, including the plugin's teams and custom roles and whatever a later version adds, so an upgrade
@@ -203,6 +203,7 @@ granted by name, so a role this build has not heard of has none.
 | -------------------------------------------- | ------ | ---------------- | ------ |
 | See the workspace and its members, and leave | Yes    | Yes              | Yes    |
 | Rename, invite, see and withdraw invitations | Yes    | Yes              | No     |
+| Add and change apps, make and manage groups  | Yes    | Yes              | No     |
 | Change a role, remove someone                | Anyone | Anyone but owner | No     |
 | Make someone an owner                        | Yes    | No               | No     |
 | Delete the workspace                         | Yes    | No               | No     |
@@ -457,6 +458,46 @@ who may sign in trusts.
 An app belongs to its workspace, so it stays when the admin who added it leaves. If they run its host,
 the members who agreed to it can still reach it until someone deletes it.
 
+### Groups
+
+A group is part of a workspace, and an admin can narrow an app to some of them. Apps can also ask which ones
+someone is in. These are three tables of our own (`workspace_group`, `workspace_group_member` and
+`workspace_app_group`), not the organization plugin's teams: those add columns to every session and
+invitation for an "active team" nothing here would read, and hold a team's member to the workspace only in
+code, in a transaction D1 does not give it.
+
+- **One workspace, by foreign key.** A person's place in a group and an app's use of one each carry the
+  workspace, in foreign keys over two columns, so nothing can put someone in another workspace's group or
+  name it on an app. Someone leaving a workspace leaves its groups by the same keys, and comes back in none.
+- **Who gets in.** `maySignIn` is still one query: a member, and either the app names no groups or the member
+  is in one it names. So it holds at authorization, at the consent page and on every refresh, and a group with
+  nobody in it admits nobody. Being an owner or an admin lets nobody in. The page that asks and someone's own
+  activity go by the same check, so someone an app is kept from does not hear its name from them.
+- **A group an app names stays.** No row in `workspace_app_group` means every member, so an app's last group
+  going would open the app to everyone with nobody having chosen that. The trigger
+  `group_an_app_names_stays` refuses to delete a group any app names, and the endpoint says which apps. So
+  deleting a group never changes who can use anything, and an app opens to everyone only when an admin says so.
+  A workspace being deleted has gone by the time its groups follow, so they are free to go, as members are.
+- **Losing access is immediate.** Someone taken out of a group loses what they hold for the apps it opened,
+  unless another of their groups opens them too: the trigger `group_member_delete_ends_app_access`, on the
+  same three tables as the one for members. Narrowing an app does the same for those it leaves out, in the batch
+  that changes its list, because a trigger on each row would see each step, and narrowing to two groups would
+  first strand everyone in the second. Consent goes as well, so they are asked again if they come back, and a
+  token that was on its way as this happened goes as it arrives, for want of a consent.
+- **A page left open.** Saving an app's list says what the page was showing, and a list that has changed since
+  is refused. Otherwise a page from before someone narrowed the app would say "Everyone", and saved as it stands
+  would open the app, with nobody having chosen that. Two admins at the same millisecond can still pass this.
+- **A recent sign-in.** Renaming a group, putting someone in one and changing an app's list want someone who
+  signed in recently, as making an admin does, since each can hand out what an app gives or end everyone's access.
+  Making a group, deleting one and taking someone out give nobody anything, as removing a member does not.
+- **The claim.** `groups` is a scope on the row of a workspace's app and no other, since a first-party app has
+  no workspace to speak of. The claim holds the names of the person's groups in the workspace on the app's row,
+  which only the server writes, in the ID token and at userinfo. It holds names because they are what an admin
+  sees and what apps can be set up to match, and names within a workspace cannot pass for each other
+  (`comparable_name`). Renaming a group therefore changes what apps see, the next time they look.
+- **Who sees them.** Admins see every group and who is in it. A member sees only the groups they are in, since
+  an app can be told those, and of the people in them only themselves.
+
 ### Taking an app back
 
 Someone can see the apps they allowed on their account page and take one back, which ends its access
@@ -587,7 +628,8 @@ holds it, in D1.
   someone ending a session elsewhere.
 - **Workspaces:** `workspace_created`, `workspace_renamed`, `workspace_deleted`, `member_invited`,
   `invitation_canceled`, `invitation_accepted`, `invitation_declined`, `member_role_changed`,
-  `member_removed` and `member_left`.
+  `member_removed`, `member_left`, `group_created`, `group_renamed`, `group_deleted`, `group_member_added`,
+  `group_member_removed` and `app_groups_changed`.
 - **The deployment:** `app_added`, from `apps:add`. Who ran it is between them and Cloudflare.
 
 Each row has the time, and where it applies the account, the app's own id, the IP address and a device
