@@ -7,6 +7,56 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.4.0] - 2026-11-05
+
+### Added
+
+- **Apps a workspace adds.** A workspace's owners and admins can add their own apps from its page, and
+  [`docs/connect-an-app.md`](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md) says how to connect one. Only that workspace's members
+  can use such an app, and each person is asked first, on a page that says what it is called, whose it is and
+  where it goes. Someone outside is turned away and told nothing of it. Removing someone ends what they hold
+  from the workspace's apps at once, tokens included, down to database triggers, and deleting a workspace
+  deletes its apps. An app stays on its host. Its secret is shown once, and adding an app, replacing a secret
+  and deleting an app want a sign-in within the last day. These apps get no back-channel logout yet, so an app
+  that keeps its own sessions learns someone has gone when it next refreshes. (#27)
+- **Nobody is sent to a workspace's app until they are known to be a member.** Anyone with an account can add
+  one, so a wrong request or `prompt=none` could otherwise have made a link to ID a link to anywhere. Anyone
+  signed out stays on ID, and anyone outside goes to a page that names no app. For these apps, `prompt=none`
+  for someone signed out asks them to sign in rather than answering `login_required`, which departs from
+  OpenID Connect on purpose, because that answer could be sent to anyone. Apps everyone can use are as they
+  were. (#28)
+
+### Changed
+
+- **`/oauth2/public-client` and `/oauth2/public-client-prelogin` are closed.** They named any app to anyone
+  who had its id. ID's own pages did not use them. (#27)
+- **`/oauth2/introspect` is closed, and discovery no longer offers it.** ID has no APIs to introspect for, and
+  it told an app the id of the session behind a token, which two apps could match someone up by. (#28)
+- **The `claims` request parameter is ignored, for every app,** and discovery says so. People are asked about
+  scopes, and naming claims one by one got an app more than the page said. No app here used it. (#28)
+- **Inviting someone as an admin or owner, or making them one, wants a sign-in within the last day,** or a
+  stolen cookie could make its thief an admin with a new session. Inviting a member does not. (#28)
+- **No workspace or app can have a name holding `Gateweave`,** compared after folding away capitals, spaces,
+  punctuation and letters of the same look. Those names go into invitations sent from this domain. Names that
+  exist already stay as they are. (#28)
+
+### Fixed
+
+- An app's address cannot end its host in a dot, which got past the check that it is not this server. (#28)
+- The activity log says which app asked to give up a token by the credentials it signed in with, not by what
+  the request's body claimed. It also records the redirect URIs of an app added or changed. (#28)
+- The page that asks and the page that refuses say what they know from the app's row, never from the link, and
+  neither offers a way to an app someone may not know of. (#28)
+
+### Upgrading
+
+A deploy applies one migration, `0007_workspace_apps`. It only adds an index and two triggers, so the running
+code keeps working until the new code arrives. There are no new settings. A deployment with no OpenID Connect
+provider configured shows no Apps section and has none of these endpoints.
+
+An app that reads `/oauth2/introspect` has to stop, and one that sends `claims` gets what its scopes give. None
+of the first-party apps do either.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added
