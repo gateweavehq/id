@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import * as oauth from "oauth4webapi";
 import { APP } from "./fixtures";
 import { linkSentSince, watch } from "./helpers";
-import { address, clientAddress, makeWorkspace, newDevice, signUp } from "./people";
+import { address, clientAddress, makeWorkspace, newDevice, PASSWORD, signUp } from "./people";
 
 // An app a workspace adds, from the form to a member signing in. `test/workspace-apps.test.ts` covers
 // the rules; this covers that the pages keep to them, with real redirects and a real OIDC client.
@@ -21,7 +21,7 @@ async function server() {
 }
 
 /** Sends the browser to ID the way this app would, and remembers what its server has to check. */
-async function goToSignIn(page: Page, clientId: string) {
+async function goToSignIn(page: Page, clientId: string, params: Record<string, string> = {}) {
 	const as = await server();
 	const state = oauth.generateRandomState();
 	const nonce = oauth.generateRandomNonce();
@@ -36,6 +36,7 @@ async function goToSignIn(page: Page, clientId: string) {
 		nonce,
 		code_challenge: await oauth.calculatePKCECodeChallenge(verifier),
 		code_challenge_method: "S256",
+		...params,
 	}).toString();
 	await page.goto(url.href, { waitUntil: "networkidle" });
 	return { as, state, nonce, verifier };
@@ -97,8 +98,12 @@ test("an admin adds an app, and only members get in, once they agree", async ({
 		await expect(stranger).toHaveURL(/\/no-access/);
 		await expect(stranger.locator("body")).not.toContainText("Field Notes");
 		await expect(stranger.locator("body")).not.toContainText(workspaceName);
+		await expect(stranger.locator("body")).not.toContainText("localhost:4733");
+		await expect(stranger.getByRole("button", { name: /^Back to/ })).toHaveCount(0);
 
 		await stranger.goto(`/consent?client_id=${clientId}`, { waitUntil: "networkidle" });
+		await expect(stranger).toHaveURL(/\/no-access/);
+		await expect(stranger.getByRole("button", { name: "Allow" })).toHaveCount(0);
 		await expect(stranger.locator("body")).not.toContainText("Field Notes");
 		await expect(stranger.locator("body")).not.toContainText(workspaceName);
 		await expect(stranger.locator("body")).not.toContainText("localhost:4733");
@@ -155,6 +160,25 @@ test("an admin adds an app, and only members get in, once they agree", async ({
 	await test.step("they are not asked twice", async () => {
 		await goToSignIn(bob, clientId);
 		await expect(appHeading(bob)).toBeVisible();
+	});
+
+	await test.step("a wrong link leads nobody signed out to the app", async () => {
+		const passerby = await newDevice(page, baseURL);
+		await goToSignIn(passerby, clientId, { code_challenge: "", code_challenge_method: "" });
+		await expect(passerby).toHaveURL(/^http:\/\/localhost:4732\/login$/);
+		await expect(appHeading(passerby)).toHaveCount(0);
+		await passerby.context().close();
+	});
+
+	await test.step("an app asking quietly gets a member signed in on another device", async () => {
+		const device = await newDevice(page, baseURL);
+		await goToSignIn(device, clientId, { prompt: "none" });
+		await expect(device.getByRole("heading", { name: "Sign in to Gateweave ID" })).toBeVisible();
+		await device.getByLabel("Email").fill(bobEmail);
+		await device.getByLabel("Password", { exact: true }).fill(PASSWORD);
+		await device.getByRole("button", { name: "Sign in", exact: true }).click();
+		await expect(appHeading(device)).toBeVisible();
+		await device.context().close();
 	});
 
 	await test.step("removed, they are turned away", async () => {

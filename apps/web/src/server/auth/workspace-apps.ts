@@ -3,11 +3,10 @@ import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api
 import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AuditEventType } from "../../lib/audit-event";
-import { appName, can, type WorkspaceApp } from "../../lib/workspace";
+import { appName, can, comparableName, type WorkspaceApp } from "../../lib/workspace";
 import type { Database } from "../db";
 import { schema } from "../db";
 import {
-	comparableName,
 	hostOfUris,
 	newClientSecret,
 	problemWithWorkspaceAppUris,
@@ -30,7 +29,6 @@ const APPS_PER_WORKSPACE = 20;
 const REDIRECT_URIS_PER_APP = 5;
 
 /** Names people take on trust, which no workspace's app may wear. */
-const RESERVED_NAMES = ["Gateweave", "Gateweave ID"];
 
 const NO_APP = { code: "APP_NOT_FOUND", message: "That app is not in this workspace." };
 
@@ -114,8 +112,7 @@ async function requireFreeName(db: Database, name: string) {
 		.where(isNull(schema.oauthClient.referenceId))
 		.all();
 	const wanted = comparableName(name);
-	const taken = [...RESERVED_NAMES, ...firstParty.flatMap((app) => (app.name ? [app.name] : []))];
-	if (taken.some((other) => comparableName(other) === wanted)) {
+	if (firstParty.some((app) => app.name && comparableName(app.name) === wanted)) {
 		refuse("That name belongs to an app that everyone here can use. Choose another.");
 	}
 }
@@ -136,7 +133,7 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 		ctx: GenericEndpointContext,
 		session: Session,
 		workspaceId: string,
-		app: { clientId: string; name: string | null },
+		app: { clientId: string; name: string | null; redirectUris?: string[] },
 	) {
 		const from = whereFrom(ctx.headers);
 		record(type, async () => ({
@@ -147,6 +144,8 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 			detail: JSON.stringify({
 				workspace: await workspaceNameOf(db, workspaceId),
 				name: app.name,
+				// Where an app sends people is what someone looking into it would want to know.
+				redirectUris: app.redirectUris,
 			}),
 			...from,
 		}));
@@ -193,7 +192,7 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 					);
 					await db.run(sql`INSERT INTO "oauth_client" (${columns}) VALUES (${values})`);
 
-					log("app_added", ctx, session, organizationId, { clientId, name });
+					log("app_added", ctx, session, organizationId, { clientId, name, redirectUris });
 					return { clientId, clientSecret };
 				},
 			),
@@ -223,7 +222,7 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 						.set({ name, redirectUris, updatedAt: new Date() })
 						.where(eq(schema.oauthClient.clientId, clientId))
 						.run();
-					log("app_changed", ctx, session, organizationId, { clientId, name });
+					log("app_changed", ctx, session, organizationId, { clientId, name, redirectUris });
 					return { clientId };
 				},
 			),
@@ -244,7 +243,10 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 						.set({ clientSecret: hashed, updatedAt: new Date() })
 						.where(eq(schema.oauthClient.clientId, clientId))
 						.run();
-					log("app_secret_replaced", ctx, session, organizationId, app);
+					log("app_secret_replaced", ctx, session, organizationId, {
+						clientId,
+						name: app.name,
+					});
 					return { clientSecret };
 				},
 			),
@@ -265,7 +267,7 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 						.delete(schema.oauthClient)
 						.where(eq(schema.oauthClient.clientId, clientId))
 						.run();
-					log("app_deleted", ctx, session, organizationId, app);
+					log("app_deleted", ctx, session, organizationId, { clientId, name: app.name });
 					return { clientId };
 				},
 			),

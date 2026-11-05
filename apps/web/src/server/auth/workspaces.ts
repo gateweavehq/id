@@ -132,6 +132,14 @@ async function requireInvitationFor(db: Database, session: Session, invitationId
 type Check = (raw: unknown, session: Session, ctx: GenericEndpointContext) => Promise<void>;
 
 /** A rule's body schema is strict, so nothing the plugin accepts and no page sends gets through. */
+/**
+ * An admin can add an app and take its secret, which want a recent sign-in. Making one wants it too, or
+ * a stolen cookie could make its thief an admin, with a session as new as they like.
+ */
+function requireFreshToGrant(role: string, session: Session, ctx: GenericEndpointContext) {
+	if (role !== "member") requireFreshSession(session, ctx);
+}
+
 function rule<Body>(
 	body: z.ZodType<Body>,
 	allow: (input: Body, session: Session, ctx: GenericEndpointContext) => Promise<void>,
@@ -186,8 +194,9 @@ function gateRules({ db, mailer, allowInvitation }: WorkspacesConfig): Record<st
 				email: z.email("Enter an email address.").max(254),
 				role: z.enum(INVITED_ROLES),
 			}),
-			async ({ organizationId, email }, session) => {
+			async ({ organizationId, email, role }, session, ctx) => {
 				requireRight(can(await requireMember(db, organizationId, session), "invite"));
+				requireFreshToGrant(role, session, ctx);
 				if (!mailer) {
 					throw APIError.from("BAD_REQUEST", {
 						code: "EMAIL_NOT_CONFIGURED",
@@ -234,10 +243,11 @@ function gateRules({ db, mailer, allowInvitation }: WorkspacesConfig): Record<st
 		),
 		"/organization/update-member-role": rule(
 			z.strictObject({ ...inWorkspace, memberId: id, role: z.enum(WORKSPACE_ROLES) }),
-			async ({ organizationId, memberId, role }, session) => {
+			async ({ organizationId, memberId, role }, session, ctx) => {
 				const actor = await requireMember(db, organizationId, session);
 				const target = await requireTarget(db, organizationId, memberId);
 				requireRight(can(actor, "changeRole", { role: target.role, to: role }));
+				requireFreshToGrant(role, session, ctx);
 				if (target.role === "owner" && role !== "owner") {
 					if ((await ownersOf(db, organizationId)) <= 1) {
 						throw APIError.from("BAD_REQUEST", LAST_OWNER);

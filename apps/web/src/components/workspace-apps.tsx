@@ -360,7 +360,7 @@ export function WorkspaceApps({
 						name="redirectUris"
 						required
 						wrap="off"
-						placeholder="https://app.example.com/auth/callback"
+						placeholder="https://example.com/callback"
 						className={TEXTAREA}
 					/>
 					<p className="text-xs text-muted-foreground">

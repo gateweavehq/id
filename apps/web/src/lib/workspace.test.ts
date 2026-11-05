@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	appName,
 	can,
+	comparableName,
 	slugFrom,
 	type WorkspaceRole,
 	workspaceFailure,
@@ -92,6 +94,40 @@ describe("a workspace's name", () => {
 		["a character that hides", "Ac​me"],
 	])("refuses %s", (_case, name) => {
 		expect(workspaceName.safeParse(name).success).toBe(false);
+	});
+});
+
+describe("names people would take for ours", () => {
+	it.each([
+		"Gateweave",
+		"GATEWEAVE id",
+		"Gate weave",
+		"Gate-Weave Security",
+		"Ｇａｔｅｗｅａｖｅ",
+		"The gateweave team",
+	])("keeps %s from a workspace and from an app", (name) => {
+		expect(workspaceName.safeParse(name).success).toBe(false);
+		expect(appName.safeParse(name).success).toBe(false);
+	});
+
+	it.each(["Gate", "Weave", "Gatehouse", "Field Notes"])("leaves %s alone", (name) => {
+		expect(workspaceName.safeParse(name).success).toBe(true);
+	});
+});
+
+describe("comparableName", () => {
+	it.each([
+		["Gateweave", "gateweave"],
+		["GATE-WEAVE", "gateweave"],
+		["  gate  weave! ", "gateweave"],
+		["Ｇａｔｅｗｅａｖｅ", "gateweave"],
+	])("reads %s as %s", (name, comparable) => {
+		expect(comparableName(name)).toBe(comparable);
+	});
+
+	it("keeps letters of other alphabets, so names in them can differ", () => {
+		expect(comparableName("Çizelge")).not.toBe(comparableName("Takvim"));
+		expect(comparableName("カレンダー")).not.toBe("");
 	});
 });
 

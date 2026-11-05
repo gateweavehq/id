@@ -1,5 +1,5 @@
 import { getOAuthProviderState, oauthProvider } from "@better-auth/oauth-provider";
-import type { BetterAuthPlugin } from "better-auth";
+import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins/jwt";
 import { eq } from "drizzle-orm";
@@ -20,14 +20,17 @@ const DAY = 86_400;
 
 /**
  * `/token` hands a signed-in person a JWT that holds their real id, which pairwise subjects exist to
- * keep from apps. The apps have no use for it, since they get tokens from the provider. The other two
+ * keep from apps. The apps have no use for it, since they get tokens from the provider. The next two
  * name any app to anyone who has its id, and no page here uses them. What the consent page asks for
- * instead tells someone only about an app they could reach.
+ * instead tells someone only about an app they could reach. Introspection is for APIs, and there are
+ * none here. It would tell an app the id of the session behind a token, which two apps could match
+ * someone up by, whatever their ID tokens leave out.
  */
 export const OIDC_CLOSED_PATHS = [
 	"/token",
 	"/oauth2/public-client",
 	"/oauth2/public-client-prelogin",
+	"/oauth2/introspect",
 ];
 
 async function appOfClient(
@@ -87,17 +90,133 @@ function refuseResources(): BetterAuthPlugin {
 	};
 }
 
-/** The client a request to revoke a token came from, by now checked by the provider. */
+/**
+ * The client a request to revoke a token came from, by now checked by the provider. Basic comes first,
+ * as it does there: what the body says beside it was not checked, and could be any other app.
+ */
 function clientRevoking(headers: Headers | undefined, body: Record<string, unknown> | undefined) {
-	if (typeof body?.client_id === "string") return body.client_id;
 	const basic = /^Basic (.+)$/i.exec(headers?.get("authorization") ?? "")?.[1];
-	if (!basic) return undefined;
+	if (!basic) return typeof body?.client_id === "string" ? body.client_id : undefined;
 	try {
 		// Only the part before the colon. The rest is the client's secret.
 		return decodeURIComponent(atob(basic).split(":")[0] ?? "");
 	} catch {
 		return undefined;
 	}
+}
+
+/** Where the provider's answer sends someone. A browser is redirected, and a page's own request told. */
+function whereAnswerSends(context: {
+	returned?: unknown;
+	responseHeaders?: Headers;
+}): string | undefined {
+	const { returned, responseHeaders } = context;
+	if (isAPIError(returned)) return responseHeaders?.get("location") ?? undefined;
+	if (typeof returned === "object" && returned !== null && "url" in returned) {
+		return typeof returned.url === "string" ? returned.url : undefined;
+	}
+	return undefined;
+}
+
+/**
+ * Spelled out because `ctx.request` need not be this. The provider goes through the endpoint by itself
+ * after a sign-in, and on an answer from a page, and the request is still that one.
+ */
+const AUTHORIZE_PATH = "/api/auth/oauth2/authorize";
+
+/** What is being asked, without one of its parameters. */
+function sameRequestWithout(ctx: GenericEndpointContext, name: string): string {
+	const asked = new URLSearchParams();
+	for (const [key, values] of Object.entries(ctx.query ?? {})) {
+		if (key === name) continue;
+		for (const value of [values].flat()) asked.append(key, String(value));
+	}
+	return `${AUTHORIZE_PATH}?${asked}`;
+}
+
+/**
+ * Anyone with an account can add an app, so where a workspace's app goes is anyone's to choose. The
+ * provider sends people there from this address when a request is wrong, or when `prompt=none` finds it
+ * cannot go on, in many places and before it has looked at who they are. Left alone, a link to this
+ * server would be a link to anywhere, for anyone who followed it (RFC 9700, section 4.11.2). So nobody
+ * leaves here for one of these apps until they are known to be one of its members. It is the answer
+ * that is checked rather than the request, so this holds for every way the provider has of sending them.
+ *
+ * A member can still be sent there by a wrong request, which only tells them what they know: an admin
+ * of their workspace added this app, and they can be sent to it anyway.
+ */
+function membersOnlyToWorkspaceApps(db: Database, issuer: string): BetterAuthPlugin {
+	return {
+		id: "members-only-to-workspace-apps",
+		hooks: {
+			before: [
+				{
+					// OpenID Connect has this answer POST too, with what it asks in the body. That is the same
+					// request, so make it the same, and everything here has one place to look. Only when it is
+					// that request: when the provider comes through here itself, the body is some other
+					// request's, and after a sign-in it holds the password someone just typed.
+					matcher: (ctx) =>
+						ctx.path === "/oauth2/authorize" &&
+						ctx.request?.method === "POST" &&
+						new URL(ctx.request.url).pathname === AUTHORIZE_PATH,
+					handler: createAuthMiddleware(async (ctx) => {
+						const asked = Object.entries((ctx.body ?? {}) as Record<string, unknown>).filter(
+							(entry): entry is [string, string] => typeof entry[1] === "string",
+						);
+						const query = new URLSearchParams(asked).toString();
+						throw ctx.redirect(`${AUTHORIZE_PATH}?${query}`);
+					}),
+				},
+				{
+					// People are asked about scopes, so naming claims one by one would get an app more than the
+					// page said. A provider may leave out what is asked for this way (OpenID Connect Core, 5.5.1).
+					matcher: (ctx) => ctx.path === "/oauth2/authorize",
+					handler: createAuthMiddleware(async (ctx) => {
+						if (ctx.query?.claims !== undefined)
+							throw ctx.redirect(sameRequestWithout(ctx, "claims"));
+					}),
+				},
+				{
+					// A member's link, signed for them, in the hands of someone else. Either answer here would
+					// send that person to the app, which is no business of theirs.
+					matcher: (ctx) => ctx.path === "/oauth2/consent" || ctx.path === "/oauth2/continue",
+					handler: createAuthMiddleware(async (ctx) => {
+						const clientId = new URLSearchParams(ctx.body?.oauth_query ?? "").get("client_id");
+						const app = await appOfClient(db, clientId);
+						if (!app?.workspace) return;
+						const session = await getSessionFromCtx(ctx);
+						if (session && !(await maySignIn(db, { user: session.user, app }))) {
+							return ctx.json({ redirect: true, url: "/no-access" });
+						}
+					}),
+				},
+			],
+			after: [
+				{
+					matcher: (ctx) => ctx.path === "/oauth2/authorize",
+					handler: createAuthMiddleware(async (ctx) => {
+						const sends = whereAnswerSends(ctx.context);
+						if (!sends || new URL(sends, issuer).origin === new URL(issuer).origin) return;
+						const clientId = ctx.query?.client_id;
+						const app = typeof clientId === "string" ? await appOfClient(db, clientId) : undefined;
+						// An app everyone can use was added by whoever runs this server. A row this cannot read
+						// is not known to be one of those.
+						if (app && !app.workspace) return;
+						const session = await getSessionFromCtx(ctx);
+						if (!session) {
+							// An app asking quietly whether someone is signed in gets no quiet answer, or anyone
+							// could send anyone there through here. They can sign in instead, and go on to it.
+							const quietly = new URL(sends, issuer).searchParams.get("error") === "login_required";
+							throw ctx.redirect(quietly ? sameRequestWithout(ctx, "prompt") : "/login");
+						}
+						if (!(await maySignIn(db, { user: session.user, app }))) {
+							throw ctx.redirect("/no-access");
+						}
+					}),
+				},
+			],
+		},
+	};
 }
 
 /** Records what the provider does at paths with no hook of its own. */
@@ -150,6 +269,7 @@ export function oidcPlugins(
 ) {
 	return [
 		refuseResources(),
+		membersOnlyToWorkspaceApps(db, issuer),
 		auditOfApps(db, record),
 		jwt({
 			// Apps get tokens from the provider. A session has no business carrying a JWT as well.

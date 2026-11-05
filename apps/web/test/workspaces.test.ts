@@ -761,6 +761,70 @@ describe("deleting a workspace", () => {
 	});
 });
 
+describe("making someone an admin", () => {
+	async function agedOwner() {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const other = await newPerson("Bob");
+		await join(other, workspace, owner);
+		await id.db
+			.prepare("UPDATE session SET created_at = ? WHERE user_id = ?")
+			.bind(Date.now() - 2 * 24 * 60 * 60 * 1000, owner.userId)
+			.run();
+		return { owner, workspace };
+	}
+
+	it("wants a recent sign-in to invite one, or a stolen cookie could make its thief one", async () => {
+		const { owner, workspace } = await agedOwner();
+		const email = newAddress();
+		const refused = await api("/organization/invite-member", {
+			who: owner,
+			body: { organizationId: workspace.id, email, role: "admin" },
+		});
+		expect(refused.status).toBe(403);
+		expect(((await refused.json()) as { code: string }).code).toBe("SESSION_NOT_FRESH");
+		expect(await count("invitation", "email", email)).toBe(0);
+
+		const plain = await api("/organization/invite-member", {
+			who: owner,
+			body: { organizationId: workspace.id, email, role: "member" },
+		});
+		expect(plain.status).toBe(200);
+		expect(await count("invitation", "email", email)).toBe(1);
+	});
+
+	it.each(["admin", "owner"])("wants a recent sign-in to make someone %s", async (role) => {
+		const { owner, workspace } = await agedOwner();
+		const { members } = await details(owner, workspace);
+		const bob = members.find((member) => member.name === "Bob");
+		const refused = await api("/organization/update-member-role", {
+			who: owner,
+			body: { organizationId: workspace.id, memberId: bob?.id, role },
+		});
+		expect(refused.status).toBe(403);
+		expect(((await refused.json()) as { code: string }).code).toBe("SESSION_NOT_FRESH");
+		const after = await details(owner, workspace);
+		expect(after.members.find((member) => member.name === "Bob")?.role).toBe("member");
+	});
+});
+
+describe("a workspace's name", () => {
+	it("cannot sound like us, made or renamed", async () => {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const made = await api("/organization/create", {
+			who: owner,
+			body: { name: "Gateweave Security", slug: `ours-${crypto.randomUUID()}` },
+		});
+		expect(made.status).toBe(400);
+		const renamed = await api("/organization/update", {
+			who: owner,
+			body: { organizationId: workspace.id, data: { name: "gate weave" } },
+		});
+		expect(renamed.status).toBe(400);
+	});
+});
+
 describe("invitations", () => {
 	it("sends the address an email that says who, what and how, and links back here", async () => {
 		const owner = await newPerson("<b>Mallory</b> https://evil.test");

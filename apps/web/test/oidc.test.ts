@@ -856,10 +856,10 @@ describe("what nobody gets", () => {
 		expect(await atRefresh.json()).toMatchObject({ error: "invalid_target" });
 	});
 
-	it("gives an app the same subject when it introspects a token", async () => {
+	it("has no introspection, which would tell an app the session behind a token", async () => {
 		const app = await newApp();
 		const person = await newPerson();
-		const { tokens, claims } = await signInToApp(app, person);
+		const { tokens } = await signInToApp(app, person);
 		const response = await appFetch(`${origin}/api/auth/oauth2/introspect`, {
 			method: "POST",
 			headers: {
@@ -868,7 +868,69 @@ describe("what nobody gets", () => {
 			},
 			body: new URLSearchParams({ token: tokens.access_token }),
 		});
-		expect(await response.json()).toMatchObject({ active: true, sub: claims.sub });
+		expect(response.status).toBe(404);
+		expect(await response.text()).not.toContain(person.userId);
+
+		const discovery = await appFetch(`${origin}/.well-known/openid-configuration`);
+		expect(discovery.status).toBe(200);
+		const offered = Object.keys((await discovery.json()) as object);
+		expect(offered).toContain("token_endpoint");
+		expect(offered.filter((name) => name.startsWith("introspection"))).toEqual([]);
+	});
+
+	it("says it takes no claims parameter, which it does not", async () => {
+		const discovery = await appFetch(`${origin}/.well-known/openid-configuration`);
+		const metadata = (await discovery.json()) as { claims_parameter_supported?: boolean };
+		expect(metadata.claims_parameter_supported).toBe(false);
+	});
+
+	// The provider's own say what it can do rather than what is open here. They are for its server's use
+	// only, which is all that keeps them from being read, so a new version that changed that would show.
+	it.each(["/.well-known/openid-configuration", "/.well-known/oauth-authorization-server"])(
+		"has no second discovery document at %s",
+		async (path) => {
+			expect((await appFetch(`${origin}/api/auth${path}`)).status).toBe(404);
+		},
+	);
+
+	it.each([
+		"/token",
+		"/oauth2/introspect",
+		"/oauth2/public-client",
+		"/.well-known/openid-configuration",
+	])("keeps %s closed however it is written", async (path) => {
+		const encoded = `/%${path.charCodeAt(1).toString(16)}${path.slice(2)}`;
+		const spellings = [
+			`/api/auth${path}/`,
+			`/api/auth/${path}`,
+			`/api/auth${encoded}`,
+			`/api/auth${path.toUpperCase()}`,
+		];
+		for (const spelling of spellings) {
+			for (const method of ["GET", "POST"]) {
+				const answer = await appFetch(`${origin}${spelling}`, {
+					method,
+					redirect: "manual",
+					headers: { origin, "content-type": "application/x-www-form-urlencoded" },
+					...(method === "POST" && { body: "token=nothing" }),
+				});
+				expect([spelling, method, answer.status]).toEqual([spelling, method, 404]);
+			}
+		}
+	});
+
+	// The framework tidies addresses, and `//somewhere.else/` tidied badly would be a link away from here.
+	it.each([
+		"//evil.example/",
+		"///evil.example/",
+		"/\\evil.example/",
+		"/.//evil.example/",
+		"/%2F%2Fevil.example/",
+	])("sends nobody away for writing an address as %s", async (path) => {
+		const answer = await appFetch(`${origin}${path}`, { redirect: "manual" });
+		const where = answer.headers.get("location");
+		expect(where).not.toBeNull();
+		expect(new URL(where ?? "", origin).origin).toBe(origin);
 	});
 
 	it("lets no signed-in person make, read or change an app", async () => {

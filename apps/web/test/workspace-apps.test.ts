@@ -173,7 +173,18 @@ async function newApp(owner: Who, workspace: Workspace, name = `Tool ${hosts + 1
 
 type App = Awaited<ReturnType<typeof newApp>>;
 
-async function authorize(app: App, person: Who, params: Record<string, string> = {}) {
+/** Miniflare's fetch is not a navigation, so a request can be told where to go rather than sent. */
+async function whereAnswered(response: Response) {
+	const told =
+		response.status === 200 ? ((await response.clone().json()) as { url: string }) : null;
+	return new URL(response.headers.get("location") ?? told?.url ?? "/nowhere", origin);
+}
+
+async function authorize(
+	app: Pick<App, "clientId" | "redirectUri">,
+	person: Who,
+	params: Record<string, string> = {},
+) {
 	const state = oauth.generateRandomState();
 	const nonce = oauth.generateRandomNonce();
 	const verifier = oauth.generateRandomCodeVerifier();
@@ -192,11 +203,7 @@ async function authorize(app: App, person: Who, params: Record<string, string> =
 	const response = await id.fetch(url, {
 		headers: { "cf-connecting-ip": newClient(), cookie: person.cookie },
 	});
-	// As in test/oidc.test.ts: Miniflare's fetch is not a navigation, so the answer says where to go.
-	const { url: target } =
-		response.status === 200 ? ((await response.clone().json()) as { url: string }) : { url: "" };
-	const location = new URL(response.headers.get("location") ?? target ?? "/nowhere", origin);
-	return { response, location, state, nonce, verifier };
+	return { response, location: await whereAnswered(response), state, nonce, verifier };
 }
 
 type Authorized = Awaited<ReturnType<typeof authorize>>;
@@ -379,6 +386,8 @@ describe("adding an app", () => {
 		["ours in other capitals", "GATEWEAVE id"],
 		["ours with spaces between", "Gate weave"],
 		["ours in other letters of the same look", "Ｇａｔｅｗｅａｖｅ"],
+		["ours with something after it", "Gateweave Account"],
+		["ours inside something", "The Gateweave Team"],
 	])("keeps the name %s off the table", async (_name, name) => {
 		const owner = await newPerson();
 		const workspace = await newWorkspace(owner);
@@ -459,7 +468,11 @@ describe("adding an app", () => {
 			app: app.clientId,
 			workspace_id: workspace.id,
 			actor_id: owner.userId,
-			detail,
+			detail: JSON.stringify({
+				workspace: "Logged",
+				name: "Logged tool",
+				redirectUris: [app.redirectUri],
+			}),
 		});
 
 		const changed = await api("/workspaces/apps/change", {
@@ -467,7 +480,15 @@ describe("adding an app", () => {
 			body: { ...which, name: "Logged tool", redirectUris: [`${app.redirectUri}/2`] },
 		});
 		expect(changed.status).toBe(200);
-		await id.auditEventRecorded(owner.userId, { type: "app_changed", app: app.clientId, detail });
+		await id.auditEventRecorded(owner.userId, {
+			type: "app_changed",
+			app: app.clientId,
+			detail: JSON.stringify({
+				workspace: "Logged",
+				name: "Logged tool",
+				redirectUris: [`${app.redirectUri}/2`],
+			}),
+		});
 
 		const replaced = await api("/workspaces/apps/replace-secret", { who: owner, body: which });
 		expect(replaced.status).toBe(200);
@@ -755,15 +776,6 @@ describe("signing in to a workspace's app", () => {
 		const rival = await newPerson();
 		await newWorkspace(rival, "Rival");
 		expectRefused(await authorize(app, rival), app);
-	});
-
-	it("tells an app that asked to show nothing that it needs someone else", async () => {
-		const owner = await newPerson();
-		const workspace = await newWorkspace(owner);
-		const app = await newApp(owner, workspace);
-		const refused = await authorize(app, await newPerson(), { prompt: "none" });
-		expect(refused.location.searchParams.has("code")).toBe(false);
-		expect(refused.location.searchParams.has("error")).toBe(true);
 	});
 
 	it("does not let someone outside agree their way in", async () => {
@@ -1070,6 +1082,377 @@ describe("deleting", () => {
 	});
 });
 
+describe("who is sent to a workspace's app", () => {
+	const NOBODY: Who = { cookie: "", client: "" };
+
+	// Each of these has the provider send people back to the app, with an error, before it looks at who
+	// they are. For anyone who could add an app, that would make a link to this server a link to anywhere.
+	const WRONG: [string, Record<string, string>][] = [
+		["no PKCE", { code_challenge: "", code_challenge_method: "" }],
+		["half of PKCE", { code_challenge_method: "" }],
+		["a method of PKCE nobody has", { code_challenge_method: "plain" }],
+		["a scope nobody has", { scope: "openid nonsense" }],
+		["a request object", { request: "x" }],
+		["a request_uri", { request_uri: "urn:x" }],
+		["a response type nobody has", { response_type: "token" }],
+	];
+
+	async function theApp() {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		return { owner, workspace, app: await newApp(owner, workspace) };
+	}
+
+	function follow(authorized: Authorized, person: Who) {
+		return id
+			.fetch(authorized.location, {
+				headers: { "cf-connecting-ip": newClient(), cookie: person.cookie },
+			})
+			.then(whereAnswered);
+	}
+
+	it.each(WRONG)("keeps someone signed out here, for a request with %s", async (_name, params) => {
+		const { app } = await theApp();
+		const sent = await authorize(app, NOBODY, params);
+		expect(sent.location.origin).toBe(origin);
+		expect(sent.location.pathname).toBe("/login");
+	});
+
+	it.each(WRONG)("keeps someone outside here, for a request with %s", async (_name, params) => {
+		const { app } = await theApp();
+		const sent = await authorize(app, await newPerson(), params);
+		expect(sent.location.origin).toBe(origin);
+		expect(sent.location.pathname).toBe("/no-access");
+	});
+
+	it.each(WRONG)("tells the app about a member's request with %s", async (_name, params) => {
+		const { app, owner } = await theApp();
+		const sent = await authorize(app, owner, params);
+		expect(sent.location.host).toBe(app.host);
+		// A response type nobody has is answered in the fragment, as that type would have been.
+		const answer = params.response_type
+			? new URLSearchParams(sent.location.hash.slice(1))
+			: sent.location.searchParams;
+		expect(answer.get("error")).toBeTruthy();
+		expect(sent.location.searchParams.has("code")).toBe(false);
+	});
+
+	// A browser's navigation is redirected, and a page's own request told where to go, as above.
+	it.each(WRONG)("keeps a browser here as well, for a request with %s", async (_name, params) => {
+		const { app, owner } = await theApp();
+		const navigate = (who: Who) =>
+			id.navigate(
+				`${as.authorization_endpoint}?${new URLSearchParams({
+					client_id: app.clientId,
+					redirect_uri: app.redirectUri,
+					response_type: "code",
+					scope: SCOPE,
+					code_challenge: "x".repeat(43),
+					code_challenge_method: "S256",
+					...params,
+				})}`,
+				{ "cf-connecting-ip": newClient(), cookie: who.cookie },
+			);
+
+		const signedOut = await navigate(NOBODY);
+		expect(signedOut.status).toBe(302);
+		expect(signedOut.location).toBe("/login");
+
+		const stranger = await navigate(await newPerson());
+		expect(stranger.status).toBe(302);
+		expect(stranger.location).toBe("/no-access");
+
+		const member = await navigate(owner);
+		expect(member.status).toBe(302);
+		expect(new URL(member.location ?? "", origin).host).toBe(app.host);
+	});
+
+	// The provider goes through the authorization endpoint itself once someone has signed in, with what
+	// they typed still the body of the request.
+	it("takes nothing anyone typed along, when they sign in on the way", async () => {
+		const { app, owner } = await theApp();
+		const asked = await authorize(app, NOBODY);
+		expect(asked.location.pathname).toBe("/login");
+
+		const entered = await api("/sign-in/email", {
+			body: { email: owner.email, password: PASSWORD, oauth_query: asked.location.search.slice(1) },
+		});
+		expect(entered.status).toBe(200);
+		expect(entered.headers.get("location")).toBeNull();
+		expect(await entered.clone().text()).not.toContain(PASSWORD);
+		const onward = await whereAnswered(entered);
+		expect(onward.pathname).toBe("/consent");
+		expect(onward.searchParams.has("password")).toBe(false);
+		expect(onward.searchParams.has("email")).toBe(false);
+		expect(onward.searchParams.get("client_id")).toBe(app.clientId);
+	});
+
+	describe("asked with POST, which OpenID Connect allows", () => {
+		function posted(app: App, who: Who, params: Record<string, string> = {}) {
+			return id
+				.fetch(as.authorization_endpoint ?? "", {
+					method: "POST",
+					redirect: "manual",
+					headers: {
+						"cf-connecting-ip": newClient(),
+						"content-type": "application/x-www-form-urlencoded",
+						origin,
+						cookie: who.cookie,
+					},
+					body: new URLSearchParams({
+						client_id: app.clientId,
+						redirect_uri: app.redirectUri,
+						response_type: "code",
+						scope: "openid",
+						code_challenge: "x".repeat(43),
+						code_challenge_method: "S256",
+						...params,
+					}),
+				})
+				.then(whereAnswered);
+		}
+
+		// What changes a request here goes by its address. The router answers no other spelling of it, and
+		// the one the framework tidies up comes back to the address itself.
+		it.each([
+			["/api/auth/oauth2/authorize/", 404],
+			["/api/auth//oauth2/authorize", 404],
+			["//api/auth/oauth2/authorize", 308],
+		])("does not answer at %s", async (path, status) => {
+			const { app, owner } = await theApp();
+			const claims = JSON.stringify({ userinfo: { email: null } });
+			const asked = new URLSearchParams({ client_id: app.clientId, claims });
+			const got = await id.fetch(`${origin}${path}?${asked}`, {
+				redirect: "manual",
+				headers: { "cf-connecting-ip": newClient(), cookie: owner.cookie },
+			});
+			const sent = await id.fetch(`${origin}${path}`, {
+				method: "POST",
+				redirect: "manual",
+				headers: {
+					"cf-connecting-ip": newClient(),
+					"content-type": "application/x-www-form-urlencoded",
+					origin,
+					cookie: owner.cookie,
+				},
+				body: asked,
+			});
+			for (const answer of [got, sent]) {
+				expect(answer.status).toBe(status);
+				if (status === 308) {
+					const tidied = new URL(answer.headers.get("location") ?? "", origin);
+					expect(tidied.origin).toBe(origin);
+					expect(tidied.pathname).toBe("/api/auth/oauth2/authorize");
+				}
+			}
+		});
+
+		function onward(location: URL, who: Who) {
+			return id
+				.fetch(location, { headers: { "cf-connecting-ip": newClient(), cookie: who.cookie } })
+				.then(whereAnswered);
+		}
+
+		it("is the same request as GET, so what is checked there is checked for it", async () => {
+			const { app } = await theApp();
+			const sent = await posted(app, NOBODY, { state: "kept" });
+			expect(sent.origin).toBe(origin);
+			expect(sent.pathname).toBe("/api/auth/oauth2/authorize");
+			expect(sent.searchParams.get("client_id")).toBe(app.clientId);
+			expect(sent.searchParams.get("state")).toBe("kept");
+			const next = await onward(sent, NOBODY);
+			expect(next.pathname).toBe("/login");
+			expect(next.searchParams.has("sig")).toBe(true);
+		});
+
+		it("sends nobody outside to the app", async () => {
+			const { app } = await theApp();
+			const stranger = await newPerson();
+			for (const who of [NOBODY, stranger]) {
+				const sent = await posted(app, who, { code_challenge_method: "plain" });
+				const next = await onward(sent, who);
+				expect(next.origin).toBe(origin);
+				expect(next.pathname).toBe(who === NOBODY ? "/login" : "/no-access");
+			}
+		});
+
+		it("gets an app no claims it named", async () => {
+			const { app, owner } = await theApp();
+			const claims = JSON.stringify({ userinfo: { email: null } });
+			const sent = await posted(app, owner, { claims });
+			const dropped = await onward(sent, owner);
+			expect(dropped.pathname).toBe("/api/auth/oauth2/authorize");
+			expect(dropped.searchParams.has("claims")).toBe(false);
+			const asked = await onward(dropped, owner);
+			expect(asked.pathname).toBe("/consent");
+			expect(asked.searchParams.has("claims")).toBe(false);
+		});
+	});
+
+	it("sends someone signed out to sign in like anyone else, when the request is right", async () => {
+		const { app } = await theApp();
+		const sent = await authorize(app, NOBODY);
+		expect(sent.location.origin).toBe(origin);
+		expect(sent.location.pathname).toBe("/login");
+		expect(sent.location.searchParams.has("sig")).toBe(true);
+	});
+
+	it("asks someone signed out to sign in, when an app asks quietly", async () => {
+		const { app } = await theApp();
+		const sent = await authorize(app, NOBODY, { prompt: "none" });
+		expect(sent.location.origin).toBe(origin);
+		expect(sent.location.pathname).toBe("/api/auth/oauth2/authorize");
+		expect(sent.location.searchParams.has("prompt")).toBe(false);
+		expect(sent.location.searchParams.get("client_id")).toBe(app.clientId);
+
+		const next = await follow(sent, NOBODY);
+		expect(next.origin).toBe(origin);
+		expect(next.pathname).toBe("/login");
+		expect(next.searchParams.has("sig")).toBe(true);
+	});
+
+	it("keeps someone outside here, when an app asks quietly", async () => {
+		const { app } = await theApp();
+		const sent = await authorize(app, await newPerson(), { prompt: "none" });
+		expect(sent.location.origin).toBe(origin);
+		expect(sent.location.pathname).toBe("/no-access");
+	});
+
+	it("answers a member when an app asks quietly", async () => {
+		const { app, owner } = await theApp();
+		const before = await authorize(app, owner, { prompt: "none" });
+		expect(before.location.host).toBe(app.host);
+		expect(before.location.searchParams.get("error")).toBe("consent_required");
+
+		await signInToApp(app, owner);
+		const after = await authorize(app, owner, { prompt: "none" });
+		expect(after.location.host).toBe(app.host);
+		expect(after.location.searchParams.has("code")).toBe(true);
+	});
+
+	it("leaves an app everyone can use as it was", async () => {
+		const firstParty = await firstPartyApp();
+		const app = { clientId: firstParty.clientId, redirectUri: firstParty.row.redirect_uris };
+		const uri = (JSON.parse(app.redirectUri) as string[])[0] ?? "";
+		const wrong = await authorize({ ...app, redirectUri: uri }, NOBODY, WRONG[0]?.[1]);
+		expect(wrong.location.host).toBe(new URL(uri).host);
+		const quietly = await authorize({ ...app, redirectUri: uri }, NOBODY, { prompt: "none" });
+		expect(quietly.location.host).toBe(new URL(uri).host);
+		expect(quietly.location.searchParams.get("error")).toBe("login_required");
+	});
+
+	it.each([
+		[
+			"naming it twice",
+			(app: App) =>
+				`/oauth2/authorize?client_id=${app.clientId}&client_id=${app.clientId}&redirect_uri=${encodeURIComponent(app.redirectUri)}&response_type=code&scope=openid`,
+		],
+		[
+			"a slash after the path",
+			(app: App) =>
+				`/oauth2/authorize/?client_id=${app.clientId}&redirect_uri=${encodeURIComponent(app.redirectUri)}&response_type=code&scope=openid`,
+		],
+		[
+			"a second slash in the path",
+			(app: App) =>
+				`//oauth2/authorize?client_id=${app.clientId}&redirect_uri=${encodeURIComponent(app.redirectUri)}&response_type=code&scope=openid`,
+		],
+	])("sends nobody there by %s", async (_name, path) => {
+		const { app } = await theApp();
+		for (const who of [NOBODY, await newPerson()]) {
+			const response = await id.fetch(`${origin}/api/auth${path(app)}`, {
+				headers: { "cf-connecting-ip": newClient(), cookie: who.cookie },
+			});
+			const where = response.headers.get("location") ?? "";
+			expect(where.startsWith(app.redirectUri)).toBe(false);
+			expect(await response.text()).not.toContain(`${app.redirectUri}?`);
+		}
+	});
+
+	it.each([
+		["/oauth2/consent", { accept: true }],
+		["/oauth2/consent", { accept: false }],
+		["/oauth2/continue", { postLogin: true }],
+		["/oauth2/continue", { selected: true }],
+		["/oauth2/continue", { created: true }],
+	] as const)("sends someone else nowhere with a member's link: %s %j", async (path, body) => {
+		const { app, owner } = await theApp();
+		const link = await authorize(app, owner);
+		expect(link.location.pathname).toBe("/consent");
+		const stranger = await newPerson();
+		const response = await api(path, {
+			who: stranger,
+			body: { ...body, oauth_query: link.location.search.slice(1) },
+		});
+		expect(await response.json()).toEqual({ redirect: true, url: "/no-access" });
+		expect(await count("oauth_consent", "user_id = ?", stranger.userId)).toBe(0);
+	});
+
+	it("ignores claims however the request names them, and for an app everyone can use", async () => {
+		const { app } = await theApp();
+		const claims = JSON.stringify({ userinfo: { email: null } });
+		const firstParty = await firstPartyApp();
+		const uri = (JSON.parse(firstParty.row.redirect_uris) as string[])[0] ?? "";
+
+		const everyone = await authorize({ clientId: firstParty.clientId, redirectUri: uri }, NOBODY, {
+			claims,
+		});
+		expect(everyone.location.pathname).toBe("/api/auth/oauth2/authorize");
+		expect(everyone.location.searchParams.has("claims")).toBe(false);
+		expect(everyone.location.searchParams.get("client_id")).toBe(firstParty.clientId);
+
+		// Naming the app twice leaves no one app to look up, and none is needed.
+		const twice = new URLSearchParams({ client_id: app.clientId, claims });
+		twice.append("client_id", app.clientId);
+		const named = await id.fetch(`${as.authorization_endpoint}?${twice}`, {
+			headers: { "cf-connecting-ip": newClient() },
+		});
+		const dropped = await whereAnswered(named);
+		expect(dropped.pathname).toBe("/api/auth/oauth2/authorize");
+		expect(dropped.searchParams.has("claims")).toBe(false);
+		expect(dropped.searchParams.getAll("client_id")).toEqual([app.clientId, app.clientId]);
+	});
+
+	it("gives an app only what people are asked about, whatever it names", async () => {
+		const { app, owner } = await theApp();
+		const claims = JSON.stringify({
+			userinfo: { email: null, name: null, picture: null },
+			id_token: { email: null, name: null },
+		});
+		const sent = await authorize(app, owner, { scope: "openid", claims });
+		expect(sent.location.origin).toBe(origin);
+		expect(sent.location.searchParams.has("claims")).toBe(false);
+		expect(sent.location.searchParams.get("scope")).toBe("openid");
+
+		const asked = { ...sent, location: await follow(sent, owner) };
+		const { tokens, claims: said } = await exchange(app, await agree(asked, owner));
+		expect(said.email).toBeUndefined();
+		expect(said.name).toBeUndefined();
+		const told = (await (await userinfo(tokens.access_token)).json()) as object;
+		expect(Object.keys(told)).toEqual(["sub"]);
+	});
+
+	it("says which app asked to give up a token, and not which one it named", async () => {
+		const { app, owner, workspace } = await theApp();
+		const other = await newApp(owner, workspace);
+		const { tokens } = await signInToApp(app, owner);
+		const asked = await id.fetch(`${origin}/api/auth/oauth2/revoke`, {
+			method: "POST",
+			headers: {
+				"cf-connecting-ip": newClient(),
+				authorization: `Basic ${btoa(`${app.clientId}:${app.clientSecret}`)}`,
+				"content-type": "application/x-www-form-urlencoded",
+			},
+			body: new URLSearchParams({ client_id: other.clientId, token: tokens.refresh_token ?? "" }),
+		});
+		expect(asked.status).toBe(200);
+		const named = (clientId: string) =>
+			count("audit_event", "type = ? AND app = ?", "token_revoked", clientId);
+		await vi.waitFor(async () => expect(await named(app.clientId)).toBe(1));
+		expect(await named(other.clientId)).toBe(0);
+	});
+});
+
 describe("the page that asks", () => {
 	function consentPage(app: App, who: Who) {
 		return id
@@ -1103,6 +1486,41 @@ describe("the page that asks", () => {
 		expect(html).not.toContain("Hidden Mirror");
 		expect(html).not.toContain("The Hidden Guild");
 		expect(html).not.toContain(app.host);
+	});
+
+	it("gives someone outside nothing to answer", async () => {
+		const owner = await newPerson();
+		const app = await newApp(owner, await newWorkspace(owner));
+		const stranger = await newPerson();
+		const response = await id.fetch(`${origin}/consent?client_id=${app.clientId}&scope=openid`, {
+			redirect: "manual",
+			headers: { "cf-connecting-ip": newClient(), cookie: stranger.cookie, accept: "text/html" },
+		});
+		expect(response.status).toBe(307);
+		expect(new URL(response.headers.get("location") ?? "", origin).pathname).toBe("/no-access");
+	});
+
+	it("offers no way there from the page that refuses, unless everyone can use the app", async () => {
+		const owner = await newPerson();
+		const app = await newApp(owner, await newWorkspace(owner));
+		const person = await newPerson();
+		const refused = (clientId: string, host: string) =>
+			id
+				.fetch(
+					`${origin}/no-access?client_id=${clientId}&sig=x&redirect_uri=${encodeURIComponent(`https://${host}/callback`)}`,
+					{
+						headers: {
+							"cf-connecting-ip": newClient(),
+							cookie: person.cookie,
+							accept: "text/html",
+						},
+					},
+				)
+				.then((response) => response.text());
+		expect(await refused(app.clientId, app.host)).not.toContain("Back to");
+
+		const firstParty = await firstPartyApp();
+		expect(await refused(firstParty.clientId, "first-party.apps.test")).toContain("Back to");
 	});
 });
 

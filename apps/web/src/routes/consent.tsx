@@ -11,8 +11,7 @@ import { getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 
 const consentSearch = z.looseObject({
-	client_id: z.string().optional().catch(undefined),
-	redirect_uri: z.string().optional().catch(undefined),
+	client_id: z.string().max(200).optional().catch(undefined),
 	scope: z.string().optional().catch(undefined),
 });
 
@@ -30,10 +29,6 @@ function scopeWords(scope: string | undefined): string[] {
 	});
 }
 
-function hostOf(uri: string | undefined): string | null {
-	return uri && URL.canParse(uri) ? new URL(uri).host : null;
-}
-
 /**
  * Asks whether an app may have what it asked for. First-party apps only come here when they ask to,
  * with `prompt=consent`. Apps a workspace adds always do, the first time, and this says whose they are
@@ -48,7 +43,12 @@ export const Route = createFileRoute("/consent")({
 		return { session };
 	},
 	loaderDeps: ({ search }) => ({ clientId: search.client_id }),
-	loader: ({ deps }) => (deps.clientId ? getAppToAllow({ data: deps.clientId }) : null),
+	loader: async ({ deps }) => {
+		const about = deps.clientId ? await getAppToAllow({ data: deps.clientId }) : null;
+		// Someone with another person's link has nothing to answer, as either answer would send them to it.
+		if (!about) throw redirect({ to: "/no-access" });
+		return about;
+	},
 	component: ConsentPage,
 });
 
@@ -58,8 +58,7 @@ function ConsentPage() {
 	const search = Route.useSearch();
 	const [error, setError] = useState<ReactNode>(null);
 	const [pending, setPending] = useState(false);
-	const app = about?.name ?? "This app";
-	const host = about?.host ?? hostOf(search.redirect_uri);
+	const app = about.name ?? "This app";
 	const scopes = scopeWords(search.scope);
 	useDocumentTitle("Allow access");
 
@@ -91,15 +90,15 @@ function ConsentPage() {
 					))}
 				</ul>
 			)}
-			{about?.workspace && (
+			{about.workspace && (
 				<p className="text-sm text-muted-foreground">
 					An admin of <span className="text-foreground">{about.workspace}</span> added this app.
 					Nobody has checked who runs it, so allow it only if you know what it is.
 				</p>
 			)}
-			{host && (
+			{about.host && (
 				<p className="text-sm text-muted-foreground">
-					Your answer takes you to <span className="text-foreground">{host}</span>.
+					Your answer takes you to <span className="text-foreground">{about.host}</span>.
 				</p>
 			)}
 			{error && (
