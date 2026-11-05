@@ -46,6 +46,13 @@ with the callback URL `http://localhost:4730/api/auth/callback/github`, then unc
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for how the code is organized and
 what must never break.
 
+## Running your own
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/gateweavehq/id)
+
+[docs/self-hosting.md](docs/self-hosting.md) has the steps and every setting. The first account owns a new server
+and sign-up closes behind it, so claim yours as soon as it is up.
+
 ## License
 
 [AGPL-3.0](LICENSE). Contributors sign a [CLA](CLA.md) once, which covers every Gateweave project.

@@ -19,13 +19,13 @@ app. A mistake in those places signs the wrong person in to someone else's app.
 
 ## Repository map
 
-| Path              | What lives there                                                          |
-| ----------------- | ------------------------------------------------------------------------- |
-| `apps/web`        | The Worker: TanStack Start UI, Better Auth, rate limiting, email, D1      |
-| `docs/`           | The architecture notes, including the values that may never change        |
-| `scripts/`        | Repository tooling (`doctor`)                                             |
-| `.claude/skills/` | Step-by-step playbooks for recurring tasks (plain Markdown, any agent)    |
-| `wrangler.jsonc`  | The Worker's config, at the root because the Deploy button reads it there |
+| Path              | What lives there                                                           |
+| ----------------- | -------------------------------------------------------------------------- |
+| `apps/web`        | The Worker: TanStack Start UI, Better Auth, rate limiting, email, D1       |
+| `docs/`           | Architecture, including the values that may never change, and self-hosting |
+| `scripts/`        | Repository tooling (`doctor`, `update-copy`)                               |
+| `.claude/skills/` | Step-by-step playbooks for recurring tasks (plain Markdown, any agent)     |
+| `wrangler.jsonc`  | The Worker's config, at the root because the Deploy button reads it there  |
 
 There is no sync engine and no per-workspace Durable Object: identity data is relational, read at
 sign-in and written rarely, so it lives in D1. The Durable Object only counts rate limits.
