@@ -30,6 +30,12 @@ export const WORKSPACE_CANNOT_INVITE = {
 		"Sign-up is closed on this server, and the person who runs it is not an admin of this workspace, so it cannot invite anyone for now.",
 };
 
+export const SERVER_OWNER_STAYS_A_MEMBER = {
+	code: "SERVER_OWNER_STAYS_A_MEMBER",
+	message:
+		"Sign-up is closed on this server, and making the person who runs it an admin here would let this workspace invite people again. Ask them to open sign-up first.",
+};
+
 const NO_INVITATION = {
 	code: "INVITATION_NOT_FOUND",
 	message:
@@ -101,6 +107,25 @@ export async function mayInviteTo(db: Database, workspaceId: string): Promise<bo
 		) AS allowed
 	`);
 	return row?.allowed === 1;
+}
+
+/**
+ * Whether this member's role may change. A workspace that cannot invite would be able to again if the
+ * server's owner became an admin of it, which would undo closing sign-up with no word from them.
+ */
+export async function mayChangeRoleOf(
+	db: Database,
+	workspaceId: string,
+	memberId: string,
+): Promise<boolean> {
+	if (await mayInviteTo(db, workspaceId)) return true;
+	const row = await db.get<{ runsServer: number }>(sql`
+		SELECT EXISTS (
+			SELECT 1 FROM member
+			WHERE id = ${memberId} AND user_id = (SELECT owner_id FROM deployment WHERE id = 1)
+		) AS runsServer
+	`);
+	return row?.runsServer !== 1;
 }
 
 export async function signUpState(db: Database): Promise<SignUpState> {

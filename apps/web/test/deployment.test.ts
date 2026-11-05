@@ -399,7 +399,7 @@ describe("a new deployment", () => {
 	});
 });
 
-describe("the time an answer about a code takes", () => {
+describe("the time an answer about an address takes", () => {
 	const timedOrigin = "https://timed.test";
 	/** What the code in src/server/auth/even-answer.ts holds to, less what a timer may round off. */
 	const FLOOR = 995;
@@ -474,8 +474,22 @@ describe("the time an answer about a code takes", () => {
 		}
 	});
 
+	it("is no shorter for a stranger than for an address with an account, resetting a password", async () => {
+		const owner = await firstAccount();
+		for (const email of [owner, newAddress()]) {
+			const { status, took } = await timeOf("/request-password-reset", {
+				email,
+				redirectTo: "/reset-password",
+			});
+			expect(status).toBe(200);
+			expect(took).toBeGreaterThanOrEqual(FLOOR);
+		}
+	});
+
 	// The floor is on the exact path. Were one of these ever to reach the same code, it would have none.
 	it.each([
+		"/request-password-reset/",
+		"/REQUEST-PASSWORD-RESET",
 		"/email-otp/send-verification-otp/",
 		"/email-otp/send%2Dverification%2Dotp",
 		"/EMAIL-OTP/send-verification-otp",
@@ -791,6 +805,67 @@ describe("a workspace's invitations on a closed server", () => {
 		await requestCode(pending);
 		expect(await codesStoredFor(pending)).toBe(0);
 		await expect(insertAccount(pending)).rejects.toThrow("sign-up is closed here");
+	});
+
+	async function memberIdOf(organizationId: string, userId: string) {
+		const row = await id.db
+			.prepare("SELECT id FROM member WHERE organization_id = ? AND user_id = ?")
+			.bind(organizationId, userId)
+			.first<{ id: string }>();
+		expect(row?.id).toEqual(expect.any(String));
+		return row?.id ?? "";
+	}
+
+	function changeRole(cookie: string, organizationId: string, memberId: string, role: string) {
+		return post("/organization/update-member-role", { organizationId, memberId, role }, cookie);
+	}
+
+	it.each(["admin", "owner"])(
+		"stay closed when an admin tries to make the server's owner %s",
+		async (role) => {
+			const { owner, admin, organizationId } = await someoneElsesWorkspace();
+			await addMember(organizationId, owner.userId, "member");
+			const pending = newAddress();
+			expect((await invite(admin.cookie, organizationId, pending)).status).toBe(200);
+			await closeSignUp();
+
+			await refused(
+				await changeRole(
+					admin.cookie,
+					organizationId,
+					await memberIdOf(organizationId, owner.userId),
+					role,
+				),
+				"SERVER_OWNER_STAYS_A_MEMBER",
+			);
+
+			expect(await mayInvite(admin.cookie, "someone-elses")).toBe(false);
+			await requestCode(pending);
+			expect(await codesStoredFor(pending)).toBe(0);
+			await expect(insertAccount(pending)).rejects.toThrow("sign-up is closed here");
+		},
+	);
+
+	it("still change anyone else's role, and the server owner's where they run it or sign-up is open", async () => {
+		const { owner, admin, organizationId } = await someoneElsesWorkspace();
+		await addMember(organizationId, owner.userId, "member");
+		const someone = await signUp(newAddress());
+		await addMember(organizationId, someone.userId, "member");
+		const ownersMember = await memberIdOf(organizationId, owner.userId);
+		await closeSignUp();
+
+		const others = await memberIdOf(organizationId, someone.userId);
+		expect((await changeRole(admin.cookie, organizationId, others, "admin")).status).toBe(200);
+
+		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
+		expect((await changeRole(admin.cookie, organizationId, ownersMember, "admin")).status).toBe(
+			200,
+		);
+
+		await closeSignUp();
+		expect((await changeRole(admin.cookie, organizationId, ownersMember, "owner")).status).toBe(
+			200,
+		);
 	});
 
 	it("do not tell someone who may not send one that they may", async () => {

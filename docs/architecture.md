@@ -69,8 +69,9 @@ want, because signing in with only a mailbox would skip the password and two-fac
   GitHub account whose address GitHub has not verified.
 - **Outside, an address with an account looks like one without.** Asking for a code and getting one
   wrong answer the same. "Expired" and "too many attempts" would give it away, so they use the same
-  words too. Asking for a code and entering one both take at least a second, whatever the answer,
-  which is more than the work behind them normally takes, so the time says nothing either.
+  words too. Asking for a code, entering one and asking to reset a password all take at least a second,
+  whatever the answer, which is more than the work behind them normally takes, so the time says nothing
+  either.
 - **Codes per address are capped** before a code is stored, because each new code resets the attempts.
   That holds the guesses against one address to about one chance in 33,000 a day, however many clients
   ask.
@@ -103,7 +104,8 @@ asks it, and the triggers in `0014_deployment_hold.sql` and `0015_workspace_way_
   workspace's invitation is a way in, so anyone who could make a workspace could let in anyone at all. Those
   the owner makes admins of a workspace can invite to it. One made while sign-up was open is its maker's, so
   closing sign-up closes it: it can invite nobody, whoever they are, which tells its admin nothing about who
-  has an account, and what it already sent makes no accounts. Someone with an account can still accept.
+  has an account, and what it already sent makes no accounts. Someone with an account can still accept. Its
+  admins cannot make the server's owner an admin of it either, which would open it again with no word from them.
 - **An upgrade changes nothing for a deployment that has accounts.** It stays open, with its oldest account
   as the owner, and only the owner's name is new.
 
