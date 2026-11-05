@@ -67,7 +67,8 @@ Sign-up closes behind the first account. Your account page then has a **This ser
 
 While sign-up is closed, only the owner makes workspaces, because a workspace's invitation is a way in. Those
 the owner makes admins of a workspace can invite to it, and so let people in. A workspace you are not an admin
-of, made while sign-up was open, cannot invite anyone until it opens again.
+of, made while sign-up was open, cannot invite anyone until it opens again. Its admins cannot make you an admin
+of it meanwhile, since that would let it invite. To become one, open sign-up first.
 
 To hand the server to someone else, who needs an account already, run this from the repository root:
 
@@ -177,6 +178,9 @@ has what to do on its side.
 ID then sends sign-up codes, password resets and invitations. The form that claims a server without a code goes
 away.
 
+Nothing proved the addresses of accounts made before this, and GitHub links to an account by its address once email
+is on. If a link you sent may have reached the wrong person, delete that account before you turn email on.
+
 ### Sign in with GitHub
 
 Create a [GitHub OAuth App](https://github.com/settings/developers) with the callback URL
@@ -186,7 +190,9 @@ the form cannot.
 
 ### Turnstile
 
-Set this on any server open to the internet. It stands in front of password sign-in and of sending email.
+Set this on any server open to the internet. It stands in front of password sign-in, of sending email and of the
+form that claims a server. GitHub does not pass through it, so on a server with GitHub and no account yet, the
+first person to sign in with a verified address there owns it.
 
 1. In the Cloudflare dashboard, add a [Turnstile](https://developers.cloudflare.com/turnstile/) widget for your
    hostname (Managed mode).
