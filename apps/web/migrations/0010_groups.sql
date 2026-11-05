@@ -9,6 +9,7 @@ CREATE TABLE `workspace_app_group` (
 );
 --> statement-breakpoint
 CREATE INDEX `workspace_app_group_group_idx` ON `workspace_app_group` (`group_id`);--> statement-breakpoint
+CREATE INDEX `workspace_app_group_organization_idx` ON `workspace_app_group` (`organization_id`);--> statement-breakpoint
 CREATE TABLE `workspace_group` (
 	`id` text PRIMARY KEY NOT NULL,
 	`organization_id` text NOT NULL,
@@ -31,4 +32,5 @@ CREATE TABLE `workspace_group_member` (
 	FOREIGN KEY (`member_id`,`organization_id`) REFERENCES `member`(`id`,`organization_id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX `workspace_group_member_member_idx` ON `workspace_group_member` (`member_id`);
+CREATE INDEX `workspace_group_member_member_idx` ON `workspace_group_member` (`member_id`);--> statement-breakpoint
+CREATE INDEX `workspace_group_member_organization_idx` ON `workspace_group_member` (`organization_id`);

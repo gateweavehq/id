@@ -108,6 +108,7 @@ test("an admin keeps an app to a group, and each person is told what is theirs",
 		const save = page.getByRole("button", { name: "Save who can use Field Notes" });
 		await expect(save).toBeDisabled();
 		await page.getByLabel("Engineers", { exact: true }).check();
+		await expect(page.getByText("That includes you.")).toBeVisible();
 		await save.click();
 		await expect(apps).toContainText("Only Engineers can use it.");
 		await expect(groups).toContainText("Used by Field Notes.");
@@ -144,6 +145,7 @@ test("an admin keeps an app to a group, and each person is told what is theirs",
 		await goToSignIn(carol, clientId);
 		await expect(carol).toHaveURL(/\/no-access/);
 		await expect(carol.locator("body")).not.toContainText("Field Notes");
+		await expect(carol.locator("body")).not.toContainText("localhost:4733");
 	});
 
 	await test.step("someone in the group is asked, in words, and gets in", async () => {
@@ -154,8 +156,12 @@ test("an admin keeps an app to a group, and each person is told what is theirs",
 	});
 
 	await test.step("taken out, they are turned away, and asked again when put back", async () => {
+		await expect(groups).toContainText("Taking someone out ends their access");
 		await page.getByRole("button", { name: "Take Bob out of Engineers" }).click();
 		await expect(page.getByRole("list", { name: "People in Engineers" })).toHaveCount(0);
+		await expect(page.getByRole("list", { name: "Apps" })).toContainText(
+			"Only Engineers can use it, and nobody is in it yet.",
+		);
 		await goToSignIn(bob, clientId, { scope: "openid groups" });
 		await expect(bob).toHaveURL(/\/no-access/);
 
@@ -184,6 +190,40 @@ test("an admin keeps an app to a group, and each person is told what is theirs",
 	expect(problems).toEqual([]);
 	await bob.context().close();
 	await carol.context().close();
+});
+
+test("a page left open cannot undo what someone else just chose", async ({ page, context }) => {
+	const workspaceName = `Stale ${Date.now()}`;
+	await signUp(page, "Ada", address("ada"));
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	const slug = await makeWorkspace(page, workspaceName);
+	await page.getByLabel("Group name").fill("Engineers");
+	await page.getByRole("button", { name: "Add group" }).click();
+	await expect(page.getByRole("list", { name: "Groups", exact: true })).toContainText("Engineers");
+	await page.getByLabel("App name").fill("Field Notes");
+	await page.getByLabel(/^Redirect URIs/).fill(APP.redirectUri);
+	await page.getByRole("button", { name: "Add app" }).click();
+	await page.getByRole("button", { name: "I have saved it" }).click();
+
+	const other = await context.newPage();
+	await other.goto(`/workspaces/${slug}`, { waitUntil: "networkidle" });
+	await other.getByRole("button", { name: "Change who can use Field Notes" }).click();
+	await other.getByLabel("Only people in these groups").check();
+	await other.getByLabel("Engineers", { exact: true }).check();
+	await expect(other.getByText("Nobody is in these groups yet")).toBeVisible();
+	await other.getByRole("button", { name: "Save who can use Field Notes" }).click();
+	await expect(other.getByRole("list", { name: "Apps" })).toContainText(
+		"Only Engineers can use it",
+	);
+
+	await page.getByRole("button", { name: "Change who can use Field Notes" }).click();
+	await expect(page.getByLabel(`Everyone in ${workspaceName}`)).toBeChecked();
+	await page.getByRole("button", { name: "Save who can use Field Notes" }).click();
+
+	await expect(page.getByRole("alert")).toContainText("Someone else has just changed");
+	await expect(page.getByLabel("Only people in these groups")).toBeChecked();
+	await expect(page.getByLabel("Engineers", { exact: true })).toBeChecked();
+	await expect(page.getByRole("list", { name: "Apps" })).toContainText("Only Engineers can use it");
 });
 
 test("names with nowhere to break stay on a phone, whatever is open", async ({ page }) => {

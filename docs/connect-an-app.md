@@ -73,6 +73,8 @@ app, and never another workspace's. It is at userinfo as well. Admins can rename
 is what your app sees at userinfo and in the next ID token, so a rule in your app that matches on a name
 follows it. Each person is asked about this scope like any other.
 
+Name the scopes you want. A request with no `scope` asks for every scope your app may have, `groups` included.
+
 `offline_access` gets a refresh token, which rotates each time it is used.
 
 ## What people see

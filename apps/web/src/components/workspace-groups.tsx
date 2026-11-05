@@ -113,6 +113,11 @@ function GroupRow({ group, details, reload }: { group: WorkspaceGroup } & Sectio
 					))}
 				</ul>
 			)}
+			{usedBy.length > 0 && inIt.length > 0 && (
+				<p className="text-xs text-muted-foreground">
+					Taking someone out ends their access to what only this group opens.
+				</p>
+			)}
 			{outside.length > 0 && (
 				<form onSubmit={onAdd} className="flex items-center gap-2">
 					<select name="member" aria-label={`Add someone to ${group.name}`} className={SELECT}>
@@ -146,7 +151,7 @@ function GroupRow({ group, details, reload }: { group: WorkspaceGroup } & Sectio
 						/>
 						{usedBy.length > 0 && (
 							<p className="text-xs text-muted-foreground">
-								Apps that ask are told its name, and see the new one the next time they get a token.
+								Apps that ask are told its name, and will see the new one.
 							</p>
 						)}
 					</div>

@@ -354,10 +354,8 @@ export function oidcPlugins(
 				...(await groupsClaim(db, user.id, scopes, appIn(metadata))),
 			}),
 			// Userinfo is not told which app is asking except by the token.
-			customUserInfoClaims: async ({ user, scopes, jwt: { client_id, azp } }) => {
-				if (!scopes.includes("groups")) return {};
-				const clientId = client_id ?? azp;
-				if (typeof clientId !== "string") return {};
+			customUserInfoClaims: async ({ user, scopes, jwt: { client_id: clientId } }) => {
+				if (!scopes.includes("groups") || typeof clientId !== "string") return {};
 				return groupsClaim(db, user.id, scopes, await appOfClient(db, clientId));
 			},
 			// Authorization does not run on refresh, so without this a removed person keeps their access.

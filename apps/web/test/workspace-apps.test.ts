@@ -2374,10 +2374,29 @@ describe("groups", () => {
 		expect(response.status).toBe(200);
 	}
 
-	function setGroups(who: Who, workspace: Workspace, app: Pick<App, "clientId">, groups: string[]) {
+	async function namedBy(app: Pick<App, "clientId">) {
+		const { results } = await id.db
+			.prepare("SELECT group_id FROM workspace_app_group WHERE client_id = ?")
+			.bind(app.clientId)
+			.all<{ group_id: string }>();
+		return results.map((row: { group_id: string }) => row.group_id);
+	}
+
+	/** As a page does that is up to date. */
+	async function setGroups(
+		who: Who,
+		workspace: Workspace,
+		app: Pick<App, "clientId">,
+		groups: string[],
+	) {
 		return api("/workspaces/apps/set-groups", {
 			who,
-			body: { organizationId: workspace.id, clientId: app.clientId, groups },
+			body: {
+				organizationId: workspace.id,
+				clientId: app.clientId,
+				groups,
+				was: await namedBy(app),
+			},
 		});
 	}
 
@@ -2497,7 +2516,7 @@ describe("groups", () => {
 					["/workspaces/groups/remove-member", { organizationId, groupId, memberId: insideId }],
 					[
 						"/workspaces/apps/set-groups",
-						{ organizationId, clientId: app.clientId, groups: [groupId] },
+						{ organizationId, clientId: app.clientId, groups: [groupId], was: [] },
 					],
 				];
 				const before = () => details(made.owner, workspace);
@@ -2550,7 +2569,12 @@ describe("groups", () => {
 				}
 				const notAList = await api("/workspaces/apps/set-groups", {
 					who: owner,
-					body: { organizationId: workspace.id, clientId: app.clientId, groups: "everyone" },
+					body: {
+						organizationId: workspace.id,
+						clientId: app.clientId,
+						groups: "everyone",
+						was: [],
+					},
 				});
 				expect(notAList.status).toBe(400);
 				expect(await now()).toEqual(was);
@@ -2724,12 +2748,12 @@ describe("groups", () => {
 					],
 					[
 						"/workspaces/apps/set-groups",
-						{ organizationId, clientId: app.clientId, groups: [theirGroup.id] },
+						{ organizationId, clientId: app.clientId, groups: [theirGroup.id], was: [] },
 						"GROUP_NOT_FOUND",
 					],
 					[
 						"/workspaces/apps/set-groups",
-						{ organizationId, clientId: theirApp.clientId, groups: [] },
+						{ organizationId, clientId: theirApp.clientId, groups: [], was: [] },
 						"APP_NOT_FOUND",
 					],
 				];
@@ -2955,6 +2979,19 @@ describe("groups", () => {
 			await narrow(owner, workspace, app, [group, second]);
 			await signInToApp(app, inside);
 			await signInToApp(app, outside);
+		});
+
+		it("does not let them in through the group of another app", async () => {
+			const { owner, workspace, app, inside, outside, outsideId } = await aNarrowedApp();
+			const other = await newApp(owner, workspace);
+			const theirs = await newGroup(owner, workspace, "Designers");
+			await putIn(owner, workspace, theirs, outsideId);
+			await narrow(owner, workspace, other, [theirs]);
+
+			expectRefused(await authorize(other, inside), other);
+			expectRefused(await authorize(app, outside), app);
+			await signInToApp(other, outside);
+			await signInToApp(app, inside);
 		});
 
 		it("lets them in once they are put in the group", async () => {
@@ -3325,6 +3362,249 @@ describe("groups", () => {
 			expect(await count("workspace_app_group", "group_id = ?", group.id)).toBe(0);
 			expect(await appRowIn(app.clientId)).toBeNull();
 			expect(await heldBy(inside, app)).toEqual([0, 0, 0]);
+		});
+	});
+
+	describe("a page left open", () => {
+		function save(owner: Who, workspace: Workspace, app: App, groups: string[], was?: string[]) {
+			return api("/workspaces/apps/set-groups", {
+				who: owner,
+				body: { organizationId: workspace.id, clientId: app.clientId, groups, was },
+			});
+		}
+
+		it("cannot open an app someone has narrowed since, by being saved as it stands", async () => {
+			const { owner, workspace, app, group, inside, outside } = await aNarrowedApp();
+			const { tokens } = await signInToApp(app, inside);
+
+			const stale = await save(owner, workspace, app, [], []);
+
+			expect(stale.status).toBe(409);
+			expect(await stale.json()).toMatchObject({ code: "APP_GROUPS_CHANGED" });
+			expect(await namedBy(app)).toEqual([group.id]);
+			expectRefused(await authorize(app, outside), app);
+			expect((await userinfo(tokens.access_token)).status).toBe(200);
+		});
+
+		it("cannot narrow an app further than what it saw, and costs nobody their access", async () => {
+			const { owner, workspace, app, group, outside, outsideId } = await aWorkspace();
+			const other = await newGroup(owner, workspace, "Designers");
+			await putIn(owner, workspace, other, outsideId);
+			await narrow(owner, workspace, app, [group, other]);
+			const { tokens } = await signInToApp(app, outside);
+
+			expect((await save(owner, workspace, app, [group.id], [group.id])).status).toBe(409);
+
+			expect(new Set(await namedBy(app))).toEqual(new Set([group.id, other.id]));
+			expect((await userinfo(tokens.access_token)).status).toBe(200);
+		});
+
+		it("is refused for having seen more, or other groups, than there are", async () => {
+			const { owner, workspace, app, group } = await aNarrowedApp();
+			const other = await newGroup(owner, workspace, "Designers");
+
+			for (const was of [[group.id, other.id], [other.id], []]) {
+				expect((await save(owner, workspace, app, [group.id], was)).status, String(was)).toBe(409);
+			}
+		});
+
+		it("is fine in any order, and when it says the same group twice", async () => {
+			const { owner, workspace, app, group } = await aWorkspace();
+			const other = await newGroup(owner, workspace, "Designers");
+			await narrow(owner, workspace, app, [group, other]);
+
+			const inOrder = await save(owner, workspace, app, [other.id, group.id], [other.id, group.id]);
+			expect(inOrder.status).toBe(200);
+			const reversed = await save(
+				owner,
+				workspace,
+				app,
+				[group.id, other.id],
+				[group.id, other.id],
+			);
+			expect(reversed.status).toBe(200);
+			const twice = await save(
+				owner,
+				workspace,
+				app,
+				[group.id, other.id],
+				[group.id, group.id, other.id],
+			);
+			expect(twice.status).toBe(200);
+		});
+
+		it("has to say what it saw", async () => {
+			const { owner, workspace, app, group } = await aNarrowedApp();
+			expect((await save(owner, workspace, app, [])).status).toBe(400);
+			expect(await namedBy(app)).toEqual([group.id]);
+		});
+	});
+
+	describe("a sign-in from a while ago", () => {
+		it("cannot do what can hand out or take away what an app gives", async () => {
+			const { owner, workspace, app, group, outsideId } = await aWorkspace();
+			const organizationId = workspace.id;
+			await ageSession(owner);
+			const was = await details(owner, workspace);
+
+			for (const [path, body] of [
+				["/workspaces/groups/rename", { organizationId, groupId: group.id, name: "Admins" }],
+				[
+					"/workspaces/groups/add-member",
+					{ organizationId, groupId: group.id, memberId: outsideId },
+				],
+				[
+					"/workspaces/apps/set-groups",
+					{ organizationId, clientId: app.clientId, groups: [group.id], was: [] },
+				],
+			] as const) {
+				const response = await api(path, { who: owner, body });
+				expect(response.status, path).toBe(403);
+				expect(await response.json(), path).toMatchObject({ code: "SESSION_NOT_FRESH" });
+			}
+			expect(await details(owner, workspace)).toEqual(was);
+		});
+
+		it("can do what gives nobody anything", async () => {
+			const { owner, workspace, group, insideId } = await aWorkspace();
+			await ageSession(owner);
+
+			await takeOut(owner, workspace, group, insideId);
+			const made = await newGroup(owner, workspace, "Designers");
+			const deleted = await api("/workspaces/groups/delete", {
+				who: owner,
+				body: { organizationId: workspace.id, groupId: made.id },
+			});
+			expect(deleted.status).toBe(200);
+		});
+	});
+
+	describe("someone an app is kept from", () => {
+		const page = (path: string, who: Who, init: RequestInit = {}) =>
+			id.fetch(`${origin}${path}`, {
+				...init,
+				headers: { "cf-connecting-ip": newClient(), cookie: who.cookie, accept: "text/html" },
+			});
+
+		async function namedApp() {
+			const owner = await newPerson("Owner");
+			const workspace = await newWorkspace(owner, "The Kept Guild");
+			const app = await newApp(owner, workspace, "Kept Mirror");
+			const group = await newGroup(owner, workspace, "Engineers");
+			const inside = await newPerson("Inside");
+			await putIn(owner, workspace, group, await join(inside, workspace, owner));
+			const outside = await newPerson("Outside");
+			await join(outside, workspace, owner);
+			await narrow(owner, workspace, app, [group]);
+			return { app, inside, outside };
+		}
+
+		it("hears nothing of it from the page that asks, and has nothing to answer", async () => {
+			const { app, inside, outside } = await namedApp();
+			const link = `/consent?client_id=${app.clientId}&scope=openid`;
+
+			const sent = await page(link, outside, { redirect: "manual" });
+			expect(sent.status).toBe(307);
+			expect(new URL(sent.headers.get("location") ?? "", origin).pathname).toBe("/no-access");
+			const html = await (await page(link, outside)).text();
+			expect(html).not.toContain("Kept Mirror");
+			expect(html).not.toContain("The Kept Guild");
+			expect(html).not.toContain(app.host);
+
+			// The same link names it to someone it would let in, so what is above is not for want of a name.
+			const asked = await (await page(link, inside)).text();
+			expect(asked).toContain("Kept Mirror");
+			expect(asked).toContain("The Kept Guild");
+		});
+
+		it("is offered no way there from the page that turns them away", async () => {
+			const { app, inside, outside } = await namedApp();
+			const link = `/no-access?client_id=${app.clientId}&sig=x&redirect_uri=${encodeURIComponent(app.redirectUri)}`;
+
+			const html = await (await page(link, outside)).text();
+			expect(html).not.toContain("Back to");
+			expect(html).not.toContain("Kept Mirror");
+
+			expect(await (await page(link, inside)).text()).toContain("Back to");
+		});
+
+		it("is not told its name by their own activity", async () => {
+			const { app, outside } = await namedApp();
+			const refused = await authorize(app, outside);
+			await api("/oauth2/consent", {
+				who: outside,
+				body: { accept: true, oauth_query: refused.location.search.slice(1) },
+			});
+			await id.auditEventRecorded(outside.userId, { type: "refused", app: app.clientId });
+
+			const response = await api("/account/activity", { who: outside });
+			const seen = await response.text();
+			expect(seen).toContain('"refused"');
+			expect(seen).not.toContain("Kept Mirror");
+			expect(seen).not.toContain(app.clientId);
+		});
+
+		it("is told it again once they are let in", async () => {
+			const owner = await newPerson("Owner");
+			const workspace = await newWorkspace(owner);
+			const app = await newApp(owner, workspace, "Kept Mirror");
+			const group = await newGroup(owner, workspace, "Engineers");
+			const person = await newPerson("Person");
+			const memberId = await join(person, workspace, owner);
+			await narrow(owner, workspace, app, [group]);
+			const refused = await authorize(app, person);
+			await api("/oauth2/consent", {
+				who: person,
+				body: { accept: true, oauth_query: refused.location.search.slice(1) },
+			});
+			await id.auditEventRecorded(person.userId, { type: "refused", app: app.clientId });
+
+			await putIn(owner, workspace, group, memberId);
+
+			const response = await api("/account/activity", { who: person });
+			expect(await response.text()).toContain("Kept Mirror");
+		});
+	});
+
+	describe("what the log keeps", () => {
+		async function detailsOf(who: Who, type: string) {
+			const response = await api("/account/activity", { who });
+			const { events } = (await response.json()) as {
+				events: { type: string; detail: string | null }[];
+			};
+			return events
+				.filter((event) => event.type === type)
+				.map((event) => JSON.parse(event.detail ?? "{}"));
+		}
+
+		it("says what an app's list became, and who it was opened to", async () => {
+			const { owner, workspace, app, group } = await aNarrowedApp();
+			await vi.waitFor(async () => {
+				expect(await detailsOf(owner, "app_groups_changed")).toEqual([
+					expect.objectContaining({ groups: [group.name], name: app.name }),
+				]);
+			});
+
+			expect((await setGroups(owner, workspace, app, [])).status).toBe(200);
+			await vi.waitFor(async () => {
+				const [latest] = await detailsOf(owner, "app_groups_changed");
+				expect(latest.groups).toEqual([]);
+			});
+		});
+
+		it("says what a group was called", async () => {
+			const owner = await newPerson();
+			const workspace = await newWorkspace(owner);
+			const group = await newGroup(owner, workspace, "Sales");
+			await api("/workspaces/groups/rename", {
+				who: owner,
+				body: { organizationId: workspace.id, groupId: group.id, name: "Growth" },
+			});
+			await vi.waitFor(async () => {
+				expect(await detailsOf(owner, "group_renamed")).toEqual([
+					expect.objectContaining({ group: "Growth", was: "Sales" }),
+				]);
+			});
 		});
 	});
 

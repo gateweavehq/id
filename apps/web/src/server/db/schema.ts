@@ -55,6 +55,7 @@ export const workspaceGroupMember = sqliteTable(
 			foreignColumns: [member.id, member.organizationId],
 		}).onDelete("cascade"),
 		index("workspace_group_member_member_idx").on(table.memberId),
+		index("workspace_group_member_organization_idx").on(table.organizationId),
 	],
 );
 
@@ -78,6 +79,7 @@ export const workspaceAppGroup = sqliteTable(
 			foreignColumns: [workspaceGroup.id, workspaceGroup.organizationId],
 		}).onDelete("cascade"),
 		index("workspace_app_group_group_idx").on(table.groupId),
+		index("workspace_app_group_organization_idx").on(table.organizationId),
 	],
 );
 

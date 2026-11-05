@@ -107,14 +107,19 @@ function SecretOnce({ revealed, onDone }: { revealed: Revealed; onDone: () => vo
 /** Who can use it, in words, so an admin need not open anything to find out. */
 function whoCanUse(app: WorkspaceApp, groups: WorkspaceGroup[], workspaceName: string): string {
 	if (app.groups.length === 0) return `Everyone in ${workspaceName} can use it.`;
-	const names = groups.filter(({ id }) => app.groups.includes(id)).map(({ name }) => name);
-	return `Only ${names.join(", ")} can use it.`;
+	const named = groups.filter(({ id }) => app.groups.includes(id));
+	const names = named.map(({ name }) => name).join(", ");
+	if (named.every(({ members }) => members.length === 0)) {
+		return `Only ${names} can use it, and nobody is in ${named.length === 1 ? "it" : "them"} yet.`;
+	}
+	return `Only ${names} can use it.`;
 }
 
 function WhoCanUse({
 	app,
 	groups,
 	workspaceName,
+	you,
 	pending,
 	onSave,
 	onCancel,
@@ -122,6 +127,7 @@ function WhoCanUse({
 	app: WorkspaceApp;
 	groups: WorkspaceGroup[];
 	workspaceName: string;
+	you: string;
 	pending: boolean;
 	onSave: (groups: string[]) => void;
 	onCancel: () => void;
@@ -129,6 +135,10 @@ function WhoCanUse({
 	const [narrowed, setNarrowed] = useState(app.groups.length > 0);
 	const [chosen, setChosen] = useState(app.groups);
 	const name = `who-${app.clientId}`;
+	// A group someone else deleted while this was open is no longer a choice.
+	const picked = groups.filter(({ id }) => chosen.includes(id));
+	const nobody = picked.every(({ members }) => members.length === 0);
+	const youStay = picked.some(({ members }) => members.includes(you));
 
 	function toggle(id: string, on: boolean) {
 		setChosen((held) => (on ? [...held, id] : held.filter((other) => other !== id)));
@@ -139,7 +149,7 @@ function WhoCanUse({
 			className="space-y-3"
 			onSubmit={(event) => {
 				event.preventDefault();
-				onSave(narrowed ? chosen : []);
+				onSave(narrowed ? picked.map(({ id }) => id) : []);
 			}}
 		>
 			<fieldset className="min-w-0 space-y-2">
@@ -178,16 +188,18 @@ function WhoCanUse({
 					</ul>
 				)}
 			</fieldset>
-			{narrowed && (
+			{narrowed && picked.length > 0 && (
 				<p className="text-muted-foreground">
-					Anyone outside these groups loses the app at once, and is asked again if they come back.
+					{nobody
+						? "Nobody is in these groups yet, so nobody could use it."
+						: `Anyone outside these groups loses the app at once, and is asked again if they come back.${youStay ? "" : " That includes you."}`}
 				</p>
 			)}
 			<div className="flex flex-wrap gap-2">
 				<LiveButton
 					type="submit"
 					size="sm"
-					disabled={pending || (narrowed && chosen.length === 0)}
+					disabled={pending || (narrowed && picked.length === 0)}
 					aria-label={`Save who can use ${app.name}`}
 				>
 					Save
@@ -205,6 +217,7 @@ function AppRow({
 	groups,
 	workspaceId,
 	workspaceName,
+	you,
 	reload,
 	reveal,
 }: {
@@ -212,6 +225,7 @@ function AppRow({
 	groups: WorkspaceGroup[];
 	workspaceId: string;
 	workspaceName: string;
+	you: string;
 	reload: () => Promise<void>;
 	reveal: (revealed: Revealed) => void;
 }) {
@@ -248,13 +262,15 @@ function AppRow({
 	async function onSaveWho(chosen: string[]) {
 		setPending(true);
 		setError(null);
-		const result = await post("/workspaces/apps/set-groups", { ...which, groups: chosen });
+		const result = await post("/workspaces/apps/set-groups", {
+			...which,
+			groups: chosen,
+			was: app.groups,
+		});
 		setPending(false);
-		if (!result.ok) {
-			setError(result.failure);
-			return;
-		}
-		setMode(null);
+		if (result.ok) setMode(null);
+		else setError(result.failure);
+		// Refused, this page may be out of date, and the form should open on how things stand.
 		await reload();
 	}
 
@@ -330,9 +346,11 @@ function AppRow({
 			)}
 			{mode === "who" && (
 				<WhoCanUse
+					key={[...app.groups].sort().join()}
 					app={app}
 					groups={groups}
 					workspaceName={workspaceName}
+					you={you}
 					pending={pending}
 					onSave={onSaveWho}
 					onCancel={() => turnTo(null)}
@@ -480,6 +498,7 @@ export function WorkspaceApps({
 							groups={details.groups}
 							workspaceId={workspaceId}
 							workspaceName={workspaceName}
+							you={details.you.memberId}
 							reload={reload}
 							reveal={setRevealed}
 						/>

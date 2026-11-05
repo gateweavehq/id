@@ -11,6 +11,7 @@ import {
 	type Member,
 	noStore,
 	parseBody,
+	requireFreshSession,
 	requireMember,
 	requireRight,
 	type Session,
@@ -24,6 +25,11 @@ const GROUPS_PER_WORKSPACE = 50;
 const NO_GROUP = { code: "GROUP_NOT_FOUND", message: "That group is not in this workspace." };
 const NO_MEMBER = { code: "MEMBER_NOT_FOUND", message: "That person is not in this workspace." };
 const NO_APP = { code: "APP_NOT_FOUND", message: "That app is not in this workspace." };
+const LIST_CHANGED = {
+	code: "APP_GROUPS_CHANGED",
+	message:
+		"Someone else has just changed who can use this app. Check it, and save again if you still want to.",
+};
 
 const id = z.string().min(1).max(100);
 const inWorkspace = { organizationId: id };
@@ -155,7 +161,7 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 		ctx: GenericEndpointContext,
 		session: Session,
 		workspaceId: string,
-		detail: { group: string; target?: string | undefined },
+		detail: { group: string; was?: string; target?: string | undefined },
 	) {
 		const from = whereFrom(ctx.headers);
 		record(type, async () => ({
@@ -165,6 +171,7 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 			detail: JSON.stringify({
 				workspace: await workspaceNameOf(db, workspaceId),
 				group: detail.group,
+				was: detail.was,
 			}),
 			...from,
 		}));
@@ -226,7 +233,9 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 						ctx.body,
 					);
 					await requireManager(db, organizationId, session);
-					await requireGroup(db, organizationId, groupId);
+					// Apps can be set up to match on a name, so this can hand out what they give.
+					requireFreshSession(session, ctx);
+					const { name: was } = await requireGroup(db, organizationId, groupId);
 					const comparable = comparableName(name);
 					await requireFreeName(db, organizationId, comparable, groupId);
 					await db
@@ -234,7 +243,7 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 						.set({ name, comparableName: comparable, updatedAt: new Date() })
 						.where(eq(schema.workspaceGroup.id, groupId))
 						.run();
-					log("group_renamed", ctx, session, organizationId, { group: name });
+					log("group_renamed", ctx, session, organizationId, { group: name, was });
 					return { id: groupId };
 				},
 			),
@@ -280,6 +289,8 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 						ctx.body,
 					);
 					await requireManager(db, organizationId, session);
+					// This can open an app to them, and whatever an app gives to those in the group.
+					requireFreshSession(session, ctx);
 					const group = await requireGroup(db, organizationId, groupId);
 					const target = await db
 						.select({ userId: schema.member.userId })
@@ -352,16 +363,20 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 				async (ctx) => {
 					noStore(ctx);
 					const { session } = ctx.context;
-					const { organizationId, clientId, groups } = parseBody(
+					const { organizationId, clientId, groups, was } = parseBody(
 						z.strictObject({
 							...inWorkspace,
 							clientId: id,
 							// None at all is a choice: every member. The page asks for it by name.
 							groups: z.array(id).max(GROUPS_PER_WORKSPACE),
+							// What the page was showing when this was chosen.
+							was: z.array(id).max(GROUPS_PER_WORKSPACE),
 						}),
 						ctx.body,
 					);
 					await requireManager(db, organizationId, session);
+					// It can open an app to everyone, or end everyone's access, as deleting it does.
+					requireFreshSession(session, ctx);
 					const app = await db
 						.select({ name: schema.oauthClient.name })
 						.from(schema.oauthClient)
@@ -373,21 +388,33 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 						)
 						.get();
 					if (!app) throw APIError.from("NOT_FOUND", NO_APP);
-					const wanted = [...new Set(groups)];
-					if (wanted.length > 0) {
-						const found = await db
-							.select({ id: schema.workspaceGroup.id })
-							.from(schema.workspaceGroup)
-							.where(
-								and(
-									eq(schema.workspaceGroup.organizationId, organizationId),
-									inArray(schema.workspaceGroup.id, wanted),
-								),
-							)
-							.all();
-						if (found.length !== wanted.length) throw APIError.from("NOT_FOUND", NO_GROUP);
-					}
 					const { workspaceAppGroup: named } = schema;
+					// A page left open since before someone narrowed this app says it is open to everyone, and
+					// saved as it stands would make it so, with nobody having chosen that.
+					const current = await db
+						.select({ groupId: named.groupId })
+						.from(named)
+						.where(eq(named.clientId, clientId))
+						.all();
+					const saw = new Set(was);
+					if (current.length !== saw.size || current.some(({ groupId }) => !saw.has(groupId))) {
+						throw APIError.from("CONFLICT", LIST_CHANGED);
+					}
+					const wanted = [...new Set(groups)];
+					const found =
+						wanted.length > 0
+							? await db
+									.select({ name: schema.workspaceGroup.name })
+									.from(schema.workspaceGroup)
+									.where(
+										and(
+											eq(schema.workspaceGroup.organizationId, organizationId),
+											inArray(schema.workspaceGroup.id, wanted),
+										),
+									)
+									.all()
+							: [];
+					if (found.length !== wanted.length) throw APIError.from("NOT_FOUND", NO_GROUP);
 					const now = new Date();
 					// One batch, so nobody sees a list halfway. Those it leaves out lose what they hold only
 					// once the whole list is in, and an app opened to everyone takes nothing from anyone.
@@ -417,6 +444,7 @@ export function workspaceGroupsPlugin({ db, record }: GroupsConfig): BetterAuthP
 						detail: JSON.stringify({
 							workspace: await workspaceNameOf(db, organizationId),
 							name: app.name,
+							groups: found.map(({ name }) => name),
 						}),
 						...from,
 					}));

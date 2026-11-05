@@ -89,9 +89,26 @@ function appDetail(detail: string | null, app: string | null): { app: string; wo
 	};
 }
 
+/** The groups an app was kept to, once it has said. None is every member. */
+function groupsNamedIn(detail: string | null): string[] | undefined {
+	try {
+		const groups: unknown = JSON.parse(detail ?? "{}")?.groups;
+		return Array.isArray(groups) && groups.every((group) => typeof group === "string")
+			? groups
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 /** What a group's event keeps in `detail`. The group may be gone, and the workspace with it. */
-function groupDetail(detail: string | null): { group: string; workspace: string } {
-	let parsed: { group?: unknown } = {};
+function groupDetail(detail: string | null): {
+	group: string;
+	name: string | undefined;
+	was: string;
+	workspace: string;
+} {
+	let parsed: { group?: unknown; was?: unknown } = {};
 	try {
 		parsed = JSON.parse(detail ?? "{}");
 	} catch {
@@ -99,6 +116,8 @@ function groupDetail(detail: string | null): { group: string; workspace: string 
 	}
 	return {
 		group: typeof parsed?.group === "string" ? `the group ${parsed.group}` : "a group",
+		name: typeof parsed?.group === "string" ? parsed.group : undefined,
+		was: typeof parsed?.was === "string" ? `the group ${parsed.was}` : "a group",
 		workspace: workspaceDetail(detail).workspace,
 	};
 }
@@ -172,15 +191,21 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			return `Replaced the secret of ${appDetail(detail, app).app}`;
 		case "app_deleted":
 			return `Deleted the app ${appDetail(detail, app).app}`;
-		case "app_groups_changed":
-			return `Changed who can use ${appDetail(detail, app).app}`;
+		case "app_groups_changed": {
+			const called = appDetail(detail, app).app;
+			const groups = groupsNamedIn(detail);
+			if (!groups) return `Changed who can use ${called}`;
+			return groups.length > 0
+				? `Kept ${called} to ${groups.join(", ")}`
+				: `Opened ${called} to everyone in ${workspaceDetail(detail).workspace}`;
+		}
 		case "group_created": {
 			const { group, workspace } = groupDetail(detail);
 			return `Made ${group} in ${workspace}`;
 		}
 		case "group_renamed": {
-			const { group, workspace } = groupDetail(detail);
-			return `Changed a name to ${group} in ${workspace}`;
+			const { name, was, workspace } = groupDetail(detail);
+			return name ? `Renamed ${was} to ${name} in ${workspace}` : `Renamed ${was} in ${workspace}`;
 		}
 		case "group_deleted": {
 			const { group, workspace } = groupDetail(detail);

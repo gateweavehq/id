@@ -65,7 +65,7 @@ describe("describeActivity", () => {
 
 	it.each([
 		["group_created", "Made the group Sales in Acme"],
-		["group_renamed", "Changed a name to the group Sales in Acme"],
+		["group_renamed", "Renamed a group to Sales in Acme"],
 		["group_deleted", "Deleted the group Sales from Acme"],
 	])("says what %s was", (type, words) => {
 		expect(describeActivity(activity({ type, detail: aGroup }))).toBe(words);
@@ -97,11 +97,26 @@ describe("describeActivity", () => {
 		expect(describeActivity(activity({ type, detail: aGroup, other: null }))).toBe(own);
 	});
 
-	it("says who can use an app changed, under the name it had", () => {
-		const detail = JSON.stringify({ workspace: "Acme", name: "Wiki" });
-		expect(describeActivity(activity({ type: "app_groups_changed", detail }))).toBe(
-			"Changed who can use Wiki",
+	it("says what a group was called", () => {
+		const detail = JSON.stringify({ workspace: "Acme", group: "Growth", was: "Sales" });
+		expect(describeActivity(activity({ type: "group_renamed", detail }))).toBe(
+			"Renamed the group Sales to Growth in Acme",
 		);
+		expect(describeActivity(activity({ type: "group_renamed", detail: "not json" }))).toBe(
+			"Renamed a group in a workspace",
+		);
+	});
+
+	it.each([
+		[["Sales"], "Kept Wiki to Sales"],
+		[["Sales", "Growth"], "Kept Wiki to Sales, Growth"],
+		[[], "Opened Wiki to everyone in Acme"],
+		[undefined, "Changed who can use Wiki"],
+		[[7], "Changed who can use Wiki"],
+		["Sales", "Changed who can use Wiki"],
+	])("says who can use an app, under the name it had, given %j", (groups, words) => {
+		const detail = JSON.stringify({ workspace: "Acme", name: "Wiki", groups });
+		expect(describeActivity(activity({ type: "app_groups_changed", detail }))).toBe(words);
 	});
 
 	it.each(["not json", "null", "[]", '{"group":7}', null])(

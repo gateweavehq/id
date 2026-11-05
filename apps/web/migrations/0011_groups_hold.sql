@@ -1,10 +1,5 @@
 -- Custom SQL migration: what holds however a group comes to change.
 --
--- The tables in the last migration hold a person and a group, or an app and a group, to one workspace
--- with foreign keys over two columns. The parents' side of those is in these two indexes, on tables
--- that are generated.
-CREATE UNIQUE INDEX `member_id_organization_unique` ON `member` (`id`,`organization_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `oauthClient_clientId_referenceId_unique` ON `oauth_client` (`client_id`,`reference_id`);--> statement-breakpoint
 -- An app that names no group admits every member, so an app's last group going with nobody having chosen
 -- that would open the app to everyone. A group an app names therefore stays until an admin changes the
 -- app, which also means deleting a group never changes who can use anything. A workspace being deleted
@@ -60,7 +55,8 @@ BEGIN
 		);
 END;--> statement-breakpoint
 -- Apps can ask for the new scope. Only the server writes this column, and every workspace's app has this
--- list. An app that does not ask gets nothing new, and first-party apps keep what they have.
+-- list. An app that names its scopes and not this one gets nothing new, one that names none asks for all it
+-- may have, so its people are asked again, and first-party apps keep what they have.
 UPDATE `oauth_client`
 SET `scopes` = '["openid","profile","email","offline_access","groups"]'
 WHERE `reference_id` IS NOT NULL;
