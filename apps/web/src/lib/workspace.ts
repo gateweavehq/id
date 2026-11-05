@@ -191,6 +191,13 @@ export interface WorkspaceApp {
 	redirectUris: string[];
 	/** The groups it is narrowed to. With none, every member can use it. */
 	groups: string[];
+	/** When it was added, in milliseconds. */
+	addedAt: number | null;
+	/**
+	 * Who added it, which outlasts them: they may run its host, and so still reach the members who
+	 * allowed it. Null for an app added before ID kept this; `name` is null once the account is gone.
+	 */
+	addedBy: { name: string | null; stillMember: boolean } | null;
 }
 
 /** A group as someone in the workspace sees it. A member is told only of the groups they are in. */

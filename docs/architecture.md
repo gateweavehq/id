@@ -410,6 +410,12 @@ who may sign in trusts.
 - **Two columns say whose an app is.** `reference_id` finds a workspace's apps, and the triggers below use
   it. `metadata.workspace` is what the token hooks can see of the same fact, as they get the client's
   metadata and not its row. Both are written once, together.
+- **Who added an app outlasts them.** An app stays when the admin who added it leaves, and if they run its
+  host, the members who allowed it can still reach it. So `added_by`, a column of ours on the provider's
+  `oauth_client` (`migrations/0012_app_added_by.sql`, read with raw SQL because the provider's schema is
+  generated), holds their user id, with no foreign key. The app list shows who added each app and when,
+  and when they are no longer a member it says so and suggests replacing the secret or deleting the app.
+  The provider never writes the column. Apps added before it have none.
 - **An app stays on its host.** People agreed to that host, and it is where their `sub` comes from. If it
   could change, an admin could move everyone's consent to a host they never saw, and every person would
   look new to the app there. Paths on the host can change. To move, add a new app.

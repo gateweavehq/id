@@ -117,7 +117,14 @@ async function details(who: Who, workspace: Workspace) {
 	expect(response.status).toBe(200);
 	return (await response.json()) as {
 		you: { memberId: string };
-		apps: { clientId: string; name: string; redirectUris: string[]; groups: string[] }[];
+		apps: {
+			clientId: string;
+			name: string;
+			redirectUris: string[];
+			groups: string[];
+			addedAt: number | null;
+			addedBy: { name: string | null; stillMember: boolean } | null;
+		}[];
 		groups: { id: string; name: string; members: string[] }[];
 		appsEnabled: boolean;
 	};
@@ -326,7 +333,14 @@ describe("adding an app", () => {
 		expect(text).not.toContain(secret);
 		expect(text).not.toContain(String(row?.client_secret));
 		expect((await details(owner, workspace)).apps).toEqual([
-			{ clientId: app.clientId, name: app.name, redirectUris: [app.redirectUri], groups: [] },
+			{
+				clientId: app.clientId,
+				name: app.name,
+				redirectUris: [app.redirectUri],
+				groups: [],
+				addedAt: expect.any(Number),
+				addedBy: { name: "Ada", stillMember: true },
+			},
 		]);
 	});
 
@@ -451,6 +465,7 @@ describe("adding an app", () => {
 				workspace: workspace.id,
 				name: `Filler ${n}`,
 				redirectUris: [`https://filler-${n}.apps.test/callback`],
+				addedBy: owner.userId,
 			});
 			await id.db.prepare(insertStatement(row)).run();
 		}
@@ -510,6 +525,53 @@ describe("adding an app", () => {
 		const deleted = await api("/workspaces/apps/delete", { who: owner, body: which });
 		expect(deleted.status).toBe(200);
 		await id.auditEventRecorded(owner.userId, { type: "app_deleted", app: app.clientId, detail });
+	});
+});
+
+describe("who added an app", () => {
+	it("is shown with it, outlasts what changes it, and is flagged once they have left", async () => {
+		const owner = await newPerson("Ada");
+		const workspace = await newWorkspace(owner);
+		const grace = await newPerson("Grace");
+		const graceMember = await join(grace, workspace, owner, "admin");
+		const before = Date.now();
+		const app = await newApp(grace, workspace);
+		const listed = async () =>
+			(await details(owner, workspace)).apps.find(({ clientId }) => clientId === app.clientId);
+
+		const added = await listed();
+		expect(added?.addedBy).toEqual({ name: "Grace", stillMember: true });
+		expect(added?.addedAt).toBeGreaterThanOrEqual(before);
+
+		// The app's own changes, and the provider signing someone in to it, leave the column alone.
+		const which = { organizationId: workspace.id, clientId: app.clientId };
+		const changed = await api("/workspaces/apps/change", {
+			who: owner,
+			body: { ...which, name: "Renamed", redirectUris: [app.redirectUri] },
+		});
+		expect(changed.status).toBe(200);
+		expect((await api("/workspaces/apps/replace-secret", { who: owner, body: which })).status).toBe(
+			200,
+		);
+		expect((await appRowIn(app.clientId))?.added_by).toBe(grace.userId);
+
+		await remove(owner, workspace, graceMember);
+		expect((await listed())?.addedBy).toEqual({ name: "Grace", stillMember: false });
+	});
+
+	it("is left out for an app added before ID kept it", async () => {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const app = await newApp(owner, workspace);
+		await id.db
+			.prepare("UPDATE oauth_client SET added_by = NULL WHERE client_id = ?")
+			.bind(app.clientId)
+			.run();
+		const listed = (await details(owner, workspace)).apps.find(
+			({ clientId }) => clientId === app.clientId,
+		);
+		expect(listed?.addedBy).toBeNull();
+		expect(listed?.addedAt).not.toBeNull();
 	});
 });
 
@@ -961,7 +1023,14 @@ describe("changing an app", () => {
 		});
 		expect(response.status).toBe(200);
 		expect((await details(owner, workspace)).apps).toEqual([
-			{ clientId: app.clientId, name: "Renamed", redirectUris: [moved], groups: [] },
+			{
+				clientId: app.clientId,
+				name: "Renamed",
+				redirectUris: [moved],
+				groups: [],
+				addedAt: expect.any(Number),
+				addedBy: { name: "Ada", stillMember: true },
+			},
 		]);
 
 		const asked = await authorize({ ...app, redirectUri: moved }, owner);

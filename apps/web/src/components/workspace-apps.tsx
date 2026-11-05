@@ -311,6 +311,16 @@ function AppRow({
 				<p className="break-words text-muted-foreground">{hostOf(app)}</p>
 				<p className="font-mono text-xs break-all text-muted-foreground">{app.clientId}</p>
 				<p className="break-words text-muted-foreground">{whoCanUse(app, groups, workspaceName)}</p>
+				{app.addedAt !== null && (
+					<p className="break-words text-muted-foreground">{addedLine(app.addedAt, app.addedBy)}</p>
+				)}
+				{app.addedBy && !app.addedBy.stillMember && (
+					<p className="break-words">
+						{app.addedBy.name ?? "Whoever added it"} is no longer in this workspace. If they run{" "}
+						{hostOf(app)}, the people who allowed the app can still reach it: replace its secret or
+						delete it.
+					</p>
+				)}
 			</div>
 			{error && (
 				<p role="alert" className="text-destructive">
@@ -548,4 +558,10 @@ export function WorkspaceApps({
 			</form>
 		</section>
 	);
+}
+
+function addedLine(addedAt: number, addedBy: WorkspaceApp["addedBy"]): string {
+	const day = new Date(addedAt).toLocaleDateString(undefined, { dateStyle: "medium" });
+	if (!addedBy) return `Added ${day}`;
+	return `Added ${day} by ${addedBy.name ?? "someone whose account is gone"}`;
 }

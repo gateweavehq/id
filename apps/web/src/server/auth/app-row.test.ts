@@ -44,6 +44,7 @@ describe("workspaceAppRow", () => {
 		workspace: "workspace-1",
 		name: "Tool",
 		redirectUris: ["https://tool.example.com/callback"],
+		addedBy: "user-1",
 	};
 
 	it("always asks, and tells apps that do not trust each other nothing to match people by", () => {
@@ -58,6 +59,7 @@ describe("workspaceAppRow", () => {
 		const { row, clientId } = workspaceAppRow(app);
 		expect(row.reference_id).toBe("workspace-1");
 		expect(JSON.parse(row.metadata)).toEqual({ app: clientId, workspace: "workspace-1" });
+		expect(row.added_by).toBe("user-1");
 	});
 
 	it("keeps a hash of the secret, as any app does", () => {

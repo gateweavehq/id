@@ -242,6 +242,7 @@ test("names with nowhere to break stay on a phone, whatever is open", async ({ p
 	await page.getByRole("button", { name: "Add app" }).click();
 	await page.getByRole("button", { name: "I have saved it" }).click();
 
+	await expect(page.getByRole("list", { name: "Apps" })).toContainText("by Ada");
 	await page.setViewportSize({ width: 360, height: 740 });
 	const sticksOut = () =>
 		page.evaluate(() =>
