@@ -245,40 +245,71 @@ test("stops rather than point the copy at another Worker", () => {
 	assert.equal(run(copy, "status", "--porcelain"), "");
 });
 
-for (const [what, renamed] of [
-	[
-		"database",
-		(text) => text.replace('"binding": "DB"', '"binding": "DB", "database_name": "renamed-by-us"'),
-	],
-	[
-		"queue",
-		(text) =>
-			text.replace(
-				'"vars": {}',
-				'"queues": { "producers": [{ "queue": "renamed-by-us" }] },\n\t"vars": {}',
-			),
-	],
-]) {
-	test(`stops rather than point the copy at another ${what}`, () => {
-		writeTree(copy, {
-			...Object.fromEntries(
-				Object.entries(RELEASES["v0.9.0"]).filter(([file]) => !file.includes("workflows")),
-			),
-		});
-		run(copy, "commit", "--quiet", "-m", "back to the original names");
-		release("v0.11.0", {
-			...RELEASES["v0.10.0"],
-			"CHANGELOG.md": "# Changelog\n\n## [0.11.0] - 2026-03-01\n",
-			"wrangler.jsonc": renamed(wrangler("gateweave-id")),
-		});
-		const head = run(copy, "rev-parse", "HEAD");
-		const result = update();
-		assert.equal(result.status, 1);
-		assert.match(result.stderr, /another Worker, database or queue/);
-		assert.equal(run(copy, "rev-parse", "HEAD"), head);
-		assert.equal(run(copy, "status", "--porcelain"), "");
+const QUEUE_LINE = (name) => `"queues": { "producers": [{ "queue": "${name}" }] },\n\t"vars": {}`;
+const withQueue = (name) => wrangler("gateweave-id").replace('"vars": {}', QUEUE_LINE(name));
+const ORIGINAL = () =>
+	Object.fromEntries(
+		Object.entries(RELEASES["v0.9.0"]).filter(([file]) => !file.includes("workflows")),
+	);
+
+test("stops rather than point the copy at another database", () => {
+	writeTree(copy, ORIGINAL());
+	run(copy, "commit", "--quiet", "-m", "back to the original names");
+	release("v0.11.0", {
+		...RELEASES["v0.10.0"],
+		"CHANGELOG.md": "# Changelog\n\n## [0.11.0] - 2026-03-01\n",
+		"wrangler.jsonc": wrangler("gateweave-id").replace(
+			'"binding": "DB"',
+			'"binding": "DB", "database_name": "renamed-by-us"',
+		),
 	});
-}
+	const head = run(copy, "rev-parse", "HEAD");
+	const result = update();
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /another Worker, database or queue/);
+	assert.equal(run(copy, "rev-parse", "HEAD"), head);
+	assert.equal(run(copy, "status", "--porcelain"), "");
+});
+
+test("stops rather than point the copy at another queue", () => {
+	const withItsQueue = {
+		...RELEASES["v0.10.0"],
+		"CHANGELOG.md": "# Changelog\n\n## [0.11.0] - 2026-03-01\n",
+		"wrangler.jsonc": withQueue("gateweave-id-logouts"),
+	};
+	release("v0.11.0", withItsQueue);
+	writeTree(
+		copy,
+		Object.fromEntries(
+			Object.entries(withItsQueue).filter(([file]) => !file.includes("workflows")),
+		),
+	);
+	run(copy, "commit", "--quiet", "-m", "a copy of the release with a queue");
+	release("v0.12.0", {
+		...withItsQueue,
+		"CHANGELOG.md": "# Changelog\n\n## [0.12.0] - 2026-04-01\n",
+		"wrangler.jsonc": withQueue("renamed-by-us"),
+	});
+	const head = run(copy, "rev-parse", "HEAD");
+	const result = update();
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /another Worker, database or queue/);
+	assert.equal(run(copy, "rev-parse", "HEAD"), head);
+	assert.equal(run(copy, "status", "--porcelain"), "");
+});
+
+test("takes a first queue from a release, for a copy from before there were any", () => {
+	writeTree(copy, ORIGINAL());
+	run(copy, "commit", "--quiet", "-m", "back to the original names");
+	release("v0.11.0", {
+		...RELEASES["v0.10.0"],
+		"CHANGELOG.md": "# Changelog\n\n## [0.11.0] - 2026-03-01\n",
+		"wrangler.jsonc": withQueue("gateweave-id-logouts"),
+	});
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(read("wrangler.jsonc"), /gateweave-id-logouts/);
+});
 
 test("minds nothing a release changes in its own environments", () => {
 	const withEnv = (id) =>

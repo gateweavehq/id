@@ -67,11 +67,17 @@ function currentRelease() {
  */
 function identity(wrangler) {
 	const [topLevel = ""] = wrangler.split(/"env"\s*:/);
-	return ["name", "database_id", "database_name", "queue"]
-		.flatMap((key) =>
-			[...topLevel.matchAll(new RegExp(`"${key}":\\s*"([^"]*)"`, "g"))].map((found) => found[1]),
-		)
-		.join(" ");
+	const named = (key) =>
+		[...topLevel.matchAll(new RegExp(`"${key}":\\s*"([^"]*)"`, "g"))].map((found) => found[1]);
+	return {
+		worker: ["name", "database_id", "database_name"].flatMap(named).join(" "),
+		queues: named("queue").join(" "),
+	};
+}
+
+/** A release may bring a copy its first queue, which the deploy makes. One it has must stay. */
+function sameResources(before, after) {
+	return before.worker === after.worker && (!before.queues || before.queues === after.queues);
 }
 
 /**
@@ -170,7 +176,7 @@ if (conflicts.length > 0) {
 
 const before = identity(git("show", `${head}:wrangler.jsonc`));
 const after = identity(git("show", ":wrangler.jsonc"));
-if (before !== after) {
+if (!sameResources(before, after)) {
 	git("reset", "--hard", "--quiet");
 	stop(
 		"The update would point wrangler.jsonc at another Worker, database or queue, so nothing was changed.",
