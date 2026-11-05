@@ -7,6 +7,8 @@ const REFUSALS: Record<string, string> = {
 	EMAIL_NOT_VERIFIED: NO_VERIFIED_ADDRESS,
 	account_not_linked: NO_VERIFIED_ADDRESS,
 	email_not_found: NO_VERIFIED_ADDRESS,
+	SIGN_UP_CLOSED:
+		"This server takes new accounts by invitation. Ask whoever runs it to invite you.",
 };
 
 /**

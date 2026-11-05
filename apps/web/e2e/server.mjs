@@ -55,6 +55,8 @@ const app = appRow({ app: "browser-tests", name: APP.name, redirectUris: [APP.re
 const refusing = appRow({ app: "refusing", name: "Refusing", redirectUris: [APP.redirectUri] });
 const now = Date.now();
 const seed = [
+	// A new deployment takes accounts by invitation, and each test here makes its own by signing up.
+	`UPDATE "deployment" SET sign_up = 'open' WHERE id = 1;`,
 	insertStatement(app.row),
 	insertStatement({ ...refusing.row, metadata: "{}" }),
 	`INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)

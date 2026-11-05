@@ -28,6 +28,7 @@ import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { workspaceInvitationEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
+import { mayMakeWorkspaces, ONLY_THE_OWNER_MAKES_WORKSPACES } from "./deployment";
 import {
 	type Member,
 	memberOf,
@@ -163,7 +164,11 @@ function gateRules({ db, mailer, allowInvitation }: WorkspacesConfig): Record<st
 	return {
 		"/organization/create": rule(
 			z.strictObject({ name: workspaceName, slug: workspaceSlug }),
-			async () => {},
+			async (_body, session) => {
+				if (!(await mayMakeWorkspaces(db, session.user.id))) {
+					throw APIError.from("FORBIDDEN", ONLY_THE_OWNER_MAKES_WORKSPACES);
+				}
+			},
 		),
 		"/organization/update": rule(
 			z.strictObject({ ...inWorkspace, data: z.strictObject({ name: workspaceName }) }),
@@ -368,7 +373,11 @@ function listWorkspaces(db: Database) {
 				.where(eq(schema.member.userId, user.id))
 				.orderBy(asc(schema.organization.name))
 				.all();
-			return { workspaces, invitations: await invitationsFor(db, user) };
+			const [invitations, canCreate] = await Promise.all([
+				invitationsFor(db, user),
+				mayMakeWorkspaces(db, user.id),
+			]);
+			return { workspaces, invitations, canCreate };
 		},
 	);
 }

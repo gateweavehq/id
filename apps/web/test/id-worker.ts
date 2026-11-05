@@ -190,6 +190,9 @@ function builtModules(): V4ModuleDefinition[] {
  *
  * `settings` adds plain settings, such as the legal pages' addresses.
  *
+ * Sign-up is open, so that a test can make people at will, unless `newDeployment` leaves it as a
+ * deployment starts: closed, with the first account owning it.
+ *
  * With `isolates` above 1, more copies of the Worker share the database and Durable Objects but
  * nothing in memory, as isolates in production do. `fetchIn` reaches a given one.
  */
@@ -204,6 +207,7 @@ export async function startId(
 		oidc = true,
 		pinned = true,
 		settings = {},
+		newDeployment = false,
 	}: {
 		isolates?: number;
 		email?: boolean;
@@ -213,6 +217,7 @@ export async function startId(
 		oidc?: boolean;
 		pinned?: boolean;
 		settings?: Record<string, string>;
+		newDeployment?: boolean;
 	} = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
@@ -311,6 +316,7 @@ export async function startId(
 			.filter(Boolean);
 		await db.batch(statements.map((statement) => db.prepare(statement)));
 	}
+	if (!newDeployment) await db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
 
 	async function auditEvents(userId: string): Promise<AuditEventRow[]> {
 		const { results } = await db
