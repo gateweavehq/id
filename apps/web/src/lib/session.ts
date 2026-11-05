@@ -25,6 +25,13 @@ export const getAuthOptions = createServerFn({ method: "GET" }).handler(async ()
 	};
 });
 
+/** Who can make an account here. Apart from the options, which ask nothing of the database. */
+export const getSignUpState = createServerFn({ method: "GET" }).handler(async () => {
+	const { db } = await import("#/server/auth");
+	const { signUpState } = await import("#/server/auth/deployment");
+	return signUpState(db);
+});
+
 export const getLegalLinks = createServerFn({ method: "GET" }).handler(async () => {
 	const { legalLinks } = await import("#/server/legal");
 	return legalLinks();

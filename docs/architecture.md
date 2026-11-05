@@ -78,6 +78,35 @@ want, because signing in with only a mailbox would skip the password and two-fac
 The first password goes through `/account/first-password`, which needs a session from the last day.
 Setting a password outlasts a stolen cookie, so an old session cannot do it.
 
+## Who owns a deployment
+
+**On a new server, the first account owns it and sign-up closes behind it.** Someone who deploys ID for
+their team should not find later that anyone could make an account there, and apps and Cloudflare Access
+may trust whoever has one.
+
+One row in `deployment` says who the owner is and whether sign-up is open. `apps/web/src/server/auth/deployment.ts`
+asks it, and the triggers in `0014_deployment_hold.sql` hold it.
+
+- **Closed means an address needs a way in:** an invitation from the owner, or a pending one from a
+  workspace. Neither lasts past its expiry, and an owner's goes with the account it made.
+- **The database refuses the rest, whatever makes the account.** The hook in `auth/config.ts` asks first so
+  that the answer has words, including at the sign-in page for someone coming back from GitHub. A way of
+  making accounts added later that forgets to ask still cannot make one. A missing row counts as closed.
+- **Outside, an address with no way in looks like any other.** Asking for a code gets the same answer, and
+  nothing is stored or sent. That comes before the cap on codes per address, so a stranger cannot use up
+  someone's codes ahead of their invitation, or learn from the cap who has been invited.
+- **A code does not outlast the way in.** If the invitation goes while a code is on its way, the right code
+  is refused, and so is the second of two people who asked while the server had no accounts.
+- **On a closed server, only the owner makes workspaces.** A workspace's invitation is a way in, so anyone
+  who could make a workspace could let in anyone at all. Those the owner makes admins of a workspace can
+  invite to it.
+- **An upgrade changes nothing for a deployment that has accounts.** It stays open, with its oldest account
+  as the owner, and only the owner's name is new.
+
+Two people cannot both be first: D1 runs writes one at a time, and the second finds an account there. Until
+the first account exists, though, the first to arrive is the owner, whoever they are, so a new server should
+be claimed as soon as it is up.
+
 ## Signing in with GitHub
 
 GitHub is a second way to prove an address, under the same rule: no account without a verified one.

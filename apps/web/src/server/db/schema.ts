@@ -1,5 +1,7 @@
 // D1 holds identity. Better Auth's tables are generated (see auth-schema.ts).
+import { sql } from "drizzle-orm";
 import {
+	check,
 	foreignKey,
 	index,
 	integer,
@@ -8,7 +10,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import { member, oauthClient, organization } from "./auth-schema";
+import { member, oauthClient, organization, user } from "./auth-schema";
 
 export * from "./auth-schema";
 
@@ -116,3 +118,33 @@ export const auditEvent = sqliteTable(
 		index("audit_event_at_idx").on(table.at),
 	],
 );
+
+/**
+ * "Who owns a deployment" in docs/architecture.md. One row: who runs this server, and whether anyone may
+ * make an account on it. The row comes from a migration, and triggers there hold what it says.
+ */
+export const deployment = sqliteTable(
+	"deployment",
+	{
+		id: integer("id").primaryKey(),
+		ownerId: text("owner_id").references(() => user.id, { onDelete: "set null" }),
+		signUp: text("sign_up", { enum: ["closed", "open"] }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+	},
+	(table) => [
+		check("deployment_one_row", sql`${table.id} = 1`),
+		check("deployment_sign_up", sql`${table.signUp} IN ('closed', 'open')`),
+	],
+);
+
+/** The owner vouching for an address. Whoever holds the link has it, so only its hash is kept. */
+export const deploymentInvitation = sqliteTable("deployment_invitation", {
+	id: text("id").primaryKey(),
+	email: text("email").notNull().unique(),
+	tokenHash: text("token_hash").notNull().unique(),
+	invitedBy: text("invited_by")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
