@@ -16,8 +16,8 @@ import { mayMakeAccount } from "./deployment";
 // Sign-up proves the address before an account exists, and the password comes after that. See
 // "Sign-up" in docs/architecture.md for the attack this closes.
 
-const SEND_CODE = "/email-otp/send-verification-otp";
-const USE_CODE = "/sign-in/email-otp";
+export const SEND_CODE = "/email-otp/send-verification-otp";
+export const USE_CODE = "/sign-in/email-otp";
 const UPDATE_USER = "/update-user";
 const FIRST_PASSWORD = "/account/first-password";
 
@@ -133,12 +133,17 @@ export function signUpHooks(
 						message: "Codes are only for signing up.",
 					});
 				}
-				const email = address.safeParse(ctx.body?.email);
+				// Lowercased first, as the plugin does. U+212A, the Kelvin sign, is no part of an address
+				// until then, so an address written with it would pass here unasked about and then get a
+				// code from the plugin.
+				const email = address.safeParse(
+					typeof ctx.body?.email === "string" ? ctx.body.email.toLowerCase() : undefined,
+				);
 				// The plugin answers an address that is not one. Otherwise, with no way in or over the
 				// cap, nothing is stored or sent and the answer stays the same, as for an email the
 				// mailer drops.
 				if (email.success) {
-					const asked = email.data.toLowerCase();
+					const asked = email.data;
 					if (
 						!(await mayMakeAccount(db, asked)) &&
 						!(await ctx.context.internalAdapter.findUserByEmail(asked))

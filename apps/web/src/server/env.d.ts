@@ -40,6 +40,8 @@ declare namespace Cloudflare {
 		LEGAL_NOTICE_URL?: string;
 		PRIVACY_POLICY_URL?: string;
 		TERMS_URL?: string;
+		/** Least time in ms to answer about a sign-up code. 1000 unless set (tests). */
+		ANSWER_FLOOR_MS?: string;
 		/** Seconds before a missed back-channel logout is first tried again. 60 unless set (tests). */
 		LOGOUT_RETRY_SECONDS?: string;
 	}

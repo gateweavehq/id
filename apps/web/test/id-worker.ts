@@ -264,6 +264,8 @@ export async function startId(
 						...(breachedPasswords ? { CHECK_BREACHED_PASSWORDS: "1" } : {}),
 						...(oidc ? { OIDC_PAIRWISE_SECRET: PAIRWISE_SECRET } : {}),
 						LOGOUT_RETRY_SECONDS: "1",
+						// A second more for every sign-up in every test. test/deployment.test.ts turns it on.
+						ANSWER_FLOOR_MS: "0",
 						...settings,
 					},
 					queueProducers: { LOGOUTS: "logouts" },
