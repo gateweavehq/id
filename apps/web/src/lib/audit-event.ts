@@ -25,6 +25,12 @@ export const AUDIT_EVENT_TYPES = [
 	"app_changed",
 	"app_secret_replaced",
 	"app_deleted",
+	"app_groups_changed",
+	"group_created",
+	"group_renamed",
+	"group_deleted",
+	"group_member_added",
+	"group_member_removed",
 	"workspace_created",
 	"workspace_renamed",
 	"workspace_deleted",
@@ -80,6 +86,20 @@ function appDetail(detail: string | null, app: string | null): { app: string; wo
 	return {
 		app: typeof parsed?.name === "string" ? parsed.name : (app ?? "an app"),
 		...(typeof parsed?.workspace === "string" && { workspace: parsed.workspace }),
+	};
+}
+
+/** What a group's event keeps in `detail`. The group may be gone, and the workspace with it. */
+function groupDetail(detail: string | null): { group: string; workspace: string } {
+	let parsed: { group?: unknown } = {};
+	try {
+		parsed = JSON.parse(detail ?? "{}");
+	} catch {
+		// Words without the name are still better than nothing.
+	}
+	return {
+		group: typeof parsed?.group === "string" ? `the group ${parsed.group}` : "a group",
+		workspace: workspaceDetail(detail).workspace,
 	};
 }
 
@@ -152,6 +172,34 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			return `Replaced the secret of ${appDetail(detail, app).app}`;
 		case "app_deleted":
 			return `Deleted the app ${appDetail(detail, app).app}`;
+		case "app_groups_changed":
+			return `Changed who can use ${appDetail(detail, app).app}`;
+		case "group_created": {
+			const { group, workspace } = groupDetail(detail);
+			return `Made ${group} in ${workspace}`;
+		}
+		case "group_renamed": {
+			const { group, workspace } = groupDetail(detail);
+			return `Changed a name to ${group} in ${workspace}`;
+		}
+		case "group_deleted": {
+			const { group, workspace } = groupDetail(detail);
+			return `Deleted ${group} from ${workspace}`;
+		}
+		case "group_member_added": {
+			const { group, workspace } = groupDetail(detail);
+			if (byOther) return `${someone} added you to ${group} in ${workspace}`;
+			return other
+				? `Added ${other} to ${group} in ${workspace}`
+				: `Joined ${group} in ${workspace}`;
+		}
+		case "group_member_removed": {
+			const { group, workspace } = groupDetail(detail);
+			if (byOther) return `${someone} took you out of ${group} in ${workspace}`;
+			return other
+				? `Took ${other} out of ${group} in ${workspace}`
+				: `Left ${group} in ${workspace}`;
+		}
 		case "workspace_created":
 			return `Created the workspace ${workspaceDetail(detail).workspace}`;
 		case "workspace_renamed":

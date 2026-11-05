@@ -46,6 +46,187 @@ function appHeading(page: Page) {
 	return page.getByRole("heading", { name: "Back at the app" });
 }
 
+test("an admin keeps an app to a group, and each person is told what is theirs", async ({
+	page,
+	baseURL,
+}) => {
+	const problems = await watch(page);
+	const workspaceName = `Crew ${Date.now()}`;
+	const bobEmail = address("bob");
+	const carolEmail = address("carol");
+	const bob = await newDevice(page, baseURL);
+	const carol = await newDevice(page, baseURL);
+
+	await signUp(page, "Ada", address("ada"));
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	const slug = await makeWorkspace(page, workspaceName);
+
+	for (const [person, name, email] of [
+		[bob, "Bob", bobEmail],
+		[carol, "Carol", carolEmail],
+	] as const) {
+		await signUp(person, name, email);
+		await expect(person.getByRole("heading", { name: "Your account" })).toBeVisible();
+		const since = Date.now() - 1000;
+		await page.getByLabel("Their email").fill(email);
+		await page.getByRole("button", { name: "Send invitation" }).click();
+		await expect(page.getByText(`An invitation is on its way to ${email}.`)).toBeVisible();
+		await person.goto(await linkSentSince(since, email), { waitUntil: "networkidle" });
+		await person.getByRole("button", { name: "Join workspace" }).click();
+		await expect(person.getByRole("heading", { name: "Your workspaces" })).toBeVisible();
+	}
+	await page.reload({ waitUntil: "networkidle" });
+
+	const groups = page.getByRole("list", { name: "Groups", exact: true });
+
+	await test.step("a group, with someone in it", async () => {
+		await page.getByLabel("Group name").fill("!!!");
+		await page.getByRole("button", { name: "Add group" }).click();
+		await expect(page.getByRole("alert")).toHaveText("A name needs a letter or a digit.");
+
+		await page.getByLabel("Group name").fill("Engineers");
+		await page.getByRole("button", { name: "Add group" }).click();
+		await expect(groups).toContainText("Engineers");
+		await expect(groups).toContainText("No app uses it yet.");
+
+		await page.getByLabel("Add someone to Engineers").selectOption({ label: `Bob (${bobEmail})` });
+		await page.getByRole("button", { name: "Add to Engineers" }).click();
+		await expect(page.getByRole("list", { name: "People in Engineers" })).toContainText("Bob");
+	});
+
+	const clientId = await test.step("an app, kept to it", async () => {
+		await page.getByLabel("App name").fill("Field Notes");
+		await page.getByLabel(/^Redirect URIs/).fill(APP.redirectUri);
+		await page.getByRole("button", { name: "Add app" }).click();
+		const added = await page.getByLabel("Client ID").inputValue();
+		await page.getByRole("button", { name: "I have saved it" }).click();
+
+		const apps = page.getByRole("list", { name: "Apps" });
+		await expect(apps).toContainText(`Everyone in ${workspaceName} can use it.`);
+		await page.getByRole("button", { name: "Change who can use Field Notes" }).click();
+		await page.getByLabel("Only people in these groups").check();
+		const save = page.getByRole("button", { name: "Save who can use Field Notes" });
+		await expect(save).toBeDisabled();
+		await page.getByLabel("Engineers", { exact: true }).check();
+		await save.click();
+		await expect(apps).toContainText("Only Engineers can use it.");
+		await expect(groups).toContainText("Used by Field Notes.");
+		return added;
+	});
+
+	await test.step("deleting the group would open the app, so it says why not", async () => {
+		await page.getByRole("button", { name: "Delete Engineers", exact: true }).click();
+		await page.getByRole("button", { name: "Yes, delete Engineers" }).click();
+		await expect(page.getByRole("alert")).toContainText("Used by Field Notes");
+		await expect(groups).toContainText("Engineers");
+		await expect(page.getByRole("button", { name: "Yes, delete Engineers" })).toHaveCount(0);
+	});
+
+	await test.step("it fits on a phone", async () => {
+		await page.setViewportSize({ width: 360, height: 740 });
+		expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+		await page.setViewportSize({ width: 1280, height: 720 });
+	});
+
+	await test.step("a member sees their own group, and no one else's", async () => {
+		await bob.goto(`/workspaces/${slug}`, { waitUntil: "networkidle" });
+		await expect(bob.getByRole("heading", { name: "Your groups" })).toBeVisible();
+		await expect(bob.locator("main")).toContainText("Engineers");
+		await expect(bob.getByRole("button", { name: "Add group" })).toHaveCount(0);
+
+		await carol.goto(`/workspaces/${slug}`, { waitUntil: "networkidle" });
+		await expect(carol.getByRole("heading", { name: workspaceName, exact: true })).toBeVisible();
+		await expect(carol.getByRole("heading", { name: "Your groups" })).toHaveCount(0);
+		await expect(carol.locator("body")).not.toContainText("Engineers");
+	});
+
+	await test.step("someone in the workspace but not the group hears nothing of the app", async () => {
+		await goToSignIn(carol, clientId);
+		await expect(carol).toHaveURL(/\/no-access/);
+		await expect(carol.locator("body")).not.toContainText("Field Notes");
+	});
+
+	await test.step("someone in the group is asked, in words, and gets in", async () => {
+		await goToSignIn(bob, clientId, { scope: "openid groups" });
+		await expect(bob.getByText("See which of this workspace's groups you are in")).toBeVisible();
+		await bob.getByRole("button", { name: "Allow" }).click();
+		await expect(appHeading(bob)).toBeVisible();
+	});
+
+	await test.step("taken out, they are turned away, and asked again when put back", async () => {
+		await page.getByRole("button", { name: "Take Bob out of Engineers" }).click();
+		await expect(page.getByRole("list", { name: "People in Engineers" })).toHaveCount(0);
+		await goToSignIn(bob, clientId, { scope: "openid groups" });
+		await expect(bob).toHaveURL(/\/no-access/);
+
+		await page.getByLabel("Add someone to Engineers").selectOption({ label: `Bob (${bobEmail})` });
+		await page.getByRole("button", { name: "Add to Engineers" }).click();
+		await expect(page.getByRole("list", { name: "People in Engineers" })).toContainText("Bob");
+		await goToSignIn(bob, clientId, { scope: "openid groups" });
+		await expect(bob.getByRole("button", { name: "Allow" })).toBeVisible();
+	});
+
+	await test.step("opened again, everyone can use it, and the group can go", async () => {
+		await page.getByRole("button", { name: "Change who can use Field Notes" }).click();
+		await page.getByLabel(`Everyone in ${workspaceName}`).check();
+		await page.getByRole("button", { name: "Save who can use Field Notes" }).click();
+		await expect(page.getByRole("list", { name: "Apps" })).toContainText(
+			`Everyone in ${workspaceName} can use it.`,
+		);
+		await goToSignIn(carol, clientId);
+		await expect(carol.getByRole("button", { name: "Allow" })).toBeVisible();
+
+		await page.getByRole("button", { name: "Delete Engineers", exact: true }).click();
+		await page.getByRole("button", { name: "Yes, delete Engineers" }).click();
+		await expect(groups).toHaveCount(0);
+	});
+
+	expect(problems).toEqual([]);
+	await bob.context().close();
+	await carol.context().close();
+});
+
+test("names with nowhere to break stay on a phone, whatever is open", async ({ page }) => {
+	const workspaceName = "W".repeat(60);
+	const groupName = "G".repeat(60);
+	const appName = "A".repeat(60);
+	await signUp(page, "Ada", address("ada"));
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	await makeWorkspace(page, workspaceName);
+
+	await page.getByLabel("Group name").fill(groupName);
+	await page.getByRole("button", { name: "Add group" }).click();
+	await expect(page.getByRole("list", { name: "Groups", exact: true })).toContainText(groupName);
+	await page.getByLabel("App name").fill(appName);
+	await page.getByLabel(/^Redirect URIs/).fill(APP.redirectUri);
+	await page.getByRole("button", { name: "Add app" }).click();
+	await page.getByRole("button", { name: "I have saved it" }).click();
+
+	await page.setViewportSize({ width: 360, height: 740 });
+	const sticksOut = () =>
+		page.evaluate(() =>
+			[...document.querySelectorAll("main *")]
+				.filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+				.map((element) => `${element.tagName} ${element.textContent?.slice(0, 40)}`),
+		);
+	expect(await sticksOut()).toEqual([]);
+
+	await page.getByRole("button", { name: `Change who can use ${appName}` }).click();
+	await page.getByLabel("Only people in these groups").check();
+	await page.getByLabel(groupName, { exact: true }).check();
+	await expect(page.getByRole("button", { name: `Save who can use ${appName}` })).toBeEnabled();
+	expect(await sticksOut()).toEqual([]);
+
+	await page.getByRole("button", { name: `Rename ${groupName}` }).click();
+	await expect(page.getByRole("button", { name: `Save ${groupName}` })).toBeVisible();
+	expect(await sticksOut()).toEqual([]);
+	await page.getByRole("button", { name: "Cancel" }).first().click();
+
+	await page.getByRole("button", { name: `Delete ${groupName}`, exact: true }).click();
+	await expect(page.getByRole("button", { name: `Yes, delete ${groupName}` })).toBeVisible();
+	expect(await sticksOut()).toEqual([]);
+});
+
 test("an admin adds an app, and only members get in, once they agree", async ({
 	page,
 	baseURL,

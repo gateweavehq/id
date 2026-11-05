@@ -457,6 +457,39 @@ who may sign in trusts.
 An app belongs to its workspace, so it stays when the admin who added it leaves. If they run its host,
 the members who agreed to it can still reach it until someone deletes it.
 
+### Groups
+
+A group is part of a workspace, and an admin can narrow an app to some of them. Apps can also ask which ones
+someone is in. These are three tables of our own (`workspace_group`, `workspace_group_member` and
+`workspace_app_group`), not the organization plugin's teams: those add columns to every session and
+invitation for an "active team" nothing here would read, and hold a team's member to the workspace only in
+code, in a transaction D1 does not give it.
+
+- **One workspace, by foreign key.** A person's place in a group and an app's use of one each carry the
+  workspace, in foreign keys over two columns, so nothing can put someone in another workspace's group or
+  name it on an app. Someone leaving a workspace leaves its groups by the same keys, and comes back in none.
+- **Who gets in.** `maySignIn` is still one query: a member, and either the app names no groups or the member
+  is in one it names. So it holds at authorization, at the consent page and on every refresh, and a group with
+  nobody in it admits nobody. Being an owner or an admin lets nobody in.
+- **A group an app names stays.** No row in `workspace_app_group` means every member, so an app's last group
+  going would open the app to everyone with nobody having chosen that. The trigger
+  `group_an_app_names_stays` refuses to delete a group any app names, and the endpoint says which apps. So
+  deleting a group never changes who can use anything, and an app opens to everyone only when an admin says so.
+  A workspace being deleted has gone by the time its groups follow, so they are free to go, as members are.
+- **Losing access is immediate.** Someone taken out of a group loses what they hold for the apps it opened,
+  unless another of their groups opens them too: the trigger `group_member_delete_ends_app_access`, on the
+  same three tables as the one for members. Narrowing an app does the same for those it leaves out, in the batch
+  that changes its list, because a trigger on each row would see each step, and narrowing to two groups would
+  first strand everyone in the second. Consent goes as well, so they are asked again if they come back, and a
+  token that was on its way as this happened goes as it arrives, for want of a consent.
+- **The claim.** `groups` is a scope on the row of a workspace's app and no other, since a first-party app has
+  no workspace to speak of. The claim holds the names of the person's groups in the workspace on the app's row,
+  which only the server writes, in the ID token and at userinfo. It holds names because they are what an admin
+  sees and what apps can be set up to match, and names within a workspace cannot pass for each other
+  (`comparable_name`). Renaming a group therefore changes what apps see, the next time they look.
+- **Who sees them.** Admins see every group and who is in it. A member sees only the groups they are in, since
+  an app can be told those, and of the people in them only themselves.
+
 ### Taking an app back
 
 Someone can see the apps they allowed on their account page and take one back, which ends its access

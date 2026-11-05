@@ -1,7 +1,85 @@
 // D1 holds identity. Better Auth's tables are generated (see auth-schema.ts).
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	foreignKey,
+	index,
+	integer,
+	primaryKey,
+	sqliteTable,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/sqlite-core";
+import { member, oauthClient, organization } from "./auth-schema";
 
 export * from "./auth-schema";
+
+/**
+ * "Groups" in docs/architecture.md. Part of a workspace, which an admin can narrow an app to. The two
+ * tables under it carry the workspace as well, so that their foreign keys hold a person and a group,
+ * or an app and a group, to the same one. Nothing can put someone in another workspace's group.
+ */
+export const workspaceGroup = sqliteTable(
+	"workspace_group",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		/** `comparableName(name)`, since apps match on names and two that look alike would pass for one. */
+		comparableName: text("comparable_name").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("workspace_group_id_organization_unique").on(table.id, table.organizationId),
+		uniqueIndex("workspace_group_name_unique").on(table.organizationId, table.comparableName),
+	],
+);
+
+export const workspaceGroupMember = sqliteTable(
+	"workspace_group_member",
+	{
+		groupId: text("group_id").notNull(),
+		memberId: text("member_id").notNull(),
+		organizationId: text("organization_id").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.groupId, table.memberId] }),
+		foreignKey({
+			columns: [table.groupId, table.organizationId],
+			foreignColumns: [workspaceGroup.id, workspaceGroup.organizationId],
+		}).onDelete("cascade"),
+		foreignKey({
+			columns: [table.memberId, table.organizationId],
+			foreignColumns: [member.id, member.organizationId],
+		}).onDelete("cascade"),
+		index("workspace_group_member_member_idx").on(table.memberId),
+	],
+);
+
+/** The groups an app is narrowed to. An app with no rows here admits every member of its workspace. */
+export const workspaceAppGroup = sqliteTable(
+	"workspace_app_group",
+	{
+		clientId: text("client_id").notNull(),
+		groupId: text("group_id").notNull(),
+		organizationId: text("organization_id").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.clientId, table.groupId] }),
+		foreignKey({
+			columns: [table.clientId, table.organizationId],
+			foreignColumns: [oauthClient.clientId, oauthClient.referenceId],
+		}).onDelete("cascade"),
+		foreignKey({
+			columns: [table.groupId, table.organizationId],
+			foreignColumns: [workspaceGroup.id, workspaceGroup.organizationId],
+		}).onDelete("cascade"),
+		index("workspace_app_group_group_idx").on(table.groupId),
+	],
+);
 
 /**
  * "Audit log" in docs/architecture.md. It holds no foreign keys, because a log someone can empty by

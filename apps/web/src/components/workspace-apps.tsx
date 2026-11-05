@@ -4,7 +4,12 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
-import { type WorkspaceApp, type WorkspaceDetails, workspaceFailure } from "#/lib/workspace";
+import {
+	type WorkspaceApp,
+	type WorkspaceDetails,
+	type WorkspaceGroup,
+	workspaceFailure,
+} from "#/lib/workspace";
 
 const GUIDE = "https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md";
 
@@ -99,18 +104,118 @@ function SecretOnce({ revealed, onDone }: { revealed: Revealed; onDone: () => vo
 	);
 }
 
+/** Who can use it, in words, so an admin need not open anything to find out. */
+function whoCanUse(app: WorkspaceApp, groups: WorkspaceGroup[], workspaceName: string): string {
+	if (app.groups.length === 0) return `Everyone in ${workspaceName} can use it.`;
+	const names = groups.filter(({ id }) => app.groups.includes(id)).map(({ name }) => name);
+	return `Only ${names.join(", ")} can use it.`;
+}
+
+function WhoCanUse({
+	app,
+	groups,
+	workspaceName,
+	pending,
+	onSave,
+	onCancel,
+}: {
+	app: WorkspaceApp;
+	groups: WorkspaceGroup[];
+	workspaceName: string;
+	pending: boolean;
+	onSave: (groups: string[]) => void;
+	onCancel: () => void;
+}) {
+	const [narrowed, setNarrowed] = useState(app.groups.length > 0);
+	const [chosen, setChosen] = useState(app.groups);
+	const name = `who-${app.clientId}`;
+
+	function toggle(id: string, on: boolean) {
+		setChosen((held) => (on ? [...held, id] : held.filter((other) => other !== id)));
+	}
+
+	return (
+		<form
+			className="space-y-3"
+			onSubmit={(event) => {
+				event.preventDefault();
+				onSave(narrowed ? chosen : []);
+			}}
+		>
+			<fieldset className="min-w-0 space-y-2">
+				<legend className="max-w-full font-medium wrap-anywhere">Who can use {app.name}</legend>
+				<label className="flex items-center gap-2 wrap-anywhere">
+					<input type="radio" name={name} checked={!narrowed} onChange={() => setNarrowed(false)} />
+					Everyone in {workspaceName}
+				</label>
+				<label className="flex items-center gap-2">
+					<input
+						type="radio"
+						name={name}
+						checked={narrowed}
+						disabled={groups.length === 0}
+						onChange={() => setNarrowed(true)}
+					/>
+					Only people in these groups
+				</label>
+				{groups.length === 0 && (
+					<p className="text-muted-foreground">Make a group first, under Groups.</p>
+				)}
+				{narrowed && (
+					<ul aria-label={`Groups that can use ${app.name}`} className="space-y-1 pl-6">
+						{groups.map((group) => (
+							<li key={group.id}>
+								<label className="flex items-center gap-2 wrap-anywhere">
+									<input
+										type="checkbox"
+										checked={chosen.includes(group.id)}
+										onChange={(event) => toggle(group.id, event.target.checked)}
+									/>
+									{group.name}
+								</label>
+							</li>
+						))}
+					</ul>
+				)}
+			</fieldset>
+			{narrowed && (
+				<p className="text-muted-foreground">
+					Anyone outside these groups loses the app at once, and is asked again if they come back.
+				</p>
+			)}
+			<div className="flex flex-wrap gap-2">
+				<LiveButton
+					type="submit"
+					size="sm"
+					disabled={pending || (narrowed && chosen.length === 0)}
+					aria-label={`Save who can use ${app.name}`}
+				>
+					Save
+				</LiveButton>
+				<Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+					Cancel
+				</Button>
+			</div>
+		</form>
+	);
+}
+
 function AppRow({
 	app,
+	groups,
 	workspaceId,
+	workspaceName,
 	reload,
 	reveal,
 }: {
 	app: WorkspaceApp;
+	groups: WorkspaceGroup[];
 	workspaceId: string;
+	workspaceName: string;
 	reload: () => Promise<void>;
 	reveal: (revealed: Revealed) => void;
 }) {
-	const [mode, setMode] = useState<"editing" | "replacing" | "deleting" | null>(null);
+	const [mode, setMode] = useState<"editing" | "who" | "replacing" | "deleting" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const which = { organizationId: workspaceId, clientId: app.clientId };
@@ -131,6 +236,19 @@ function AppRow({
 			name: String(form.get("name")).trim(),
 			redirectUris: urisIn(String(form.get("redirectUris"))),
 		});
+		setPending(false);
+		if (!result.ok) {
+			setError(result.failure);
+			return;
+		}
+		setMode(null);
+		await reload();
+	}
+
+	async function onSaveWho(chosen: string[]) {
+		setPending(true);
+		setError(null);
+		const result = await post("/workspaces/apps/set-groups", { ...which, groups: chosen });
 		setPending(false);
 		if (!result.ok) {
 			setError(result.failure);
@@ -176,6 +294,7 @@ function AppRow({
 				<p className="font-medium break-words">{app.name}</p>
 				<p className="break-words text-muted-foreground">{hostOf(app)}</p>
 				<p className="font-mono text-xs break-all text-muted-foreground">{app.clientId}</p>
+				<p className="break-words text-muted-foreground">{whoCanUse(app, groups, workspaceName)}</p>
 			</div>
 			{error && (
 				<p role="alert" className="text-destructive">
@@ -208,6 +327,16 @@ function AppRow({
 						</Button>
 					</div>
 				</form>
+			)}
+			{mode === "who" && (
+				<WhoCanUse
+					app={app}
+					groups={groups}
+					workspaceName={workspaceName}
+					pending={pending}
+					onSave={onSaveWho}
+					onCancel={() => turnTo(null)}
+				/>
 			)}
 			{mode === "replacing" && (
 				<div className="space-y-2">
@@ -248,6 +377,14 @@ function AppRow({
 						onClick={() => turnTo("editing")}
 					>
 						Edit
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						aria-label={`Change who can use ${app.name}`}
+						onClick={() => turnTo("who")}
+					>
+						Who can use it
 					</Button>
 					<Button
 						variant="outline"
@@ -340,7 +477,9 @@ export function WorkspaceApps({
 						<AppRow
 							key={app.clientId}
 							app={app}
+							groups={details.groups}
 							workspaceId={workspaceId}
+							workspaceName={workspaceName}
 							reload={reload}
 							reveal={setRevealed}
 						/>

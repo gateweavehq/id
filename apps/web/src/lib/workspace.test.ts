@@ -3,6 +3,7 @@ import {
 	appName,
 	can,
 	comparableName,
+	groupName,
 	slugFrom,
 	type WorkspaceRole,
 	workspaceFailure,
@@ -22,12 +23,16 @@ describe("can", () => {
 		expect(allowed((actor) => can(actor, "leave"))).toEqual(["owner", "admin", "member"]);
 	});
 
-	it.each(["rename", "invite", "seeInvitations", "cancelInvitation"] as const)(
-		"keeps %s to owners and admins",
-		(action) => {
-			expect(allowed((actor) => can(actor, action))).toEqual(["owner", "admin"]);
-		},
-	);
+	it.each([
+		"rename",
+		"invite",
+		"seeInvitations",
+		"cancelInvitation",
+		"manageApps",
+		"manageGroups",
+	] as const)("keeps %s to owners and admins", (action) => {
+		expect(allowed((actor) => can(actor, action))).toEqual(["owner", "admin"]);
+	});
 
 	it("keeps deleting to owners", () => {
 		expect(allowed((actor) => can(actor, "delete"))).toEqual(["owner"]);
@@ -94,6 +99,33 @@ describe("a workspace's name", () => {
 		["a character that hides", "Ac​me"],
 	])("refuses %s", (_case, name) => {
 		expect(workspaceName.safeParse(name).success).toBe(false);
+	});
+});
+
+describe("a group's name", () => {
+	it.each([
+		"Sales",
+		"Satış Ekibi",
+		"R&D",
+		"Node.js team",
+		"2026",
+		"می\u200Cخواهم",
+		"Gateweave fans",
+	])("takes %s", (name) => {
+		expect(groupName.safeParse(name).success).toBe(true);
+	});
+
+	it.each([
+		["nothing", ""],
+		["too much", "x".repeat(61)],
+		["space around it", " Sales "],
+		["a new line", "Sales\nFree money"],
+		["a right-to-left override", "Sales\u202Etest"],
+		["a character that hides", "Sa\u200Bles"],
+		["nothing to match on", "!!!"],
+		["only an emoji", "🎉"],
+	])("refuses %s", (_case, name) => {
+		expect(groupName.safeParse(name).success).toBe(false);
 	});
 });
 

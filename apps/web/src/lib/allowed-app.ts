@@ -15,6 +15,7 @@ export interface AllowedApp {
 const SCOPES: Record<string, string> = {
 	profile: "See your name and picture",
 	email: "See your email address",
+	groups: "See which of this workspace's groups you are in",
 	offline_access: "Keep you signed in while you are away",
 };
 

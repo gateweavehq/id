@@ -64,6 +64,20 @@
       "when": 1793875039562,
       "tag": "0008_tokens_need_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793880834052,
+      "tag": "0009_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793880834851,
+      "tag": "0010_groups_hold",
+      "breakpoints": true
     }
   ]
 }

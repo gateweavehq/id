@@ -61,6 +61,58 @@ describe("describeActivity", () => {
 		expect(describeActivity(activity({ type, detail: inAcme }))).toBe("Became admin of Acme");
 	});
 
+	const aGroup = JSON.stringify({ workspace: "Acme", group: "Sales" });
+
+	it.each([
+		["group_created", "Made the group Sales in Acme"],
+		["group_renamed", "Changed a name to the group Sales in Acme"],
+		["group_deleted", "Deleted the group Sales from Acme"],
+	])("says what %s was", (type, words) => {
+		expect(describeActivity(activity({ type, detail: aGroup }))).toBe(words);
+	});
+
+	it.each([
+		[
+			"group_member_added",
+			"Added Bob to the group Sales in Acme",
+			"Ada added you to the group Sales in Acme",
+			"Someone added you to the group Sales in Acme",
+			"Joined the group Sales in Acme",
+		],
+		[
+			"group_member_removed",
+			"Took Bob out of the group Sales in Acme",
+			"Ada took you out of the group Sales in Acme",
+			"Someone took you out of the group Sales in Acme",
+			"Left the group Sales in Acme",
+		],
+	])("says %s from each side", (type, did, done, doneByNobody, own) => {
+		expect(describeActivity(activity({ type, detail: aGroup, other: "Bob" }))).toBe(did);
+		expect(describeActivity(activity({ type, detail: aGroup, byOther: true, other: "Ada" }))).toBe(
+			done,
+		);
+		expect(describeActivity(activity({ type, detail: aGroup, byOther: true, other: null }))).toBe(
+			doneByNobody,
+		);
+		expect(describeActivity(activity({ type, detail: aGroup, other: null }))).toBe(own);
+	});
+
+	it("says who can use an app changed, under the name it had", () => {
+		const detail = JSON.stringify({ workspace: "Acme", name: "Wiki" });
+		expect(describeActivity(activity({ type: "app_groups_changed", detail }))).toBe(
+			"Changed who can use Wiki",
+		);
+	});
+
+	it.each(["not json", "null", "[]", '{"group":7}', null])(
+		"still says something of a group when its detail is %s",
+		(detail) => {
+			expect(describeActivity(activity({ type: "group_deleted", detail }))).toBe(
+				"Deleted a group from a workspace",
+			);
+		},
+	);
+
 	it("says a removal from each side, and when the other person has gone", () => {
 		const type = "member_removed";
 		expect(describeActivity(activity({ type, detail: inAcme, other: "Bob" }))).toBe(
