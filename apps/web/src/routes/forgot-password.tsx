@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
@@ -6,12 +6,18 @@ import { LiveButton } from "#/components/live-button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
+import { carriesASignature } from "#/lib/oauth-flow";
 import { getAuthOptions } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 import { useTurnstile } from "#/lib/turnstile";
 
 export const Route = createFileRoute("/forgot-password")({
 	validateSearch: z.object({ email: z.string().optional().catch(undefined) }),
+	beforeLoad: ({ search }) => {
+		if (carriesASignature(search)) {
+			throw redirect({ to: "/forgot-password", search: { email: search.email } });
+		}
+	},
 	loader: () => getAuthOptions(),
 	component: ForgotPasswordPage,
 });

@@ -7,7 +7,7 @@ import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
 import { hasPasskey } from "./passkeys";
-import { type AppIdentity, appIn, maySignIn } from "./who-may-sign-in";
+import { type AppIdentity, appIn, maySignIn, stillAllowed } from "./who-may-sign-in";
 
 export interface OidcConfig {
 	/** The deployment's origin. Apps have it in their settings, so it can never change. */
@@ -24,13 +24,20 @@ const DAY = 86_400;
  * name any app to anyone who has its id, and no page here uses them. What the consent page asks for
  * instead tells someone only about an app they could reach. Introspection is for APIs, and there are
  * none here. It would tell an app the id of the session behind a token, which two apps could match
- * someone up by, whatever their ID tokens leave out.
+ * someone up by, whatever their ID tokens leave out. The consent paths are half of what someone
+ * taking an app back means: the one that deletes leaves the app's tokens working, and the one that
+ * updates rewrites what they said yes to. `/account/allowed-apps` does this, all of it, and no page
+ * uses these.
  */
 export const OIDC_CLOSED_PATHS = [
 	"/token",
 	"/oauth2/public-client",
 	"/oauth2/public-client-prelogin",
 	"/oauth2/introspect",
+	"/oauth2/get-consent",
+	"/oauth2/get-consents",
+	"/oauth2/update-consent",
+	"/oauth2/delete-consent",
 ];
 
 async function appOfClient(
@@ -314,9 +321,12 @@ export function oidcPlugins(
 				}),
 			}),
 			// Authorization does not run on refresh, so without this a removed person keeps their access.
-			customTokenResponseFields: async ({ grantType, user, metadata }) => {
+			customTokenResponseFields: async ({ grantType, user, metadata, scopes }) => {
 				const app = appIn(metadata);
-				if (!(await maySignIn(db, { user, app }))) {
+				if (
+					!(await maySignIn(db, { user, app })) ||
+					!(await stillAllowed(db, { user, app, scopes }))
+				) {
 					record("refused", {
 						userId: user?.id,
 						app: app?.app,

@@ -4,6 +4,7 @@ import { LiveButton } from "#/components/live-button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
+import { carriesASignature } from "#/lib/oauth-flow";
 import { getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 import {
@@ -17,7 +18,8 @@ import {
 } from "#/lib/workspace";
 
 export const Route = createFileRoute("/workspaces/")({
-	beforeLoad: async () => {
+	beforeLoad: async ({ search }) => {
+		if (carriesASignature(search)) throw redirect({ to: "/workspaces" });
 		if (!(await getSession())) {
 			throw redirect({ to: "/login", search: { redirect: "/workspaces" } });
 		}

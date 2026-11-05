@@ -20,6 +20,16 @@ export function inFlow(search: Search): boolean {
 	return typeof search.sig === "string";
 }
 
+/**
+ * Whether the auth client would send this query back with every POST from the page, which the provider
+ * answers by checking it. An app can link to any page of ID with one made up, so a page no flow comes to
+ * drops it. Otherwise that link would make the page's buttons fail, Take back among them, until the
+ * address changed. It goes by the names, as the client does, so repeating them does not get past it.
+ */
+export function carriesASignature(search: Search): boolean {
+	return "sig" in search && "ba_param" in search;
+}
+
 /** The part of a page's query to take along to another page of the flow. */
 export function flowSearch(search: Search): Search {
 	return inFlow(search) ? without(search, PAGE_OWN) : {};

@@ -275,6 +275,14 @@ function count(table: string, where: string, ...values: string[]) {
 		.first<number>("n");
 }
 
+function heldBy(person: Pick<Person, "userId">, app: Pick<App, "clientId">) {
+	return Promise.all(
+		["oauth_access_token", "oauth_refresh_token", "oauth_consent"].map((table) =>
+			count(table, "user_id = ? AND client_id = ?", person.userId, app.clientId),
+		),
+	);
+}
+
 function appRowIn(clientId: string) {
 	return id.db
 		.prepare("SELECT * FROM oauth_client WHERE client_id = ?")
@@ -859,14 +867,6 @@ describe("someone leaving a workspace", () => {
 		const memberId = await join(person, workspace, owner);
 		const { tokens } = await signInToApp(app, person);
 		return { owner, workspace, app, person, memberId, tokens };
-	}
-
-	function heldBy(person: Person, app: App) {
-		return Promise.all(
-			["oauth_access_token", "oauth_refresh_token", "oauth_consent"].map((table) =>
-				count(table, "user_id = ? AND client_id = ?", person.userId, app.clientId),
-			),
-		);
 	}
 
 	it("loses the app at once when removed, with what they already hold", async () => {
@@ -1624,6 +1624,721 @@ describe("someone's own activity", () => {
 	});
 });
 
+describe("taking an app back", () => {
+	interface Listed {
+		clientId: string;
+		name: string;
+		workspace: string;
+		host: string;
+		scopes: string[];
+		allowedAt: string;
+		lastSignIn: string | null;
+	}
+
+	async function allowedApps(who: Who) {
+		const response = await api("/account/allowed-apps", { who });
+		expect(response.status).toBe(200);
+		return ((await response.json()) as { apps: Listed[] }).apps;
+	}
+
+	function takeBack(who: Who, clientId: string) {
+		return api("/account/allowed-apps/take-back", { who, body: { clientId } });
+	}
+
+	async function allowed() {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const app = await newApp(owner, workspace);
+		const person = await newPerson("Grace");
+		const memberId = await join(person, workspace, owner);
+		const { tokens } = await signInToApp(app, person);
+		return { owner, workspace, app, person, memberId, tokens };
+	}
+
+	/** A first-party app does not ask unless it asks to, which is the one way to have a row for one. */
+	async function firstPartyAppAllowedBy(person: Who) {
+		const made = await firstPartyApp();
+		const redirectUri: string = JSON.parse(made.row.redirect_uris)[0];
+		const asked = await authorize({ clientId: made.clientId, redirectUri }, person, {
+			prompt: "consent",
+		});
+		await agree(asked, person);
+		return made;
+	}
+
+	let written = 0;
+
+	/** The row a crossing with a take-back would leave, asked back as the provider's adapter asks. */
+	async function writeToken(table: string, userId: string, clientId: string) {
+		const rowId = `written-${++written}`;
+		return id.db
+			.prepare(
+				`INSERT INTO ${table} (id, token, client_id, user_id, scopes, expires_at, created_at)
+				VALUES (?1, ?1, ?2, ?3, '"[\\"openid\\"]"', ?4, ?4) RETURNING id`,
+			)
+			.bind(rowId, clientId, userId, Date.now() + 3_600_000)
+			.first<{ id: string }>();
+	}
+
+	/** An access token made from a refresh token whose own row has already gone. */
+	function writeAccessTokenFrom(refreshId: string, userId: string, clientId: string) {
+		const rowId = `written-${++written}`;
+		return id.db
+			.prepare(
+				`INSERT INTO oauth_access_token
+				(id, token, client_id, user_id, refresh_id, scopes, expires_at, created_at)
+				VALUES (?1, ?1, ?2, ?3, ?4, '"[\\"openid\\"]"', ?5, ?5) RETURNING id`,
+			)
+			.bind(rowId, clientId, userId, refreshId, Date.now() + 3_600_000)
+			.first<{ id: string }>();
+	}
+
+	async function tokenRows(userId: string, clientId: string) {
+		const counts = await Promise.all(
+			["oauth_access_token", "oauth_refresh_token"].map((table) =>
+				count(table, "user_id = ? AND client_id = ?", userId, clientId),
+			),
+		);
+		return counts.reduce((sum: number, n: unknown) => sum + Number(n ?? 0), 0);
+	}
+
+	describe("the list", () => {
+		it("still opens for someone who has allowed more apps than D1 takes parameters", async () => {
+			const { workspace, person } = await allowed();
+			const many = 120;
+			// One statement each: making them through the API would take as long as the rest of the file.
+			await id.db
+				.prepare(
+					`WITH RECURSIVE row(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM row WHERE n < ${many})
+					INSERT INTO oauth_client (id, client_id, name, redirect_uris, reference_id, created_at, updated_at)
+					SELECT 'many-' || n, 'many-' || n, 'Many ' || n, '["https://many.test/callback"]', ?1, ?2, ?2 FROM row`,
+				)
+				.bind(workspace.id, Date.now())
+				.run();
+			await id.db
+				.prepare(
+					`WITH RECURSIVE row(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM row WHERE n < ${many})
+					INSERT INTO oauth_consent (id, client_id, user_id, scopes, created_at, updated_at)
+					SELECT 'many-' || n, 'many-' || n, ?1, '"[\\"openid\\"]"', ?2, ?2 FROM row`,
+				)
+				.bind(person.userId, Date.now())
+				.run();
+
+			const apps = await allowedApps(person);
+			expect(apps).toHaveLength(many + 1);
+		});
+
+		it("says what someone allowed, whose it is and where it goes", async () => {
+			const { app, person, workspace } = await allowed();
+			await id.auditEventRecorded(person.userId, { type: "app_sign_in", app: app.clientId });
+
+			const response = await api("/account/allowed-apps", { who: person });
+			expect(response.headers.get("cache-control")).toContain("no-store");
+			const text = await response.text();
+			expect((JSON.parse(text) as { apps: Listed[] }).apps).toEqual([
+				{
+					clientId: app.clientId,
+					name: app.name,
+					workspace: workspace.name,
+					host: app.host,
+					scopes: SCOPE.split(" "),
+					allowedAt: expect.any(String),
+					lastSignIn: expect.any(String),
+				},
+			]);
+			const row = await appRowIn(app.clientId);
+			expect(text).not.toContain(String(row?.client_secret));
+			expect(text).not.toContain(app.clientSecret);
+		});
+
+		it("has no last sign-in once the log has let go of it, whoever else signed in", async () => {
+			const { owner, app, person } = await allowed();
+			await signInToApp(app, owner);
+			await id.auditEventRecorded(owner.userId, { type: "app_sign_in", app: app.clientId });
+			await id.auditEventRecorded(person.userId, { type: "app_sign_in", app: app.clientId });
+			await id.db
+				.prepare("DELETE FROM audit_event WHERE user_id = ? AND type = 'app_sign_in'")
+				.bind(person.userId)
+				.run();
+			expect(await allowedApps(person)).toEqual([expect.objectContaining({ lastSignIn: null })]);
+		});
+
+		it("still names an app whose scopes it cannot read", async () => {
+			const { app, person } = await allowed();
+			await id.db
+				.prepare("UPDATE oauth_consent SET scopes = ? WHERE user_id = ? AND client_id = ?")
+				.bind(JSON.stringify("not a list"), person.userId, app.clientId)
+				.run();
+			expect(await allowedApps(person)).toEqual([
+				expect.objectContaining({ clientId: app.clientId, scopes: [] }),
+			]);
+		});
+
+		it("goes by what this person did, not by anything they could reach", async () => {
+			const { owner, workspace, app, person } = await allowed();
+			const asked = await newPerson();
+			await join(asked, workspace, owner);
+			await authorize(app, asked);
+			const denied = await newPerson();
+			await join(denied, workspace, owner);
+			const denying = await authorize(app, denied);
+			await api("/oauth2/consent", {
+				who: denied,
+				body: { accept: false, oauth_query: denying.location.search.slice(1) },
+			});
+			const stranger = await newPerson();
+
+			expect(await allowedApps(person)).toHaveLength(1);
+			// Not the admin who added it, a member still being asked, one who said no, or anyone else.
+			expect(await allowedApps(owner)).toEqual([]);
+			expect(await allowedApps(asked)).toEqual([]);
+			expect(await allowedApps(denied)).toEqual([]);
+			expect(await allowedApps(stranger)).toEqual([]);
+		});
+
+		it("leaves out a first-party app, even one that asked", async () => {
+			const person = await newPerson();
+			const made = await firstPartyAppAllowedBy(person);
+			expect(await heldBy(person, made)).toEqual([0, 0, 1]);
+			expect(await allowedApps(person)).toEqual([]);
+		});
+
+		it("loses what someone allowed when they leave, or when the app goes", async () => {
+			const { owner, workspace, app, person, memberId } = await allowed();
+			const other = await newApp(owner, workspace);
+			await signInToApp(other, person);
+			expect(await allowedApps(person)).toHaveLength(2);
+
+			const deleted = await api("/workspaces/apps/delete", {
+				who: owner,
+				body: { organizationId: workspace.id, clientId: other.clientId },
+			});
+			expect(deleted.status).toBe(200);
+			expect((await allowedApps(person)).map(({ clientId }) => clientId)).toEqual([app.clientId]);
+
+			await remove(owner, workspace, memberId);
+			expect(await allowedApps(person)).toEqual([]);
+			expect((await takeBack(person, app.clientId)).status).toBe(404);
+		});
+
+		it("is for someone signed in", async () => {
+			expect((await api("/account/allowed-apps")).status).toBe(401);
+		});
+	});
+
+	it("ends what the app holds at once, and it has to ask again", async () => {
+		const { app, person, workspace, tokens } = await allowed();
+		expect((await userinfo(tokens.access_token)).status).toBe(200);
+		expect(await heldBy(person, app)).toEqual([expect.any(Number), 1, 1]);
+
+		const taken = await takeBack(person, app.clientId);
+		expect(taken.status).toBe(200);
+		expect(taken.headers.get("cache-control")).toContain("no-store");
+
+		expect((await userinfo(tokens.access_token)).status).toBe(401);
+		await expect(refresh(app, tokens.refresh_token)).rejects.toMatchObject({
+			error: "invalid_grant",
+		});
+		expect(await heldBy(person, app)).toEqual([0, 0, 0]);
+		expect(await allowedApps(person)).toEqual([]);
+
+		// They are still a member, and only the app has to ask.
+		expect((await details(person, workspace)).you.memberId).toBeTruthy();
+		const quietly = await authorize(app, person, { prompt: "none" });
+		expect(quietly.location.searchParams.has("code")).toBe(false);
+		expect(quietly.location.searchParams.get("error")).toBe("consent_required");
+
+		const again = await signInToApp(app, person);
+		expect((await userinfo(again.tokens.access_token)).status).toBe(200);
+		expect(await allowedApps(person)).toHaveLength(1);
+	});
+
+	it("touches nobody else's, and no other app", async () => {
+		const { owner, workspace, app, person, tokens } = await allowed();
+		const other = await newPerson();
+		await join(other, workspace, owner);
+		const theirs = await signInToApp(app, other);
+		const second = await newApp(owner, workspace);
+		const inSecond = await signInToApp(second, person);
+
+		expect((await takeBack(person, app.clientId)).status).toBe(200);
+
+		expect((await userinfo(tokens.access_token)).status).toBe(401);
+		expect((await userinfo(theirs.tokens.access_token)).status).toBe(200);
+		expect(await heldBy(other, app)).toEqual([expect.any(Number), 1, 1]);
+		expect((await refresh(app, theirs.tokens.refresh_token)).access_token).toBeTruthy();
+		expect((await userinfo(inSecond.tokens.access_token)).status).toBe(200);
+		expect(await heldBy(person, second)).toEqual([expect.any(Number), 1, 1]);
+		expect((await allowedApps(person)).map(({ clientId }) => clientId)).toEqual([second.clientId]);
+	});
+
+	it("ends an access token that came with no refresh token to take it along", async () => {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const app = await newApp(owner, workspace);
+		const person = await newPerson();
+		await join(person, workspace, owner);
+		const asked = await authorize(app, person, { scope: "openid email" });
+		const { tokens } = await exchange(app, await agree(asked, person));
+		expect(tokens.refresh_token).toBeUndefined();
+		expect((await userinfo(tokens.access_token)).status).toBe(200);
+
+		expect((await takeBack(person, app.clientId)).status).toBe(200);
+
+		expect((await userinfo(tokens.access_token)).status).toBe(401);
+		expect(await heldBy(person, app)).toEqual([0, 0, 0]);
+	});
+
+	it("refuses a code the app was handed before, whatever else stands", async () => {
+		const { owner, workspace, app, person } = await allowed();
+		// Someone else's yes to this app, and this person's to another, are not theirs to this one.
+		const other = await newPerson();
+		await join(other, workspace, owner);
+		await signInToApp(app, other);
+		await signInToApp(await newApp(owner, workspace), person);
+		const handed = await authorize(app, person);
+		expect(handed.location.searchParams.has("code")).toBe(true);
+
+		expect((await takeBack(person, app.clientId)).status).toBe(200);
+
+		await expect(exchange(app, handed)).rejects.toMatchObject({ error: "invalid_grant" });
+		expect(await heldBy(person, app)).toEqual([0, 0, 0]);
+		await id.auditEventRecorded(person.userId, {
+			type: "refused",
+			app: app.clientId,
+			detail: "authorization_code",
+		});
+	});
+
+	it("refuses a refresh with no consent, however that came about", async () => {
+		const { app, person, tokens } = await allowed();
+		await id.db
+			.prepare("DELETE FROM oauth_consent WHERE user_id = ? AND client_id = ?")
+			.bind(person.userId, app.clientId)
+			.run();
+		await expect(refresh(app, tokens.refresh_token)).rejects.toMatchObject({
+			error: "invalid_grant",
+		});
+		await id.auditEventRecorded(person.userId, {
+			type: "refused",
+			app: app.clientId,
+			detail: "refresh_token",
+		});
+	});
+
+	it("does not let an old code buy more than they say yes to again", async () => {
+		const { app, person } = await allowed();
+		const handed = await authorize(app, person);
+		expect(handed.location.searchParams.has("code")).toBe(true);
+		expect((await takeBack(person, app.clientId)).status).toBe(200);
+
+		const again = await agree(await authorize(app, person, { scope: "openid" }), person);
+		await expect(exchange(app, handed)).rejects.toMatchObject({ error: "invalid_grant" });
+		expect(await heldBy(person, app)).toEqual([0, 0, 1]);
+		await id.auditEventRecorded(person.userId, {
+			type: "refused",
+			app: app.clientId,
+			detail: "authorization_code",
+		});
+
+		// What they said yes to works, and gets no more than that.
+		const { tokens } = await exchange(app, again);
+		const answer = await userinfo(tokens.access_token);
+		expect(answer.status).toBe(200);
+		const seen = (await answer.json()) as { email?: string };
+		expect(seen.email).toBeUndefined();
+	});
+
+	it("refuses tokens when it cannot read what they allowed", async () => {
+		const { app, person } = await allowed();
+		const handed = await authorize(app, person);
+		await id.db
+			.prepare("UPDATE oauth_consent SET scopes = ? WHERE user_id = ? AND client_id = ?")
+			.bind(JSON.stringify("not a list"), person.userId, app.clientId)
+			.run();
+		await expect(exchange(app, handed)).rejects.toMatchObject({ error: "invalid_grant" });
+	});
+
+	it("lets an old code buy what they say yes to again, and no less", async () => {
+		const { app, person } = await allowed();
+		const handed = await authorize(app, person);
+		expect((await takeBack(person, app.clientId)).status).toBe(200);
+		await signInToApp(app, person);
+
+		const { tokens } = await exchange(app, handed);
+		expect((await userinfo(tokens.access_token)).status).toBe(200);
+	});
+
+	describe("a yes that changes", () => {
+		it("ends what came of the old one, so the list is what the app holds", async () => {
+			const { app, person, tokens } = await allowed();
+			const asked = await authorize(app, person, { scope: "openid", prompt: "consent" });
+			const narrower = await agree(asked, person);
+
+			expect((await userinfo(tokens.access_token)).status).toBe(401);
+			await expect(refresh(app, tokens.refresh_token)).rejects.toMatchObject({
+				error: "invalid_grant",
+			});
+			expect(await heldBy(person, app)).toEqual([0, 0, 1]);
+			const [listed] = await allowedApps(person);
+			expect(listed?.scopes).toEqual(["openid"]);
+
+			const { tokens: fresh } = await exchange(app, narrower);
+			expect((await userinfo(fresh.access_token)).status).toBe(200);
+		});
+
+		it("ends an access token with no refresh token behind it", async () => {
+			const { owner, workspace } = await allowed();
+			const app = await newApp(owner, workspace);
+			const person = await newPerson();
+			await join(person, workspace, owner);
+			const { tokens } = await exchange(
+				app,
+				await agree(await authorize(app, person, { scope: "openid email" }), person),
+			);
+			expect(tokens.refresh_token).toBeUndefined();
+			expect(await heldBy(person, app)).toEqual([1, 0, 1]);
+
+			await agree(await authorize(app, person, { scope: "openid", prompt: "consent" }), person);
+			expect((await userinfo(tokens.access_token)).status).toBe(401);
+			expect(await heldBy(person, app)).toEqual([0, 0, 1]);
+		});
+
+		it("happens when an app asks for more, without asking to ask again", async () => {
+			const { app, person, tokens } = await allowed();
+			const less = await agree(
+				await authorize(app, person, { scope: "openid", prompt: "consent" }),
+				person,
+			);
+			const { tokens: fewer } = await exchange(app, less);
+			expect(tokens.access_token).not.toBe(fewer.access_token);
+
+			const more = await agree(await authorize(app, person), person);
+			expect((await userinfo(fewer.access_token)).status).toBe(401);
+			expect(await heldBy(person, app)).toEqual([0, 0, 1]);
+
+			const { tokens: fresh } = await exchange(app, more);
+			expect((await userinfo(fresh.access_token)).status).toBe(200);
+			await expect(refresh(app, fresh.refresh_token)).resolves.toMatchObject({
+				token_type: expect.any(String),
+			});
+		});
+
+		it("replaces the old list, so what is left out is gone", async () => {
+			const { app, person } = await allowed();
+			const asked = await authorize(app, person, { scope: "openid profile", prompt: "consent" });
+			const { tokens } = await exchange(app, await agree(asked, person));
+			expect(tokens.refresh_token).toBeUndefined();
+			const [listed] = await allowedApps(person);
+			expect(listed?.scopes).toEqual(["openid", "profile"]);
+		});
+
+		it("counts the same scopes in another order as a change", async () => {
+			const { app, person, tokens } = await allowed();
+			const reversed = SCOPE.split(" ").reverse().join(" ");
+			await agree(await authorize(app, person, { scope: reversed, prompt: "consent" }), person);
+			expect((await userinfo(tokens.access_token)).status).toBe(401);
+		});
+
+		it("leaves what they hold when it is the same yes", async () => {
+			const { app, person, tokens } = await allowed();
+			await agree(await authorize(app, person, { prompt: "consent" }), person);
+			expect((await userinfo(tokens.access_token)).status).toBe(200);
+			expect(await heldBy(person, app)).toEqual([1, 1, 1]);
+		});
+
+		it("leaves other people's tokens and other apps' alone", async () => {
+			const { owner, workspace, app, person, tokens } = await allowed();
+			const other = await newPerson();
+			await join(other, workspace, owner);
+			const theirs = await signInToApp(app, other);
+			const secondApp = await newApp(owner, workspace);
+			const second = await signInToApp(secondApp, person);
+
+			await agree(await authorize(app, person, { scope: "openid", prompt: "consent" }), person);
+
+			expect((await userinfo(tokens.access_token)).status).toBe(401);
+			expect((await userinfo(theirs.tokens.access_token)).status).toBe(200);
+			expect((await userinfo(second.tokens.access_token)).status).toBe(200);
+			expect(await heldBy(other, app)).toEqual([1, 1, 1]);
+			expect(await heldBy(person, secondApp)).toEqual([1, 1, 1]);
+		});
+
+		it("does not touch a first-party app's tokens", async () => {
+			const person = await newPerson();
+			const made = await firstPartyAppAllowedBy(person);
+			const redirectUri: string = JSON.parse(made.row.redirect_uris)[0];
+			const before = await tokenRows(person.userId, made.clientId);
+			await writeToken("oauth_access_token", person.userId, made.clientId);
+			expect(await tokenRows(person.userId, made.clientId)).toBe(before + 1);
+
+			const asked = await authorize({ clientId: made.clientId, redirectUri }, person, {
+				scope: "openid",
+				prompt: "consent",
+			});
+			await agree(asked, person);
+			expect(await tokenRows(person.userId, made.clientId)).toBe(before + 1);
+		});
+	});
+
+	describe("two answers at once", () => {
+		it("make one row, so the list cannot show the app twice", async () => {
+			const owner = await newPerson();
+			const workspace = await newWorkspace(owner);
+			const app = await newApp(owner, workspace);
+			const person = await newPerson();
+			await join(person, workspace, owner);
+			const asked = await authorize(app, person);
+			expect(asked.location.pathname).toBe("/consent");
+
+			const answers = await Promise.all(
+				[1, 2].map(() =>
+					api("/oauth2/consent", {
+						who: person,
+						body: { accept: true, oauth_query: asked.location.search.slice(1) },
+					}),
+				),
+			);
+			expect(answers.map(({ status }) => status)).toContain(200);
+			expect(
+				await count("oauth_consent", "user_id = ? AND client_id = ?", person.userId, app.clientId),
+			).toBe(1);
+			expect(await allowedApps(person)).toHaveLength(1);
+		});
+
+		it("cannot be written as two rows, however they arrive", async () => {
+			const { app, person } = await allowed();
+			await expect(
+				id.db
+					.prepare(
+						`INSERT INTO oauth_consent (id, client_id, user_id, scopes, created_at, updated_at)
+						VALUES ('second-answer', ?1, ?2, '"[\\"openid\\"]"', ?3, ?3)`,
+					)
+					.bind(app.clientId, person.userId, Date.now())
+					.run(),
+			).rejects.toThrow(/UNIQUE/i);
+		});
+	});
+
+	describe("a token written after the answer changed", () => {
+		// A crossing cannot be timed from outside, so these write the row the provider would be writing.
+		// The statement is the adapter's in shape: it asks for the row back, and the row must still go.
+		it.each(["oauth_access_token", "oauth_refresh_token"])(
+			"goes as it arrives in %s, once they have taken the app back",
+			async (table) => {
+				const { app, person } = await allowed();
+				expect((await takeBack(person, app.clientId)).status).toBe(200);
+
+				const written = await writeToken(table, person.userId, app.clientId);
+				expect(written?.id).toBeTruthy();
+				expect(await heldBy(person, app)).toEqual([0, 0, 0]);
+			},
+		);
+
+		it("leaves nothing when the access token is made from a refresh token that has gone", async () => {
+			const { app, person } = await allowed();
+			expect((await takeBack(person, app.clientId)).status).toBe(200);
+
+			const refreshRow = await writeToken("oauth_refresh_token", person.userId, app.clientId);
+			const access = await writeAccessTokenFrom(refreshRow?.id ?? "", person.userId, app.clientId);
+			expect(access?.id).toBeTruthy();
+			expect(await heldBy(person, app)).toEqual([0, 0, 0]);
+		});
+
+		it.each(["oauth_access_token", "oauth_refresh_token"])(
+			"goes as it arrives in %s, once someone has been removed",
+			async (table) => {
+				const { owner, workspace, app, person, memberId } = await allowed();
+				await remove(owner, workspace, memberId);
+
+				await writeToken(table, person.userId, app.clientId);
+				expect(await heldBy(person, app)).toEqual([0, 0, 0]);
+			},
+		);
+
+		it.each(["oauth_access_token", "oauth_refresh_token"])(
+			"stays in %s while they have allowed it",
+			async (table) => {
+				const { app, person } = await allowed();
+				const before = await tokenRows(person.userId, app.clientId);
+				await writeToken(table, person.userId, app.clientId);
+				expect(await tokenRows(person.userId, app.clientId)).toBe(before + 1);
+			},
+		);
+
+		it.each(["oauth_access_token", "oauth_refresh_token"])(
+			"is not saved in %s by someone else's yes, or by theirs to another app",
+			async (table) => {
+				const { owner, workspace, app, person } = await allowed();
+				const other = await newPerson();
+				await join(other, workspace, owner);
+				await signInToApp(app, other);
+				await signInToApp(await newApp(owner, workspace), person);
+				expect((await takeBack(person, app.clientId)).status).toBe(200);
+
+				await writeToken(table, person.userId, app.clientId);
+				expect(await heldBy(person, app)).toEqual([0, 0, 0]);
+			},
+		);
+
+		it.each(["oauth_access_token", "oauth_refresh_token"])(
+			"stays in %s for a first-party app, which does not ask",
+			async (table) => {
+				const person = await newPerson();
+				const made = await firstPartyApp();
+				const before = await tokenRows(person.userId, made.clientId);
+				await writeToken(table, person.userId, made.clientId);
+				expect(await tokenRows(person.userId, made.clientId)).toBe(before + 1);
+			},
+		);
+	});
+
+	describe("what it refuses", () => {
+		it("says the same of what is not there, not theirs and never allowed", async () => {
+			const { owner, workspace, app, person, tokens } = await allowed();
+			const stranger = await newPerson();
+			const member = await newPerson();
+			await join(member, workspace, owner);
+
+			const answers = await Promise.all(
+				[
+					takeBack(stranger, app.clientId),
+					takeBack(member, app.clientId),
+					takeBack(owner, app.clientId),
+					takeBack(person, "no-such-app"),
+				].map(async (answer) => {
+					const response = await answer;
+					return { status: response.status, body: await response.json() };
+				}),
+			);
+			expect(new Set(answers.map((answer) => JSON.stringify(answer))).size).toBe(1);
+			expect(answers[0]?.status).toBe(404);
+
+			expect((await userinfo(tokens.access_token)).status).toBe(200);
+			expect(await heldBy(person, app)).toEqual([expect.any(Number), 1, 1]);
+		});
+
+		it("leaves a first-party app as it is", async () => {
+			const person = await newPerson();
+			const made = await firstPartyAppAllowedBy(person);
+			expect((await takeBack(person, made.clientId)).status).toBe(404);
+			expect(await heldBy(person, made)).toEqual([0, 0, 1]);
+		});
+
+		it.each([
+			["another person's id beside it", (clientId: string) => ({ clientId, userId: "someone" })],
+			["an empty id", () => ({ clientId: "" })],
+			["nothing", () => ({})],
+		])("wants an app's id and nothing else: %s", async (_name, body) => {
+			const { app, person, tokens } = await allowed();
+			const response = await api("/account/allowed-apps/take-back", {
+				who: person,
+				body: body(app.clientId),
+			});
+			expect(response.status).toBe(400);
+			expect((await userinfo(tokens.access_token)).status).toBe(200);
+		});
+
+		it("is for someone signed in, from this site", async () => {
+			const { app, person, tokens } = await allowed();
+			expect(
+				(await api("/account/allowed-apps/take-back", { body: { clientId: app.clientId } })).status,
+			).toBe(401);
+			const elsewhere = await id.fetch(`${origin}/api/auth/account/allowed-apps/take-back`, {
+				method: "POST",
+				headers: {
+					origin: "https://elsewhere.test",
+					"cf-connecting-ip": newClient(),
+					"content-type": "application/json",
+					cookie: person.cookie,
+				},
+				body: JSON.stringify({ clientId: app.clientId }),
+			});
+			expect(elsewhere.status).toBe(403);
+			expect((await userinfo(tokens.access_token)).status).toBe(200);
+			expect(await heldBy(person, app)).toEqual([expect.any(Number), 1, 1]);
+		});
+
+		it("stops someone going on about it", async () => {
+			const person = await newPerson();
+			const address = newClient();
+			const statuses = [];
+			for (let tries = 0; tries < 30; tries++) {
+				const answer = await id.fetch(`${origin}/api/auth/account/allowed-apps/take-back`, {
+					method: "POST",
+					headers: {
+						origin,
+						"cf-connecting-ip": address,
+						"content-type": "application/json",
+						cookie: person.cookie,
+					},
+					body: JSON.stringify({ clientId: "no-such-app" }),
+				});
+				statuses.push(answer.status);
+			}
+			expect(statuses[0]).toBe(404);
+			expect(statuses).toContain(429);
+		});
+	});
+
+	it.each([
+		"/oauth2/get-consent",
+		"/oauth2/get-consents",
+		"/oauth2/update-consent",
+		"/oauth2/delete-consent",
+	])("leaves no way to do half of it: %s", async (path) => {
+		const { app, person, tokens } = await allowed();
+		const consentOf = () =>
+			id.db
+				.prepare("SELECT id, scopes FROM oauth_consent WHERE user_id = ? AND client_id = ?")
+				.bind(person.userId, app.clientId)
+				.first<{ id: string; scopes: string }>();
+		const before = await consentOf();
+		expect(before).not.toBeNull();
+		// The consent's own id, since an open route answers 404 to any other and would pass for closed.
+		const got = await api(`${path}?id=${before?.id}`, { who: person });
+		const posted = await api(path, {
+			who: person,
+			body: { id: before?.id, update: { scopes: ["openid"] } },
+		});
+		expect(got.status).toBe(404);
+		expect(posted.status).toBe(404);
+		expect(await consentOf()).toEqual(before);
+		expect(await heldBy(person, app)).toEqual([expect.any(Number), 1, 1]);
+		expect((await userinfo(tokens.access_token)).status).toBe(200);
+	});
+
+	it("says so in their activity, under the name it had", async () => {
+		const { owner, workspace, app, person, memberId } = await allowed();
+		expect((await takeBack(person, app.clientId)).status).toBe(200);
+		await id.auditEventRecorded(person.userId, {
+			type: "consent_revoked",
+			app: app.clientId,
+			workspace_id: workspace.id,
+		});
+		const [event] = (await id.auditEvents(person.userId)).filter(
+			({ type }) => type === "consent_revoked",
+		);
+		expect(JSON.parse(event?.detail ?? "{}")).toEqual({
+			workspace: workspace.name,
+			name: app.name,
+		});
+
+		// It is what they saw when they did it, so it stays after they have gone, and the app has.
+		await remove(owner, workspace, memberId);
+		const deleted = await api("/workspaces/apps/delete", {
+			who: owner,
+			body: { organizationId: workspace.id, clientId: app.clientId },
+		});
+		expect(deleted.status).toBe(200);
+		expect(await appRowIn(app.clientId)).toBeNull();
+		const seen = await api("/account/activity", { who: person });
+		const { events } = (await seen.json()) as { events: { type: string; detail: string | null }[] };
+		const listed = events.find(({ type }) => type === "consent_revoked");
+		expect(JSON.parse(listed?.detail ?? "{}")).toMatchObject({ name: app.name });
+	});
+});
+
 describe("a deployment with no provider", () => {
 	it("offers no apps, to add or to see", async () => {
 		const plain = await startId(origin, { oidc: false });
@@ -1667,6 +2382,11 @@ describe("a deployment with no provider", () => {
 				headers: { origin, "cf-connecting-ip": newClient(), cookie },
 			});
 			expect(await seen.json()).toMatchObject({ apps: [], appsEnabled: false });
+
+			const allowed = await plain.fetch(`${origin}/api/auth/account/allowed-apps`, {
+				headers: { origin, "cf-connecting-ip": newClient(), cookie },
+			});
+			expect(allowed.status).toBe(404);
 		} finally {
 			await plain.dispose();
 		}

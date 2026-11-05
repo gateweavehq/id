@@ -10,6 +10,7 @@ export const AUDIT_EVENT_TYPES = [
 	"refused",
 	"consent_granted",
 	"consent_denied",
+	"consent_revoked",
 	"token_revoked",
 	"sessions_revoked",
 	"password_changed",
@@ -116,6 +117,8 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			return `Allowed ${theApp} to see this account`;
 		case "consent_denied":
 			return `Turned down ${theApp}`;
+		case "consent_revoked":
+			return `Stopped allowing ${appDetail(detail, app).app} to see this account`;
 		case "token_revoked":
 			return `Ended ${theApp}'s access`;
 		case "sessions_revoked":
