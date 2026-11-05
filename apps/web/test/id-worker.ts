@@ -258,8 +258,13 @@ export async function startId(
 							: {}),
 						...(breachedPasswords ? { CHECK_BREACHED_PASSWORDS: "1" } : {}),
 						...(oidc ? { OIDC_PAIRWISE_SECRET: PAIRWISE_SECRET } : {}),
+						LOGOUT_RETRY_SECONDS: "1",
 						...settings,
 					},
+					queueProducers: { LOGOUTS: "logouts" },
+					...(index === 0 && {
+						queueConsumers: { logouts: { maxBatchTimeout: 1, maxRetries: 20 } },
+					}),
 					serviceBindings: { EMAIL: "outbox" },
 					d1Databases: { DB: "id-test" },
 					// Every copy uses the first one's Durable Objects.

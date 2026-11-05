@@ -1,6 +1,7 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { createDb } from "../db";
 import { mailer } from "../email";
+import { queueLogout } from "../logouts";
 import { allowInvitation, allowSignUpCode, authRateLimits, firstUseOfCode } from "../rate-limit";
 import { createAuth } from "./config";
 
@@ -15,7 +16,11 @@ const baseURL = env.BETTER_AUTH_URL || undefined;
  */
 const oidc =
 	baseURL && env.OIDC_PAIRWISE_SECRET
-		? { issuer: new URL(baseURL).origin, pairwiseSecret: env.OIDC_PAIRWISE_SECRET }
+		? {
+				issuer: new URL(baseURL).origin,
+				pairwiseSecret: env.OIDC_PAIRWISE_SECRET,
+				undelivered: queueLogout,
+			}
 		: undefined;
 
 let instance: ReturnType<typeof buildAuth> | undefined;

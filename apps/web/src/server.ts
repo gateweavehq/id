@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import handler from "@tanstack/react-start/server-entry";
 import { createDb } from "./server/db";
 import { pruneExpired } from "./server/db/prune";
+import { deliverMissedLogouts } from "./server/logouts";
 import { newNonce, withSecurityHeaders } from "./server/security-headers";
 
 export { RateLimiter } from "./server/rate-limit";
@@ -19,5 +20,8 @@ export default {
 	// A failure shows in the Worker's logs, and the next run picks up what this one left.
 	async scheduled() {
 		await pruneExpired(createDb(env.DB));
+	},
+	async queue(batch) {
+		await deliverMissedLogouts(batch);
 	},
 } satisfies ExportedHandler<Cloudflare.Env>;

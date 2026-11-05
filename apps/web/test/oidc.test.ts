@@ -1097,12 +1097,39 @@ describe("signing out", () => {
 			await expect.poll(() => deliveries().length, { timeout: 15_000 }).toBe(2);
 		}, 20_000);
 
-		it("gives up after three tries", async () => {
-			const deliveries = await signOutWith([503, 503, 503]);
-			await expect.poll(() => deliveries().length, { timeout: 15_000 }).toBe(3);
-			await new Promise((resolve) => setTimeout(resolve, 2500));
-			expect(deliveries()).toHaveLength(3);
-		}, 25_000);
+		it("hands it to a queue after three tries, which signs a new token each time", async () => {
+			const deliveries = await signOutWith([503, 503, 503, 503]);
+			await expect.poll(() => deliveries().length, { timeout: 30_000 }).toBe(5);
+			const tokens = deliveries().map(
+				({ body }) => new URLSearchParams(body).get("logout_token") ?? "",
+			);
+			const claims = tokens.map(
+				(token) =>
+					JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()) as {
+						iss: string;
+						aud: string;
+						sub: string;
+						sid: string;
+						jti: string;
+						exp: number;
+					},
+			);
+			expect(tokens[1]).toBe(tokens[0]);
+			expect(tokens[3]).not.toBe(tokens[0]);
+			expect(tokens[4]).not.toBe(tokens[3]);
+			expect(claims[4]).toMatchObject({
+				iss: claims[0]?.iss,
+				aud: claims[0]?.aud,
+				sub: claims[0]?.sub,
+				sid: claims[0]?.sid,
+			});
+			expect(claims[4]?.jti).not.toBe(claims[0]?.jti);
+			expect(claims[4]?.exp).toBeGreaterThan(Date.now() / 1000);
+			expect(await signatureHolds(tokens[4] ?? "")).toBe(true);
+			// The fifth was taken, so nothing more comes.
+			await new Promise((resolve) => setTimeout(resolve, 4000));
+			expect(deliveries()).toHaveLength(5);
+		}, 45_000);
 
 		it("does not try again when the app refuses it, which would only repeat", async () => {
 			const deliveries = await signOutWith([400]);

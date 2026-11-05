@@ -14,6 +14,10 @@ export interface OidcConfig {
 	issuer: string;
 	/** Gives each app its own id for each person. Rotating it changes every one of them. */
 	pairwiseSecret: string;
+	/** Takes a back-channel logout that an app missed, to try again later. */
+	undelivered?:
+		| ((logout: { clientId: string; sub: string; sid: string }) => Promise<void>)
+		| undefined;
 }
 
 const DAY = 86_400;
@@ -300,7 +304,7 @@ async function groupsClaim(
  */
 export function oidcPlugins(
 	db: Database,
-	{ issuer, pairwiseSecret }: OidcConfig,
+	{ issuer, pairwiseSecret, undelivered }: OidcConfig,
 	record: RecordEvent,
 ) {
 	return [
@@ -319,6 +323,8 @@ export function oidcPlugins(
 			jwt: { issuer },
 		}),
 		oauthProvider({
+			// Read by our patch of the provider (see "A patched dependency" in docs/architecture.md).
+			...(undelivered && ({ backchannelLogoutUndelivered: undelivered } as object)),
 			loginPage: "/login",
 			consentPage: "/consent",
 			pairwiseSecret,
