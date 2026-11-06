@@ -26,6 +26,12 @@ const RELEASE = /^v\d+\.\d+\.\d+$/;
 const WORKFLOWS = ".github/workflows";
 // Kept apart from the copy's own tags, which may share these names.
 const RELEASES = "refs/id-upstream/tags";
+// Every git command here reads replacements from this place and no other. So a copy's own stay out
+// of it, and a run that stops halfway leaves nothing the copy's own commands would see. Git's source
+// supports this but its manual does not name it. A git that ignored it would use its default place,
+// where an update still works, and stops rather than write over a replacement of the copy's own.
+const REPLACEMENTS = "refs/id-upstream/replace/";
+process.env.GIT_REPLACE_REF_BASE = REPLACEMENTS;
 
 function stop(message) {
 	console.error(message);
@@ -98,17 +104,20 @@ function keepsResources(before, after) {
 }
 
 /**
- * Puts the lines a copy rewrote onto a newer file, or null when that is not all the copy did or
- * a line it rewrote is no longer there.
+ * Puts the lines a copy rewrote onto a newer file, or null when that is not all the copy did, a
+ * line it rewrote is no longer there, or that line appears more than once in either file, where
+ * nothing says which of them the copy meant.
  */
 function rewriteLines(base, ours, theirs) {
-	const [from, to, result] = [base, ours, theirs].map((text) => text.split("\n"));
+	const [from, to, release] = [base, ours, theirs].map((text) => text.split("\n"));
 	if (from.length !== to.length) return null;
+	const once = (all, line) =>
+		all.indexOf(line) !== -1 && all.indexOf(line) === all.lastIndexOf(line);
+	const result = [...release];
 	for (let i = 0; i < from.length; i++) {
 		if (from[i] === to[i]) continue;
-		const at = result.indexOf(from[i]);
-		if (at === -1) return null;
-		result[at] = to[i];
+		if (!once(from, from[i]) || !once(release, from[i])) return null;
+		result[release.indexOf(from[i])] = to[i];
 	}
 	return result.join("\n");
 }
@@ -150,6 +159,8 @@ if (order > 0) stop(`This copy is on ${current}, which is newer than ${target}.`
 // Git finds the merge base by itself once the copy's commit seems to descend from its release.
 // That stays local and ends with the merge: the commit made below has the copy's real history.
 const head = git("rev-parse", "HEAD");
+// What a run that stopped halfway left, by its full name so that it can be nothing else.
+attempt("update-ref", "-d", `${REPLACEMENTS}${head}`);
 git("replace", "--graft", head, `${RELEASES}/${current}^{commit}`);
 attempt("merge", "--squash", `${RELEASES}/${target}`);
 git("replace", "--delete", head);
