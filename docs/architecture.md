@@ -466,6 +466,12 @@ name and redirect URIs, in strict bodies, and write a fixed row that `workspaceA
 anyone sends can decide `skip_consent`, `metadata` or `reference_id`, and the row is what the check for
 who may sign in trusts.
 
+They also take what the app's library needs, because many real apps offer no choice about it: how it sends
+its secret, from a list that leaves out `none`, and whether it must use PKCE. Neither has any part in who may
+sign in. Both are about how the app proves itself, and an admin who can add an app already decides where its
+codes go. Turning PKCE off still asks for a recent sign-in, since a stolen cookie should not weaken what
+protects the members who use the app.
+
 - **Two columns say whose an app is.** `reference_id` finds a workspace's apps, and the triggers below use
   it. `metadata.workspace` is what the token hooks can see of the same fact, as they get the client's
   metadata and not its row. Both are written once, together.

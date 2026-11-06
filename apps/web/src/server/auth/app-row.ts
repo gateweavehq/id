@@ -112,9 +112,9 @@ export function appRow(app: NewApp, now = new Date()) {
 }
 
 /**
- * An app a workspace adds. Only the server writes these values, so the check for who may sign in can
- * trust `metadata`, and nobody can ask for anything here to be otherwise. `reference_id` is what finds
- * a workspace's apps, and `metadata.workspace` is what the token hooks can see of the same fact.
+ * An app a workspace adds. Only the server writes the values here, so the check for who may sign in can
+ * trust `metadata`, and nobody can ask for any of them to be otherwise. `reference_id` is what finds a
+ * workspace's apps, and `metadata.workspace` is what the token hooks can see of the same fact.
  */
 export function workspaceAppRow(app: NewWorkspaceApp, now = new Date()) {
 	const clientId = newClientId();
