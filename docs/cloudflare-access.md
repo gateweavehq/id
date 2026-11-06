@@ -55,8 +55,10 @@ provider**, then **OpenID Connect**.
 | Certificate URL              | `<issuer>/api/auth/jwks`               |
 | Proof of Key Exchange (PKCE) | On                                     |
 
-Leave **Email claim** at `email`. ID only ever gives an address it has verified. To write rules on groups, see
-[Rules on groups](#rules-on-groups) first, because they need more than this form.
+Leave **Email claim** at `email`. ID only ever gives an address it has verified.
+
+To write rules on groups, make the provider as [Rules on groups](#rules-on-groups) shows instead of with this
+form, because they need more than it offers.
 
 A change to a provider can take a while to reach sign-ins. Fifteen seconds after one, Access was still asking
 for what the old settings said, so give it a minute before you judge the result.
@@ -102,7 +104,9 @@ An Access rule can use the groups in your workspace, as long as two things are s
 
 Cloudflare's documentation shows no field for scopes in the dashboard, and a provider made without them holds
 `openid`, `email` and `profile`. The way this has been seen to work is to make the provider through the API,
-with a token that has **Access: Organizations, Identity Providers, and Groups Write**.
+with a token that has **Access: Organizations, Identity Providers, and Groups Write**. This takes the place of
+step 2. If you have already made a provider there, this makes a second one, so choose the new one under your
+application's **Identity providers** and delete the old one. A rule only sees claims from the provider it names.
 
 Put the settings in a file, so that the client secret stays out of your shell's history:
 
@@ -124,7 +128,7 @@ Put the settings in a file, so that the client secret stays out of your shell's 
 }
 ```
 
-Then send it, and delete the file:
+Then send it, and delete the file. The answer holds the new provider's `id`:
 
 ```sh
 curl "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/identity_providers" \
