@@ -17,7 +17,7 @@ export const Route = createFileRoute("/.well-known/openid-configuration")({
 				// use here. Introspection is closed, as `OIDC_CLOSED_PATHS` says, and `claims` is dropped from
 				// every request by `membersOnlyToWorkspaceApps`. No app can be registered for a signed
 				// assertion, nobody tests DPoP, and every app has pairwise subjects. `select_account` is
-				// refused for want of a page, and `create` only leads to the sign-in page.
+				// refused for want of a page.
 				const offered = Object.entries((await answer.json()) as Record<string, unknown>);
 				const metadata = offered.filter(
 					([name]) => !name.startsWith("introspection_") && !WITHHELD.test(name),
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/.well-known/openid-configuration")({
 					token_endpoint_auth_methods_supported: SECRET_METHODS,
 					revocation_endpoint_auth_methods_supported: SECRET_METHODS,
 					subject_types_supported: ["pairwise"],
-					prompt_values_supported: ["none", "login", "consent"],
+					prompt_values_supported: ["none", "login", "consent", "create"],
 				};
 				return new Response(JSON.stringify(said), {
 					status: answer.status,

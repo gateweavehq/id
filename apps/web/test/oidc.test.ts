@@ -276,7 +276,7 @@ describe("discovery", () => {
 		const methods = ["client_secret_basic", "client_secret_post"];
 		expect(as.token_endpoint_auth_methods_supported).toEqual(methods);
 		expect(as.revocation_endpoint_auth_methods_supported).toEqual(methods);
-		expect(as.prompt_values_supported).toEqual(["none", "login", "consent"]);
+		expect(as.prompt_values_supported).toEqual(["none", "login", "consent", "create"]);
 		const named = Object.keys(as);
 		expect(named.filter((name) => name.startsWith("dpop_"))).toEqual([]);
 		expect(named.filter((name) => name.includes("_auth_signing_"))).toEqual([]);
