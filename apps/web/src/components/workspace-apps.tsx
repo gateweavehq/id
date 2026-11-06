@@ -104,6 +104,56 @@ function SecretOnce({ revealed, onDone }: { revealed: Revealed; onDone: () => vo
 	);
 }
 
+/**
+ * What an app's library can do. Most need none of it, so it stays folded until an app is already set
+ * differently. Unfolded or not, the fields go with the form.
+ */
+function AppLibrary({ app }: { app?: Pick<WorkspaceApp, "clientAuth" | "requirePkce"> }) {
+	const clientAuth = app?.clientAuth ?? "client_secret_basic";
+	const requirePkce = app?.requirePkce ?? true;
+	return (
+		<details className="text-sm" open={clientAuth !== "client_secret_basic" || !requirePkce}>
+			<summary className="cursor-pointer text-muted-foreground">
+				If your app's library needs something else
+			</summary>
+			<div className="mt-3 space-y-3">
+				<fieldset className="min-w-0 space-y-2">
+					<legend className="font-medium">How the app sends its secret</legend>
+					<label className="flex items-center gap-2">
+						<input
+							type="radio"
+							name="clientAuth"
+							value="client_secret_basic"
+							defaultChecked={clientAuth === "client_secret_basic"}
+						/>
+						In an HTTP Basic header (client_secret_basic)
+					</label>
+					<label className="flex items-center gap-2">
+						<input
+							type="radio"
+							name="clientAuth"
+							value="client_secret_post"
+							defaultChecked={clientAuth === "client_secret_post"}
+						/>
+						In the body of the request (client_secret_post)
+					</label>
+				</fieldset>
+				<div className="space-y-1">
+					<label className="flex items-center gap-2 font-medium">
+						<input type="checkbox" name="requirePkce" defaultChecked={requirePkce} />
+						Require PKCE
+					</label>
+					<p className="text-xs text-muted-foreground">
+						Leave this on unless the library cannot do PKCE. Without it, the app has to send a nonce
+						and check it, or a code that goes astray can sign someone in. Turning it off asks for a
+						recent sign-in.
+					</p>
+				</div>
+			</div>
+		</details>
+	);
+}
+
 /** Who can use it, in words, so an admin need not open anything to find out. */
 function whoCanUse(app: WorkspaceApp, groups: WorkspaceGroup[], workspaceName: string): string {
 	if (app.groups.length === 0) return `Everyone in ${workspaceName} can use it.`;
@@ -243,12 +293,17 @@ function AppRow({
 	async function onEdit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget);
+		const clientAuth = form.get("clientAuth");
+		const requirePkce = form.has("requirePkce");
 		setPending(true);
 		setError(null);
 		const result = await post("/workspaces/apps/change", {
 			...which,
 			name: String(form.get("name")).trim(),
 			redirectUris: urisIn(String(form.get("redirectUris"))),
+			// Only what this form changes, so a page left open cannot undo what someone else has chosen.
+			...(clientAuth !== app.clientAuth && { clientAuth }),
+			...(requirePkce !== app.requirePkce && { requirePkce }),
 		});
 		setPending(false);
 		if (!result.ok) {
@@ -311,6 +366,14 @@ function AppRow({
 				<p className="break-words text-muted-foreground">{hostOf(app)}</p>
 				<p className="font-mono text-xs break-all text-muted-foreground">{app.clientId}</p>
 				<p className="break-words text-muted-foreground">{whoCanUse(app, groups, workspaceName)}</p>
+				{app.clientAuth === "client_secret_post" && (
+					<p className="text-muted-foreground">It sends its secret in the body of the request.</p>
+				)}
+				{!app.requirePkce && (
+					<p className="text-muted-foreground">
+						It need not use PKCE, so it has to send a nonce and check it.
+					</p>
+				)}
 				{app.addedAt !== null && (
 					<p className="break-words text-muted-foreground">{addedLine(app.addedAt, app.addedBy)}</p>
 				)}
@@ -344,6 +407,7 @@ function AppRow({
 							className={TEXTAREA}
 						/>
 					</div>
+					<AppLibrary app={app} />
 					<div className="flex flex-wrap gap-2">
 						<LiveButton type="submit" size="sm" disabled={pending} aria-label={`Save ${app.name}`}>
 							Save
@@ -472,6 +536,8 @@ export function WorkspaceApps({
 			organizationId: workspaceId,
 			name,
 			redirectUris: urisIn(String(form.get("redirectUris"))),
+			clientAuth: form.get("clientAuth"),
+			requirePkce: form.has("requirePkce"),
 		});
 		setPending(false);
 		if (!result.ok) {
@@ -547,6 +613,7 @@ export function WorkspaceApps({
 						All on one host, which stays the app's for good.
 					</p>
 				</div>
+				<AppLibrary />
 				{error && (
 					<p role="alert" className="text-sm text-destructive">
 						{error}

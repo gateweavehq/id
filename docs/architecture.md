@@ -421,8 +421,12 @@ Other rules:
   so `amr` cannot be added that way and `acr` is always `"0"`. Do not promise an app that it can tell
   how someone signed in until this is solved.
 - **Refresh tokens rotate,** and reusing an old one revokes the newer one too.
-- **Apps need PKCE and exact redirect URIs.** There is no open dynamic client registration: admins
-  choose apps. A pairwise app's redirect URIs must share one host.
+- **Apps need exact redirect URIs, and PKCE unless they say they cannot.** There is no open dynamic
+  client registration: admins choose apps. A pairwise app's redirect URIs must share one host. RFC 9700
+  lets an app with a secret use a nonce in place of PKCE, and not every library can do PKCE, so an app can
+  be registered without it. The provider still wants one or the other for `offline_access`, and refuses a
+  verifier for a code that was asked for with no challenge. Whether the app really sends and checks a
+  nonce is for the app.
 - **`sid` is the session's own id, in the ID token and the logout token,** so two apps can match up a
   person for as long as one session lasts. Workspace apps (who may
   not trust each other) need this looked at before they get `backchannel_logout_uri`.
@@ -461,6 +465,12 @@ The provider's own client endpoints stay closed, because they take fields from t
 name and redirect URIs, in strict bodies, and write a fixed row that `workspaceAppRow` builds. So nothing
 anyone sends can decide `skip_consent`, `metadata` or `reference_id`, and the row is what the check for
 who may sign in trusts.
+
+They also take what the app's library needs, because many real apps offer no choice about it: how it sends
+its secret, from a list that leaves out `none`, and whether it must use PKCE. Neither has any part in who may
+sign in. Both are about how the app proves itself, and an admin who can add an app already decides where its
+codes go. Turning PKCE off still asks for a recent sign-in, since a stolen cookie should not weaken what
+protects the members who use the app.
 
 - **Two columns say whose an app is.** `reference_id` finds a workspace's apps, and the triggers below use
   it. `metadata.workspace` is what the token hooks can see of the same fact, as they get the client's

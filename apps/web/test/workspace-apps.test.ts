@@ -122,6 +122,8 @@ async function details(who: Who, workspace: Workspace) {
 			name: string;
 			redirectUris: string[];
 			groups: string[];
+			clientAuth: string;
+			requirePkce: boolean;
 			addedAt: number | null;
 			addedBy: { name: string | null; stillMember: boolean } | null;
 		}[];
@@ -156,12 +158,17 @@ async function remove(by: Who, workspace: Workspace, memberId: string) {
 
 let hosts = 0;
 
-async function newApp(owner: Who, workspace: Workspace, name = `Tool ${hosts + 1}`) {
+async function newApp(
+	owner: Who,
+	workspace: Workspace,
+	name = `Tool ${hosts + 1}`,
+	library: { clientAuth?: string; requirePkce?: boolean } = {},
+) {
 	const host = `tool-${++hosts}.apps.test`;
 	const redirectUri = `https://${host}/callback`;
 	const response = await api("/workspaces/apps/add", {
 		who: owner,
-		body: { organizationId: workspace.id, name, redirectUris: [redirectUri] },
+		body: { organizationId: workspace.id, name, redirectUris: [redirectUri], ...library },
 	});
 	expect(response.status).toBe(200);
 	const { clientId, clientSecret } = (await response.json()) as {
@@ -192,6 +199,7 @@ async function authorize(
 	app: Pick<App, "clientId" | "redirectUri">,
 	person: Who,
 	params: Record<string, string> = {},
+	leavingOut: string[] = [],
 ) {
 	const state = oauth.generateRandomState();
 	const nonce = oauth.generateRandomNonce();
@@ -208,6 +216,7 @@ async function authorize(
 		code_challenge_method: "S256",
 		...params,
 	}).toString();
+	for (const name of leavingOut) url.searchParams.delete(name);
 	const response = await id.fetch(url, {
 		headers: { "cf-connecting-ip": newClient(), cookie: person.cookie },
 	});
@@ -228,7 +237,13 @@ async function agree(asked: Authorized, person: Who): Promise<Authorized> {
 	return { ...asked, location: new URL(url) };
 }
 
-async function exchange(app: App, authorized: Authorized) {
+/** An app that sent no challenge or no nonce says so, in place of the value it would check. */
+type Exchanging = Omit<Authorized, "verifier" | "nonce"> & {
+	verifier: string | typeof oauth.nopkce;
+	nonce: string | typeof oauth.expectNoNonce;
+};
+
+async function exchange(app: App, authorized: Exchanging) {
 	const params = oauth.validateAuthResponse(as, app.client, authorized.location, authorized.state);
 	const response = await oauth.authorizationCodeGrantRequest(
 		as,
@@ -338,6 +353,8 @@ describe("adding an app", () => {
 				name: app.name,
 				redirectUris: [app.redirectUri],
 				groups: [],
+				clientAuth: "client_secret_basic",
+				requirePkce: true,
 				addedAt: expect.any(Number),
 				addedBy: { name: "Ada", stillMember: true },
 			},
@@ -496,6 +513,8 @@ describe("adding an app", () => {
 				workspace: "Logged",
 				name: "Logged tool",
 				redirectUris: [app.redirectUri],
+				clientAuth: "client_secret_basic",
+				requirePkce: true,
 			}),
 		});
 
@@ -511,6 +530,8 @@ describe("adding an app", () => {
 				workspace: "Logged",
 				name: "Logged tool",
 				redirectUris: [`${app.redirectUri}/2`],
+				clientAuth: "client_secret_basic",
+				requirePkce: true,
 			}),
 		});
 
@@ -1028,6 +1049,8 @@ describe("changing an app", () => {
 				name: "Renamed",
 				redirectUris: [moved],
 				groups: [],
+				clientAuth: "client_secret_basic",
+				requirePkce: true,
 				addedAt: expect.any(Number),
 				addedBy: { name: "Ada", stillMember: true },
 			},
@@ -1100,6 +1123,274 @@ describe("changing an app", () => {
 		await expect(refresh(app, tokens.refresh_token)).rejects.toMatchObject({ status: 401 });
 		expect((await userinfo(tokens.access_token)).status).toBe(200);
 		await refresh({ ...app, auth: oauth.ClientSecretBasic(clientSecret) }, tokens.refresh_token);
+	});
+});
+
+describe("an app whose library needs something else", () => {
+	const NO_PKCE = ["code_challenge", "code_challenge_method"];
+
+	async function anApp(library: { clientAuth?: string; requirePkce?: boolean } = {}) {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const app = await newApp(owner, workspace, undefined, library);
+		const which = { organizationId: workspace.id, clientId: app.clientId };
+		return {
+			owner,
+			workspace,
+			app,
+			change: { ...which, name: app.name, redirectUris: [app.redirectUri] },
+			inTheBody: { ...app, auth: oauth.ClientSecretPost(app.clientSecret) },
+		};
+	}
+
+	/** What the app's server hears when it is not let in, which says why. */
+	function refusal(exchanging: Promise<unknown>, why: object) {
+		return expect(exchanging).rejects.toMatchObject(why);
+	}
+
+	// RFC 6749, 5.2: a client that tried HTTP Basic is told 401 and challenged, and one that did not gets 400.
+	const BASIC_REFUSED = { status: 401 };
+	const BODY_REFUSED = { status: 400, error: "invalid_client" };
+
+	function errorAtTheApp(authorized: Authorized, app: App) {
+		expect(authorized.location.host).toBe(app.host);
+		expect(authorized.location.searchParams.has("code")).toBe(false);
+		return authorized.location.searchParams.get("error");
+	}
+
+	describe("sending its secret another way", () => {
+		it("signs in and refreshes that way", async () => {
+			const { owner, inTheBody } = await anApp({ clientAuth: "client_secret_post" });
+			const { tokens } = await signInToApp(inTheBody, owner);
+			const refreshed = await refresh(inTheBody, tokens.refresh_token);
+			expect(refreshed.access_token).toBeTruthy();
+			expect(await appRowIn(inTheBody.clientId)).toMatchObject({
+				token_endpoint_auth_method: "client_secret_post",
+				require_pkce: 1,
+			});
+		});
+
+		it("takes only the way it was registered for", async () => {
+			const { owner, app } = await anApp({ clientAuth: "client_secret_post" });
+			await refusal(signInToApp(app, owner), BASIC_REFUSED);
+		});
+
+		it("takes only HTTP Basic from an app that did not say otherwise", async () => {
+			const { owner, inTheBody } = await anApp();
+			await refusal(signInToApp(inTheBody, owner), BODY_REFUSED);
+		});
+
+		it.each([["none"], ["private_key_jwt"], ["client_secret_jwt"], ["tls_client_auth"]])(
+			"cannot be %s",
+			async (clientAuth) => {
+				const { owner, workspace, app, change } = await anApp();
+				const before = await appRowIn(app.clientId);
+				const added = await api("/workspaces/apps/add", {
+					who: owner,
+					body: {
+						organizationId: workspace.id,
+						name: "Other",
+						redirectUris: ["https://other.apps.test/callback"],
+						clientAuth,
+					},
+				});
+				expect(added.status).toBe(400);
+				const changed = await api("/workspaces/apps/change", {
+					who: owner,
+					body: { ...change, clientAuth },
+				});
+				expect(changed.status).toBe(400);
+				expect(await appRowIn(app.clientId)).toEqual(before);
+				expect(await count("oauth_client", "reference_id = ?", workspace.id)).toBe(1);
+			},
+		);
+	});
+
+	describe("leaving PKCE out", () => {
+		it("signs in with a nonce", async () => {
+			const { owner, app } = await anApp({ requirePkce: false });
+			const asked = await agree(await authorize(app, owner, {}, NO_PKCE), owner);
+			const { tokens, claims } = await exchange(app, { ...asked, verifier: oauth.nopkce });
+			expect(claims.nonce).toBe(asked.nonce);
+			expect(tokens.refresh_token).toBeTruthy();
+			expect(await appRowIn(app.clientId)).toMatchObject({
+				token_endpoint_auth_method: "client_secret_basic",
+				require_pkce: 0,
+			});
+		});
+
+		it("is refused for an app that did not say so, at the app", async () => {
+			const { owner, app } = await anApp();
+			expect(errorAtTheApp(await authorize(app, owner, {}, NO_PKCE), app)).toBe("invalid_request");
+		});
+
+		it("gets no refresh token with neither PKCE nor a nonce", async () => {
+			const { owner, app } = await anApp({ requirePkce: false });
+			const neither = await authorize(app, owner, {}, [...NO_PKCE, "nonce"]);
+			expect(errorAtTheApp(neither, app)).toBe("invalid_request");
+		});
+
+		it("leaves it to the app whether to send a nonce otherwise", async () => {
+			const { owner, app } = await anApp({ requirePkce: false });
+			const scope = { scope: "openid email" };
+			const asked = await agree(await authorize(app, owner, scope, [...NO_PKCE, "nonce"]), owner);
+			const { claims } = await exchange(app, {
+				...asked,
+				verifier: oauth.nopkce,
+				nonce: oauth.expectNoNonce,
+			});
+			expect(claims.nonce).toBeUndefined();
+		});
+
+		it("takes no verifier for a code that was asked for with no challenge", async () => {
+			const { owner, app } = await anApp({ requirePkce: false });
+			const asked = await agree(await authorize(app, owner, {}, NO_PKCE), owner);
+			await refusal(exchange(app, asked), { error: "invalid_request" });
+		});
+
+		it("holds an app to a challenge it did send", async () => {
+			const { owner, app } = await anApp({ requirePkce: false });
+			const first = await agree(await authorize(app, owner), owner);
+			await refusal(exchange(app, { ...first, verifier: oauth.nopkce }), {
+				error: "invalid_request",
+			});
+			const second = await authorize(app, owner);
+			await refusal(exchange(app, { ...second, verifier: oauth.generateRandomCodeVerifier() }), {
+				error: "invalid_grant",
+			});
+			const { tokens } = await exchange(app, await authorize(app, owner));
+			expect(tokens.access_token).toBeTruthy();
+		});
+
+		it("still asks people, and still keeps out anyone who is not a member", async () => {
+			const { owner, app } = await anApp({ requirePkce: false });
+			const stranger = await newPerson();
+			expectRefused(await authorize(app, stranger, {}, NO_PKCE), app);
+			const asked = await authorize(app, owner, {}, NO_PKCE);
+			expect(asked.location.pathname).toBe("/consent");
+		});
+	});
+
+	describe("changing them", () => {
+		it("takes effect at the next sign-in, and shows", async () => {
+			const { owner, workspace, app, change, inTheBody } = await anApp();
+			const changed = await api("/workspaces/apps/change", {
+				who: owner,
+				body: { ...change, clientAuth: "client_secret_post", requirePkce: false },
+			});
+			expect(changed.status).toBe(200);
+			expect((await details(owner, workspace)).apps[0]).toMatchObject({
+				clientAuth: "client_secret_post",
+				requirePkce: false,
+			});
+			const asked = await agree(await authorize(app, owner, {}, NO_PKCE), owner);
+			const { claims } = await exchange(inTheBody, { ...asked, verifier: oauth.nopkce });
+			expect(claims.sub).toBeTruthy();
+			await id.auditEventRecorded(owner.userId, {
+				type: "app_changed",
+				app: app.clientId,
+				detail: JSON.stringify({
+					workspace: workspace.name,
+					name: app.name,
+					redirectUris: [app.redirectUri],
+					clientAuth: "client_secret_post",
+					requirePkce: false,
+				}),
+			});
+
+			const back = await api("/workspaces/apps/change", {
+				who: owner,
+				body: { ...change, clientAuth: "client_secret_basic", requirePkce: true },
+			});
+			expect(back.status).toBe(200);
+			expect(errorAtTheApp(await authorize(app, owner, {}, NO_PKCE), app)).toBe("invalid_request");
+			await refusal(exchange(inTheBody, await authorize(app, owner)), BODY_REFUSED);
+		});
+
+		it("leaves them as they are when a change does not mention them", async () => {
+			const { owner, workspace, change } = await anApp({
+				clientAuth: "client_secret_post",
+				requirePkce: false,
+			});
+			const renamed = await api("/workspaces/apps/change", {
+				who: owner,
+				body: { ...change, name: "Renamed" },
+			});
+			expect(renamed.status).toBe(200);
+			expect((await details(owner, workspace)).apps[0]).toMatchObject({
+				name: "Renamed",
+				clientAuth: "client_secret_post",
+				requirePkce: false,
+			});
+		});
+
+		it("wants someone who signed in recently to turn PKCE off", async () => {
+			const { owner, app, change } = await anApp();
+			const before = await appRowIn(app.clientId);
+			await ageSession(owner);
+			const refused = await api("/workspaces/apps/change", {
+				who: owner,
+				body: { ...change, name: "Renamed", clientAuth: "client_secret_post", requirePkce: false },
+			});
+			expect(refused.status).toBe(403);
+			expect(((await refused.json()) as { code: string }).code).toBe("SESSION_NOT_FRESH");
+			expect(await appRowIn(app.clientId)).toEqual(before);
+		});
+
+		it("does not ask that for anything else", async () => {
+			const { owner, app, change } = await anApp();
+			await ageSession(owner);
+			const other = await api("/workspaces/apps/change", {
+				who: owner,
+				body: { ...change, requirePkce: true, clientAuth: "client_secret_post" },
+			});
+			expect(other.status).toBe(200);
+			expect(await appRowIn(app.clientId)).toMatchObject({
+				token_endpoint_auth_method: "client_secret_post",
+				require_pkce: 1,
+			});
+		});
+
+		it("does not ask it of an app that has it off already, or to turn it on", async () => {
+			const { owner, app, change } = await anApp({ requirePkce: false });
+			await ageSession(owner);
+			const same = await api("/workspaces/apps/change", {
+				who: owner,
+				body: { ...change, requirePkce: false },
+			});
+			expect(same.status).toBe(200);
+			const on = await api("/workspaces/apps/change", {
+				who: owner,
+				body: { ...change, requirePkce: true },
+			});
+			expect(on.status).toBe(200);
+			expect(await appRowIn(app.clientId)).toMatchObject({ require_pkce: 1 });
+		});
+
+		it("is for those who manage apps", async () => {
+			const { owner, workspace, app, change } = await anApp();
+			const member = await newPerson();
+			await join(member, workspace, owner);
+			const before = await appRowIn(app.clientId);
+			const refused = await api("/workspaces/apps/change", {
+				who: member,
+				body: { ...change, requirePkce: false },
+			});
+			expect(refused.status).toBe(403);
+			expect(await appRowIn(app.clientId)).toEqual(before);
+		});
+
+		it("leaves another workspace's app alone", async () => {
+			const { app } = await anApp();
+			const other = await anApp();
+			const before = await appRowIn(app.clientId);
+			const refused = await api("/workspaces/apps/change", {
+				who: other.owner,
+				body: { ...other.change, clientId: app.clientId, requirePkce: false },
+			});
+			expect(refused.status).toBe(404);
+			expect(await appRowIn(app.clientId)).toEqual(before);
+		});
 	});
 });
 

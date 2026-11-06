@@ -21,7 +21,12 @@ async function server() {
 }
 
 /** Sends the browser to ID the way this app would, and remembers what its server has to check. */
-async function goToSignIn(page: Page, clientId: string, params: Record<string, string> = {}) {
+async function goToSignIn(
+	page: Page,
+	clientId: string,
+	params: Record<string, string> = {},
+	leavingOut: string[] = [],
+) {
 	const as = await server();
 	const state = oauth.generateRandomState();
 	const nonce = oauth.generateRandomNonce();
@@ -38,6 +43,7 @@ async function goToSignIn(page: Page, clientId: string, params: Record<string, s
 		code_challenge_method: "S256",
 		...params,
 	}).toString();
+	for (const name of leavingOut) url.searchParams.delete(name);
 	await page.goto(url.href, { waitUntil: "networkidle" });
 	return { as, state, nonce, verifier };
 }
@@ -284,6 +290,111 @@ test("names with nowhere to break stay on a phone, whatever is open", async ({ p
 	await page.getByRole("button", { name: `Delete ${groupName}`, exact: true }).click();
 	await expect(page.getByRole("button", { name: `Yes, delete ${groupName}` })).toBeVisible();
 	expect(await sticksOut()).toEqual([]);
+});
+
+test("an admin says what an app's library needs, and it signs in that way", async ({
+	page,
+	context,
+}) => {
+	const problems = await watch(page);
+	const NO_PKCE = ["code_challenge", "code_challenge_method"];
+	await signUp(page, "Ada", address("ada"));
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	const slug = await makeWorkspace(page, `Old Library ${Date.now()}`);
+	const apps = page.getByRole("list", { name: "Apps" });
+
+	const made = await test.step("the form keeps it folded until it is wanted", async () => {
+		await page.getByLabel("App name").fill("Old Tool");
+		await page.getByLabel(/^Redirect URIs/).fill(APP.redirectUri);
+		await expect(page.getByLabel("Require PKCE")).toBeHidden();
+		await page.getByText("If your app's library needs something else").click();
+		await expect(page.getByLabel("Require PKCE")).toBeChecked();
+		await page.getByLabel(/client_secret_post/).check();
+		await page.getByLabel("Require PKCE").uncheck();
+		await page.getByRole("button", { name: "Add app" }).click();
+		const added = {
+			clientId: await page.getByLabel("Client ID").inputValue(),
+			clientSecret: await page.getByLabel("Client secret").inputValue(),
+		};
+		await page.getByRole("button", { name: "I have saved it" }).click();
+		await expect(apps).toContainText("It sends its secret in the body of the request.");
+		await expect(apps).toContainText("It need not use PKCE");
+		return added;
+	});
+	const client = { client_id: made.clientId };
+
+	await test.step("a sign-in with no PKCE, and the secret in the body", async () => {
+		const flow = await goToSignIn(page, made.clientId, {}, NO_PKCE);
+		await page.getByRole("button", { name: "Allow" }).click();
+		await expect(appHeading(page)).toBeVisible();
+		const params = oauth.validateAuthResponse(flow.as, client, new URL(page.url()), flow.state);
+		const response = await oauth.authorizationCodeGrantRequest(
+			flow.as,
+			client,
+			oauth.ClientSecretPost(made.clientSecret),
+			params,
+			APP.redirectUri,
+			oauth.nopkce,
+			onThisMachine,
+		);
+		const tokens = await oauth.processAuthorizationCodeResponse(flow.as, client, response, {
+			expectedNonce: flow.nonce,
+			requireIdToken: true,
+		});
+		expect(tokens.access_token).toBeTruthy();
+	});
+
+	await test.step("editing opens on how it is set, and says when it goes back", async () => {
+		await page.goto(`/workspaces/${slug}`, { waitUntil: "networkidle" });
+		await page.getByRole("button", { name: "Edit Old Tool" }).click();
+		await expect(apps.getByLabel("Require PKCE")).not.toBeChecked();
+		await expect(apps.getByLabel(/client_secret_post/)).toBeChecked();
+		await apps.getByLabel("Require PKCE").check();
+		await apps.getByLabel(/client_secret_basic/).check();
+		await page.getByRole("button", { name: "Save Old Tool" }).click();
+		await expect(apps).not.toContainText("It need not use PKCE");
+		await expect(apps).not.toContainText("in the body of the request");
+	});
+
+	await test.step("editing a plain app keeps it folded, and it changes nothing there", async () => {
+		await page.getByRole("button", { name: "Edit Old Tool" }).click();
+		await expect(apps.getByLabel("Require PKCE")).toBeHidden();
+		await page.getByRole("button", { name: "Save Old Tool" }).click();
+		await expect(apps).not.toContainText("It need not use PKCE");
+	});
+
+	await test.step("now it has to use PKCE", async () => {
+		await goToSignIn(page, made.clientId, {}, NO_PKCE);
+		await expect(appHeading(page)).toBeVisible();
+		const back = new URL(page.url());
+		expect(back.searchParams.get("error")).toBe("invalid_request");
+		expect(back.searchParams.has("code")).toBe(false);
+	});
+
+	await test.step("a page left open does not undo what someone else chose", async () => {
+		await page.goto(`/workspaces/${slug}`, { waitUntil: "networkidle" });
+		await page.getByRole("button", { name: "Edit Old Tool" }).click();
+
+		const other = await context.newPage();
+		await other.goto(`/workspaces/${slug}`, { waitUntil: "networkidle" });
+		const otherApps = other.getByRole("list", { name: "Apps" });
+		await other.getByRole("button", { name: "Edit Old Tool" }).click();
+		await otherApps.getByText("If your app's library needs something else").click();
+		await otherApps.getByLabel("Require PKCE").uncheck();
+		await otherApps.getByLabel(/client_secret_post/).check();
+		await other.getByRole("button", { name: "Save Old Tool" }).click();
+		await expect(otherApps).toContainText("It need not use PKCE");
+		await expect(otherApps).toContainText("It sends its secret in the body of the request.");
+		await other.close();
+
+		await page.getByRole("button", { name: "Save Old Tool" }).click();
+		await expect(page.getByRole("button", { name: "Edit Old Tool" })).toBeVisible();
+		await page.reload({ waitUntil: "networkidle" });
+		await expect(apps).toContainText("It need not use PKCE");
+		await expect(apps).toContainText("It sends its secret in the body of the request.");
+	});
+
+	expect(problems).toEqual([]);
 });
 
 test("an admin adds an app, and only members get in, once they agree", async ({

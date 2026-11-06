@@ -7,6 +7,7 @@ import { appName, can, comparableName, type WorkspaceApp } from "../../lib/works
 import type { Database } from "../db";
 import { schema } from "../db";
 import {
+	CLIENT_AUTH_METHODS,
 	hostOfUris,
 	newClientSecret,
 	problemWithWorkspaceAppUris,
@@ -42,6 +43,12 @@ const details = {
 		.max(REDIRECT_URIS_PER_APP, `An app can have at most ${REDIRECT_URIS_PER_APP} redirect URIs.`),
 };
 
+/** Left out, these stay as they are, so that changing an app's name need not know about them. */
+const library = {
+	clientAuth: z.enum(CLIENT_AUTH_METHODS).optional(),
+	requirePkce: z.boolean().optional(),
+};
+
 interface AppsConfig {
 	db: Database;
 	/** The deployment's origin, which no app may send anyone back to. */
@@ -56,6 +63,8 @@ export async function appsOf(db: Database, workspaceId: string): Promise<Workspa
 			clientId: schema.oauthClient.clientId,
 			name: schema.oauthClient.name,
 			redirectUris: schema.oauthClient.redirectUris,
+			clientAuth: schema.oauthClient.tokenEndpointAuthMethod,
+			requirePkce: schema.oauthClient.requirePKCE,
 			createdAt: schema.oauthClient.createdAt,
 			// Not in the provider's schema, which is generated: see migrations/0012_app_added_by.sql.
 			addedBy: sql<string | null>`"oauth_client"."added_by"`,
@@ -94,19 +103,23 @@ export async function appsOf(db: Database, workspaceId: string): Promise<Workspa
 		.from(schema.workspaceAppGroup)
 		.where(eq(schema.workspaceAppGroup.organizationId, workspaceId))
 		.all();
-	return rows.map(({ clientId, name, redirectUris, createdAt, addedBy }) => ({
-		clientId,
-		name: name ?? "",
-		redirectUris: urisIn(redirectUris),
-		groups: named.filter((row) => row.clientId === clientId).map((row) => row.groupId),
-		addedAt: createdAt?.getTime() ?? null,
-		addedBy: addedBy
-			? {
-					name: people.find((person) => person.id === addedBy)?.name ?? null,
-					stillMember: staying.some((row) => row.userId === addedBy),
-				}
-			: null,
-	}));
+	return rows.map(
+		({ clientId, name, redirectUris, clientAuth, requirePkce, createdAt, addedBy }) => ({
+			clientId,
+			name: name ?? "",
+			redirectUris: urisIn(redirectUris),
+			groups: named.filter((row) => row.clientId === clientId).map((row) => row.groupId),
+			clientAuth: clientAuth === "client_secret_post" ? clientAuth : "client_secret_basic",
+			requirePkce: requirePkce !== false,
+			addedAt: createdAt?.getTime() ?? null,
+			addedBy: addedBy
+				? {
+						name: people.find((person) => person.id === addedBy)?.name ?? null,
+						stillMember: staying.some((row) => row.userId === addedBy),
+					}
+				: null,
+		}),
+	);
 }
 
 function urisIn(stored: unknown): string[] {
@@ -124,6 +137,8 @@ async function requireApp(db: Database, workspaceId: string, clientId: string) {
 			clientId: schema.oauthClient.clientId,
 			name: schema.oauthClient.name,
 			redirectUris: schema.oauthClient.redirectUris,
+			clientAuth: schema.oauthClient.tokenEndpointAuthMethod,
+			requirePkce: schema.oauthClient.requirePKCE,
 		})
 		.from(schema.oauthClient)
 		.where(
@@ -174,7 +189,13 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 		ctx: GenericEndpointContext,
 		session: Session,
 		workspaceId: string,
-		app: { clientId: string; name: string | null; redirectUris?: string[] },
+		app: {
+			clientId: string;
+			name: string | null;
+			redirectUris?: string[];
+			clientAuth?: string | null;
+			requirePkce?: boolean | null;
+		},
 	) {
 		const from = whereFrom(ctx.headers);
 		record(type, async () => ({
@@ -185,8 +206,11 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 			detail: JSON.stringify({
 				workspace: await workspaceNameOf(db, workspaceId),
 				name: app.name,
-				// Where an app sends people is what someone looking into it would want to know.
+				// Where an app sends people is what someone looking into it would want to know, and so is
+				// what stands between a code going astray and someone being signed in with it.
 				redirectUris: app.redirectUris,
+				clientAuth: app.clientAuth,
+				requirePkce: app.requirePkce,
 			}),
 			...from,
 		}));
@@ -201,8 +225,8 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 				async (ctx) => {
 					noStore(ctx);
 					const { session } = ctx.context;
-					const { organizationId, name, redirectUris } = parseBody(
-						z.strictObject({ ...inWorkspace, ...details }),
+					const { organizationId, name, redirectUris, clientAuth, requirePkce } = parseBody(
+						z.strictObject({ ...inWorkspace, ...details, ...library }),
 						ctx.body,
 					);
 					await requireManager(db, organizationId, session);
@@ -225,6 +249,8 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 						name,
 						redirectUris,
 						addedBy: session.user.id,
+						clientAuth,
+						requirePkce,
 					});
 					const entries = Object.entries(row);
 					const columns = sql.raw(entries.map(([column]) => `"${column}"`).join(", "));
@@ -234,7 +260,13 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 					);
 					await db.run(sql`INSERT INTO "oauth_client" (${columns}) VALUES (${values})`);
 
-					log("app_added", ctx, session, organizationId, { clientId, name, redirectUris });
+					log("app_added", ctx, session, organizationId, {
+						clientId,
+						name,
+						redirectUris,
+						clientAuth: row.token_endpoint_auth_method,
+						requirePkce: row.require_pkce === 1,
+					});
 					return { clientId, clientSecret };
 				},
 			),
@@ -245,12 +277,12 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 				async (ctx) => {
 					noStore(ctx);
 					const { session } = ctx.context;
-					const { organizationId, clientId, name, redirectUris } = parseBody(
-						z.strictObject({ ...anApp, ...details }),
-						ctx.body,
-					);
+					const { organizationId, clientId, name, redirectUris, clientAuth, requirePkce } =
+						parseBody(z.strictObject({ ...anApp, ...details, ...library }), ctx.body);
 					await requireManager(db, organizationId, session);
 					const app = await requireApp(db, organizationId, clientId);
+					// It takes away what protects the members who use the app, so a stolen cookie should not.
+					if (requirePkce === false && app.requirePkce !== false) requireFreshSession(session, ctx);
 					const problem = problemWithWorkspaceAppUris(redirectUris, issuer);
 					if (problem) refuse(problem);
 					// People agreed to this host, and their ids in the app are computed from it. Moving would
@@ -261,10 +293,23 @@ export function workspaceAppsPlugin({ db, issuer, record }: AppsConfig): BetterA
 					await requireFreeName(db, name);
 					await db
 						.update(schema.oauthClient)
-						.set({ name, redirectUris, updatedAt: new Date() })
+						.set({
+							name,
+							redirectUris,
+							// Left out, these are undefined, and Drizzle leaves the column alone.
+							tokenEndpointAuthMethod: clientAuth,
+							requirePKCE: requirePkce,
+							updatedAt: new Date(),
+						})
 						.where(eq(schema.oauthClient.clientId, clientId))
 						.run();
-					log("app_changed", ctx, session, organizationId, { clientId, name, redirectUris });
+					log("app_changed", ctx, session, organizationId, {
+						clientId,
+						name,
+						redirectUris,
+						clientAuth: clientAuth ?? app.clientAuth,
+						requirePkce: requirePkce ?? app.requirePkce,
+					});
 					return { clientId };
 				},
 			),

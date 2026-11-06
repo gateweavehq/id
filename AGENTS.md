@@ -96,11 +96,13 @@ These are load-bearing. Breaking one breaks users' data or security, usually sil
 9. **The organization plugin is reached only through the gate.** Every path under `/organization/` needs
    a rule in `apps/web/src/server/auth/workspaces.ts`, with a strict body, or it answers 404. To someone
    outside a workspace, it does not exist. See "Workspaces" in [docs/architecture.md](docs/architecture.md)
-10. **A caller decides nothing about an app but its name, its redirect URIs and which of its workspace's
-    groups may use it.** The provider's client
-    endpoints stay closed (`clientPrivileges` is false), and `/workspaces/apps/*` writes a fixed row
-    from `workspaceAppRow`. `skip_consent`, `metadata` and `reference_id` are what the check for who may
-    sign in relies on. An app's host does not change. See "Apps a workspace adds" in the same document..
+10. **A caller decides nothing about an app but its name, its redirect URIs, which of its workspace's
+    groups may use it, and what its library needs: how it sends its secret and whether it must use PKCE.**
+    The provider's client endpoints stay closed (`clientPrivileges` is false), and `/workspaces/apps/*`
+    writes a fixed row from `workspaceAppRow`. `skip_consent`, `metadata` and `reference_id` are what the
+    check for who may sign in relies on, and nothing a caller sends reaches them. Every app has a secret,
+    so `none` is never a way to send one. An app's host does not change. See "Apps a workspace adds" in the
+    same document.
 
 Also: one Better Auth instance per isolate, built on first use (`getAuth()`). workerd forbids I/O in
 global scope, and `test/startup-logs.test.ts` fails if a cold start logs an error.
