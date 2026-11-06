@@ -440,6 +440,28 @@ describe("the audit log", () => {
 	});
 });
 
+describe("deleting an account that also has GitHub", () => {
+	it("wants the password, even from someone who tries removing it first", async () => {
+		// So that this person is not the first account, which runs the server and has to stay.
+		await signInAs(person());
+		const someone = person();
+		const { response, client } = await signInAs(someone);
+		const cookie = cookieOf(response);
+		await post("/account/first-password", client, { newPassword: PASSWORD }, cookie);
+		const accountId = await accountRow(client, cookie, "credential");
+
+		const removal = await post("/unlink-account", newClient(), { accountId }, cookie);
+		expect(removal.status).toBe(400);
+		const refused = await post("/account/delete", newClient(), {}, cookie);
+		expect(refused.status).toBe(400);
+		expect(((await refused.json()) as { code: string }).code).toBe("INVALID_PASSWORD");
+
+		const deleted = await post("/account/delete", newClient(), { password: PASSWORD }, cookie);
+		expect(deleted.status).toBe(200);
+		expect(await userCount(someone.emails?.[0]?.email ?? "")).toBe(0);
+	});
+});
+
 describe("someone who already has an account", () => {
 	it("reaches it with a verified address, and keeps their password", async () => {
 		const email = "both-ways@example.com";
