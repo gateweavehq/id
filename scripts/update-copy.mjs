@@ -65,7 +65,7 @@ const JSON_STRING = /"(?:[^"\\]|\\.)*"/.source;
 const COMMENT = new RegExp(`(${JSON_STRING})|//[^\\n]*|/\\*[\\s\\S]*?\\*/`, "g");
 const TRAILING_COMMA = new RegExp(`(${JSON_STRING})|,(\\s*[}\\]])`, "g");
 
-/** wrangler.jsonc as data. Comments and trailing commas go, and strings stay as they are. */
+/** wrangler.jsonc as data, so that nothing in a comment can pass for a setting. */
 function readConfig(text) {
 	return JSON.parse(
 		text
