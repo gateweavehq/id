@@ -15,6 +15,7 @@
 		"typecheck": "wrangler types && tsr generate && tsc && tsc -p scripts && tsc -p test && tsc -p e2e",
 		"test": "vitest run",
 		"test:e2e": "node e2e/build.mjs && playwright test",
+		"test:conformance": "node conformance/run.mjs",
 		"apps:add": "node scripts/add-app.ts",
 		"two-factor:remove": "node scripts/remove-two-factor.ts",
 		"db:generate": "drizzle-kit generate",

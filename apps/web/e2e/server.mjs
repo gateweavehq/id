@@ -64,6 +64,8 @@ const seed = [
 	`INSERT INTO "account" (id, account_id, provider_id, user_id, password, created_at, updated_at)
 		VALUES ('seeded-account', 'seeded-person', 'credential', 'seeded-person',
 		'${await hashPassword(PERSON.password)}', ${now}, ${now});`,
+	// The apps of a conformance run (conformance/run.mjs).
+	...(process.env.ID_E2E_SEED ? [readFileSync(process.env.ID_E2E_SEED, "utf8")] : []),
 ].join("\n");
 mkdirSync(state, { recursive: true });
 const seedFile = resolve(state, "seed.sql");
@@ -84,7 +86,15 @@ createServer((_request, response) => {
 
 const server = spawn(
 	process.execPath,
-	[resolve(root, "node_modules/vite/bin/vite.js"), "preview", "--port", "4732", "--strictPort"],
+	[
+		resolve(root, "node_modules/vite/bin/vite.js"),
+		"preview",
+		"--port",
+		"4732",
+		"--strictPort",
+		// The conformance suite runs in a container, which reaches this machine by another address.
+		...(process.env.ID_E2E_HOST ? ["--host", process.env.ID_E2E_HOST] : []),
+	],
 	{ stdio: "inherit", env: { ...process.env, ID_STATE_DIR: state } },
 );
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => server.kill(signal));

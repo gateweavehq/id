@@ -3,7 +3,8 @@
 Your own app can sign people in with Gateweave ID. It works with any library that speaks OpenID Connect,
 and only members of the workspace that added it can use it.
 
-Gateweave ID has not been through the OpenID conformance suite yet, so check that it does what you need
+Gateweave ID is not certified. The OpenID conformance suite's Basic OP and Config OP plans pass, and
+[The OpenID conformance suite](conformance.md) says what differs and why, so check that it does what you need
 before you rely on it.
 
 ## Add it

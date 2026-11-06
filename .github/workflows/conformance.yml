@@ -1,0 +1,62 @@
+name: Conformance
+
+# The OpenID Foundation's conformance suite against a local build of ID (docs/conformance.md). It takes
+# a while and pulls large images, so it runs for what can change its answer: the code that signs people
+# in, the library behind it, and the suite's own files. A weekly run notices anything else. It decides
+# nothing about deploying, which goes by CI alone.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/conformance.yml"
+      - "apps/web/conformance/**"
+      - "apps/web/e2e/server.mjs"
+      - "apps/web/src/routes/**"
+      - "apps/web/src/server/auth/**"
+      - "patches/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/conformance.yml"
+      - "apps/web/conformance/**"
+      - "apps/web/e2e/server.mjs"
+      - "apps/web/src/routes/**"
+      - "apps/web/src/server/auth/**"
+      - "patches/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @gateweave/id-web exec playwright install --with-deps chromium
+      - name: Run the suite
+        run: pnpm test:conformance
+      - name: Upload what it saw
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: conformance-results
+          path: apps/web/conformance/results
+          retention-days: 7

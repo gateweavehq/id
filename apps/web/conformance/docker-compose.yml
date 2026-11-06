@@ -1,0 +1,53 @@
+# The OpenID Foundation's conformance suite, which `pnpm test:conformance` runs against a local build
+# of ID. The images are theirs and only run here, for the length of a run. Nothing is kept: Mongo holds
+# the suite's throwaway tokens in memory. See docs/conformance.md.
+name: gateweave-id-conformance
+
+services:
+  mongodb:
+    image: mongo:6.0.13
+    tmpfs:
+      - /data/db
+
+  server:
+    image: registry.gitlab.com/openid/conformance-suite:release-v5.3.4
+    environment:
+      BASE_URL: https://localhost.emobix.co.uk:8443
+      BASE_MTLS_URL: https://localhost.emobix.co.uk:8444
+      MONGODB_HOST: mongodb
+      SPRING_PROFILES_ACTIVE: dev
+      OIDC_GOOGLE_CLIENTID: not-used
+      OIDC_GOOGLE_SECRET: not-used
+      OIDC_GITLAB_CLIENTID: not-used
+      OIDC_GITLAB_SECRET: not-used
+    depends_on:
+      - mongodb
+
+  nginx:
+    image: registry.gitlab.com/openid/conformance-suite/nginx:release-v5.3.4
+    ports:
+      - "8443:8443"
+      - "8444:8444"
+    networks:
+      default:
+        aliases:
+          # That name is 127.0.0.1 in public DNS, for the browser. In here it has to reach this.
+          - localhost.emobix.co.uk
+    depends_on:
+      - server
+
+  # ID over https, because the suite fails an issuer on plain http, and the provider turns any issuer
+  # that is not on this machine to https. Their image already holds a self-signed certificate. A browser
+  # takes anything under .localhost for this machine by itself, and in here it reaches this.
+  id:
+    image: registry.gitlab.com/openid/conformance-suite/nginx:release-v5.3.4
+    volumes:
+      - ./nginx-id.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "4734:4734"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      default:
+        aliases:
+          - id.localhost

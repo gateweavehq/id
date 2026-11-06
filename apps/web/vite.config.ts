@@ -22,12 +22,13 @@ export default defineConfig(({ command }) => ({
 			config: (config) => {
 				// The browser tests' build has email on, because signing up takes a code (see
 				// e2e/build.mjs). Nothing is sent: each message is saved to a file. It has GitHub on
-				// too, and those tests stop the browser at GitHub's door, and links to legal pages.
+				// too, and those tests stop the browser at GitHub's door, and links to legal pages. The
+				// conformance suite wants https, so it reaches the same build at another address.
 				const e2e = process.env.ID_E2E
 					? {
 							vars: {
 								...config.vars,
-								BETTER_AUTH_URL: "http://localhost:4732",
+								BETTER_AUTH_URL: process.env.ID_E2E_URL ?? "http://localhost:4732",
 								OIDC_PAIRWISE_SECRET: "pairwise-secret-for-browser-tests-only",
 								EMAIL_FROM: "Gateweave ID <id@example.com>",
 								GITHUB_CLIENT_ID: "client-for-browser-tests",
