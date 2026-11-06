@@ -7,6 +7,25 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.9.1] - 2026-11-06
+
+A security fix for anyone running their own server, and two smaller changes. No migration and no new setting.
+
+### Fixed
+
+- **Removing a password takes the password.** `/unlink-account` asked only for a session from the last day, so on an
+  account that also had GitHub, a stolen cookie could remove the password and then set its own through
+  `/account/first-password`. It now asks for the password, with five tries a minute from one client address. Nothing
+  changes on any page, since none offers this. ([#64](https://github.com/gateweavehq/id/pull/64))
+- **`scripts/update-copy.mjs` reads `wrangler.jsonc` as data.** A comment could hide a rename, a binding's name could
+  pass for the Worker's, and a release pointing `DB` at another database went through. It now compares each resource
+  with its binding, and stops if it cannot read the file. ([#62](https://github.com/gateweavehq/id/pull/62))
+
+### Added
+
+- **A guide to putting Cloudflare Access in front of an internal app,** `docs/cloudflare-access.md`, written from a real
+  run against Access. ([#61](https://github.com/gateweavehq/id/pull/61))
+
 ## [0.9.0] - 2026-11-06
 
 ID now signs with RS256, as OpenID Connect requires, and the OpenID Foundation's conformance suite passes its Basic OP
