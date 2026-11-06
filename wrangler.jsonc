@@ -6,6 +6,9 @@
 	"main": "apps/web/src/server.ts",
 	"compatibility_date": "2026-10-01",
 	"compatibility_flags": ["nodejs_compat"],
+	// Settings made in the dashboard stay through a deploy. Wrangler otherwise removes a plain-text
+	// variable it does not find here, so the next push would quietly turn off Turnstile or email.
+	"keep_vars": true,
 	"observability": { "enabled": true },
 	"upload_source_maps": true,
 	// Accounts and sessions. The database is provisioned on first deploy.

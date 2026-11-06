@@ -115,6 +115,10 @@ Worker › Settings › Variables and Secrets) or from the repository root:
 pnpm wrangler secret put BETTER_AUTH_URL
 ```
 
+Text variables and secrets both stay through a deploy, because `wrangler.jsonc` sets `keep_vars`. A copy older than
+v0.10.1 lost its text variables on every deploy, so look through them after updating. A site key missing there means
+Turnstile was off.
+
 | Name                       | What it does                                                             |
 | -------------------------- | ------------------------------------------------------------------------ |
 | `BETTER_AUTH_SECRET`       | Signs sessions. Required.                                                |
