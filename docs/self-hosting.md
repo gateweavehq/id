@@ -18,12 +18,18 @@ Either way, [claim your server](#claim-your-server) as soon as it is up.
 The button copies this repository to your GitHub or GitLab account and connects the copy to Workers Builds,
 so every push to its main branch deploys. On the form:
 
+- **Git account** is the first field, the account the copy goes to. If nothing is connected yet, connect GitHub or
+  GitLab there.
 - **Project name** names the Worker. It answers on `<project name>.<your subdomain>.workers.dev`.
-- **D1 database** and **Queue**: choose **Create new**, unless you are moving a server you already run.
+- **D1 database** and **Queue**: choose **Create new**, unless you are moving a server you already run. Each then
+  shows a name field that starts with this repository's name. On a Cloudflare account that already runs ID, give
+  both names of their own. There the form starts with the existing queue chosen, and two servers cannot share one.
 - **BETTER_AUTH_SECRET** signs sessions. Use a long random string, for example from
   `openssl rand -base64 32`, and keep it secret. Changing it later signs everyone out.
 - Leave the build and deploy commands as they are. The deploy command applies the database migrations before
   the new code goes live.
+
+Escape closes the whole form rather than one list, and what you filled in goes with it.
 
 ## Deploy from the command line
 
@@ -252,6 +258,15 @@ git push
 
 The script pushes nothing, and `git reset --hard HEAD~1` undoes it until you do. The push is what deploys: Workers
 Builds builds it and applies the D1 migrations.
+
+If GitHub refuses the push with `push declined due to email privacy restrictions`, the commit carries the address
+your GitHub settings keep private. Use the `noreply` address those settings show you, and make the commit again:
+
+```sh
+git config user.email "<your noreply address>"
+git commit --amend --reset-author --no-edit
+git push
+```
 
 What your copy changed stays: the Worker's, database's and queue's names in `wrangler.jsonc`, the name in
 `package.json`, and having no workflows. If something else you changed conflicts with the release, the script names
