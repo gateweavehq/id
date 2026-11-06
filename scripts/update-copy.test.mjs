@@ -332,6 +332,100 @@ test("minds nothing a release changes in its own environments", () => {
 	assert.match(read("wrangler.jsonc"), /new-staging-database/);
 });
 
+const WORKER = "gateweave-id";
+const changelog = (version, date) => `# Changelog\n\n## [${version}] - ${date}\n`;
+const addingToConfig = (lines) => wrangler(WORKER).replace('"vars": {}', `${lines},\n\t"vars": {}`);
+
+/** A copy on a release whose wrangler.jsonc is `first`, then a newer release whose file is `second`. */
+function updatingBetween(first, second, ours = first) {
+	const base = {
+		...RELEASES["v0.10.0"],
+		"CHANGELOG.md": changelog("0.11.0", "2026-03-01"),
+		"wrangler.jsonc": first,
+	};
+	release("v0.11.0", base);
+	writeTree(copy, {
+		...Object.fromEntries(Object.entries(base).filter(([file]) => !file.includes("workflows"))),
+		"wrangler.jsonc": ours,
+	});
+	run(copy, "commit", "--quiet", "-m", "a copy of that release");
+	release("v0.12.0", {
+		...base,
+		"CHANGELOG.md": changelog("0.12.0", "2026-04-01"),
+		"wrangler.jsonc": second,
+	});
+	return run(copy, "rev-parse", "HEAD");
+}
+
+test("notices a rename when a comment before it mentions an environment", () => {
+	const commented = (name) => wrangler(name).replace("{\n", '{\n\t// "env": none of ours yet\n');
+	const head = updatingBetween(commented(WORKER), commented("renamed-by-us"));
+	const result = update();
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /another Worker, database or queue/);
+	assert.equal(run(copy, "rev-parse", "HEAD"), head);
+});
+
+test("takes a binding a release renames, which is no Worker's name", () => {
+	const binding = (name) =>
+		addingToConfig(
+			`"durable_objects": { "bindings": [{ "name": "${name}", "class_name": "Thing" }] }`,
+		);
+	updatingBetween(binding("OLD_THING"), binding("NEW_THING"));
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(read("wrangler.jsonc"), /NEW_THING/);
+});
+
+test("stops rather than give a binding another database, even with the old one kept", () => {
+	const databases = (...pairs) =>
+		wrangler(WORKER).replace(
+			'{ "binding": "DB" }',
+			pairs
+				.map(([binding, name]) => `{ "binding": "${binding}", "database_name": "${name}" }`)
+				.join(", "),
+		);
+	const head = updatingBetween(
+		databases(["DB", "our-accounts"]),
+		databases(["DB", "new-accounts"], ["ARCHIVE", "our-accounts"]),
+	);
+	const result = update();
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /another Worker, database or queue/);
+	assert.equal(run(copy, "rev-parse", "HEAD"), head);
+});
+
+test("takes a queue a release adds beside the one a copy has", () => {
+	const queues = (...names) =>
+		addingToConfig(
+			`"queues": { "producers": [${names.map((name) => `{ "queue": "${name}" }`).join(", ")}] }`,
+		);
+	updatingBetween(queues("our-work"), queues("our-work", "more-work"));
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(read("wrangler.jsonc"), /more-work/);
+});
+
+test("reads a trailing comma, and a string that looks like a comment", () => {
+	const config = (name) =>
+		`{\n\t"name": "${name}",\n\t"main": "https://example.test//x",\n\t"vars": {},\n}\n`;
+	const head = updatingBetween(config(WORKER), config("renamed-by-us"));
+	const result = update();
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /another Worker, database or queue/);
+	assert.equal(run(copy, "rev-parse", "HEAD"), head);
+});
+
+test("stops when it cannot read wrangler.jsonc", () => {
+	const good = wrangler(WORKER);
+	const head = updatingBetween(good, good, good.replace('"vars": {}', '"vars": {'));
+	const result = update();
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /could not be read/);
+	assert.equal(run(copy, "rev-parse", "HEAD"), head);
+	assert.equal(run(copy, "status", "--porcelain"), "");
+});
+
 test("leaves wrangler.jsonc to a person when the copy did more than rewrite lines", () => {
 	const added = read("wrangler.jsonc").replace('\t"main"', '\t"routes": [],\n\t"main"');
 	writeFileSync(
