@@ -7,6 +7,25 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.10.1] - 2026-11-06
+
+A copy's settings now stay through a deploy. If you set anything on a self-hosted copy as a Text variable in the
+dashboard, read this one: it may have been gone since your last deploy. No migration.
+
+### Fixed
+
+- **Settings made in the dashboard stay through a deploy.** Wrangler removes a plain-text variable it does not find in
+  `wrangler.jsonc` unless `keep_vars` says otherwise, and ours did not. So every push and every `update-copy` took away
+  what had been set as a Text variable, without a word. `TURNSTILE_SITE_KEY` going turns Turnstile off, and email, the
+  issuer and the legal pages could go the same way. Secrets were not affected, and neither was Gateweave Cloud.
+  ([#68](https://github.com/gateweavehq/id/pull/68))
+
+### Upgrading
+
+No migration. After updating, look through the Worker's variables in the dashboard and set again what has gone. A site
+key missing there means Turnstile was off until now. A variable taken out of `vars` in `wrangler.jsonc` now stays on the
+Worker until someone removes it in the dashboard.
+
 ## [0.10.0] - 2026-11-06
 
 People can now delete their own account. One migration, no new setting.
