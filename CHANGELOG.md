@@ -7,6 +7,31 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.10.0] - 2026-11-06
+
+People can now delete their own account. One migration, no new setting.
+
+### Added
+
+- **Deleting your account, on the account page.** It takes a session from the last day, and the password if the account
+  has one. The account goes at once, with its sessions, its ways of signing in and every app's tokens. The person gets
+  an email where the server sends email, and audit rows stay for their ninety days.
+  ([#63](https://github.com/gateweavehq/id/pull/63))
+- **Two people have to stay.** The only owner of a workspace hands it over or deletes it first, and the answer names
+  each one. Whoever runs the server stays until someone else does, as
+  [self-hosting.md](https://github.com/gateweavehq/id/blob/main/docs/self-hosting.md) says. A new trigger,
+  `deployment_keeps_its_owner`, in migration `0016`, holds that however a request comes to try.
+  ([#63](https://github.com/gateweavehq/id/pull/63))
+
+### Worth knowing
+
+- **Apps keep their own copy.** Deleting an ID account does not delete what an app holds, and Track and Agents keep
+  their own accounts on purpose. A first-party app hears only if it signed in through a session that is still alive, and
+  a workspace app does not hear at all, so someone can stay signed in to an app for a while. The page and the email both
+  say so.
+- **Better Auth's `/delete-user` stays off.** It would let someone with a password through without it, and could leave
+  them with no way back in if the last step were refused.
+
 ## [0.9.1] - 2026-11-06
 
 A security fix for anyone running their own server, and two smaller changes. No migration and no new setting.
