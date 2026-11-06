@@ -7,6 +7,37 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.10.2] - 2026-11-06
+
+Branches now build on a copy made with the Deploy button, and a deployment without its secret no longer runs. No
+migration.
+
+### Fixed
+
+- **Every push to a branch of a button's copy failed its build.** The button turns Preview builds on, and Wrangler will
+  not build a Preview without a `previews` block in `wrangler.jsonc`. So each branch showed a failed build, Dependabot's
+  included. Those builds now pass. ([#72](https://github.com/gateweavehq/id/pull/72))
+- **A deployment without `BETTER_AUTH_SECRET` signed sessions with a public value,** the default in Better Auth's
+  source. Better Auth refuses that default only when `NODE_ENV` is `production`, and a Worker has none. A deployed
+  Worker needs the secret to deploy, so this was open only to a Preview given a database and no secret of its own. Now a
+  deployment missing the database or the secret answers 503, says why, and serves nothing else.
+  ([#72](https://github.com/gateweavehq/id/pull/72))
+- **`update-copy` no longer guesses or leaves anything behind.** A line a copy rewrote that stands twice in
+  `wrangler.jsonc` could land on the wrong one, so it is now left to a person. A run stopped halfway left a replacement
+  that falsified the copy's history and stopped the next run. ([#71](https://github.com/gateweavehq/id/pull/71))
+
+### Changed
+
+- **The self-hosting guide says what a Preview gets:** none of the Worker's bindings or secrets. It says how to give
+  them what they need, and that Dependabot's pull requests on a copy are not needed. `update-copy` keeps Dependabot's
+  file out once a copy has deleted it. ([#72](https://github.com/gateweavehq/id/pull/72))
+
+### Upgrading
+
+No migration. If you gave a Preview a database, give Previews a secret of their own, or they now answer 503: `pnpm
+wrangler preview base-config secret put BETTER_AUTH_SECRET`. Anyone with an account on such a Preview should treat its
+sessions as forgeable until then.
+
 ## [0.10.1] - 2026-11-06
 
 A copy's settings now stay through a deploy. If you set anything on a self-hosted copy as a Text variable in the
