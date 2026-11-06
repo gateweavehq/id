@@ -1472,11 +1472,57 @@ describe("who is sent to a workspace's app", () => {
 			.then(whereAnswered);
 	}
 
-	it.each(WRONG)("keeps someone signed out here, for a request with %s", async (_name, params) => {
+	// Signing in would not mend any of these, so nobody is asked to, and then left on their account page
+	// with the request gone.
+	it.each(WRONG)("tells someone signed out here, for a request with %s", async (_name, params) => {
 		const { app } = await theApp();
 		const sent = await authorize(app, NOBODY, params);
 		expect(sent.location.origin).toBe(origin);
-		expect(sent.location.pathname).toBe("/login");
+		expect(sent.location.pathname).toBe("/request-refused");
+		const page = await id.fetch(sent.location, { headers: { "cf-connecting-ip": newClient() } });
+		expect(await page.text()).toContain("Nothing was shared with it");
+	});
+
+	// An app's own address can say anything. Taking its word would send someone round in a circle.
+	it.each([
+		["in the query", { scope: "openid nonsense" }],
+		["in the fragment", { response_type: "token" }],
+	])("goes by the answer %s, and not by what the app's address says", async (_where, params) => {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const redirectUri = `https://tool-${++hosts}.apps.test/callback?error=login_required`;
+		const added = await api("/workspaces/apps/add", {
+			who: owner,
+			body: { organizationId: workspace.id, name: "Odd", redirectUris: [redirectUri] },
+		});
+		expect(added.status).toBe(200);
+		const { clientId } = (await added.json()) as { clientId: string };
+		const sent = await authorize({ clientId, redirectUri }, NOBODY, params);
+		expect(sent.location.pathname).toBe("/request-refused");
+	});
+
+	it("says it was PKCE, for an app that requires it", async () => {
+		const { app } = await theApp();
+		// Left out altogether, as a library that cannot do it does. An empty one is refused for being empty.
+		const sent = await authorize(app, NOBODY, {}, ["code_challenge", "code_challenge_method"]);
+		expect(sent.location.pathname).toBe("/request-refused");
+		const page = await id.fetch(sent.location, { headers: { "cf-connecting-ip": newClient() } });
+		expect(await page.text()).toContain("Require PKCE");
+	});
+
+	it("does not blame the setting, for a request that needs PKCE for another reason", async () => {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const app = await newApp(owner, workspace, undefined, { requirePkce: false });
+		// A refresh token needs PKCE or a nonce whatever the app's setting says.
+		const sent = await authorize(app, NOBODY, {}, [
+			"code_challenge",
+			"code_challenge_method",
+			"nonce",
+		]);
+		expect(sent.location.pathname).toBe("/request-refused");
+		const page = await id.fetch(sent.location, { headers: { "cf-connecting-ip": newClient() } });
+		expect(await page.text()).not.toContain("Require PKCE");
 	});
 
 	it.each(WRONG)("keeps someone outside here, for a request with %s", async (_name, params) => {
@@ -1517,7 +1563,8 @@ describe("who is sent to a workspace's app", () => {
 
 		const signedOut = await navigate(NOBODY);
 		expect(signedOut.status).toBe(302);
-		expect(signedOut.location).toBe("/login");
+		expect(new URL(signedOut.location ?? "", origin).pathname).toBe("/request-refused");
+		expect(new URL(signedOut.location ?? "", origin).origin).toBe(origin);
 
 		const stranger = await navigate(await newPerson());
 		expect(stranger.status).toBe(302);
@@ -1633,7 +1680,7 @@ describe("who is sent to a workspace's app", () => {
 				const sent = await posted(app, who, { code_challenge_method: "plain" });
 				const next = await onward(sent, who);
 				expect(next.origin).toBe(origin);
-				expect(next.pathname).toBe(who === NOBODY ? "/login" : "/no-access");
+				expect(next.pathname).toBe(who === NOBODY ? "/request-refused" : "/no-access");
 			}
 		});
 

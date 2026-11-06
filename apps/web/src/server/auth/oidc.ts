@@ -3,6 +3,7 @@ import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { createJwk, type JwtOptions, jwt } from "better-auth/plugins/jwt";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { PKCE_LEFT_OUT } from "../../lib/sign-in-refusal";
 import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
@@ -21,6 +22,22 @@ export interface OidcConfig {
 }
 
 const DAY = 86_400;
+
+/** The provider's words when the only thing against a request is the app's own Require PKCE. */
+const APP_REQUIRES_PKCE = "pkce is required for this client";
+
+/**
+ * The code of what the provider would have told an app, in the query or in the fragment, as the response
+ * type asked for would have been answered. Its description stays here: a page shows only words of ours.
+ * An app's address can hold a query that says anything, and no fragment, and the provider adds its own
+ * after that query, so what counts is the fragment and then the last of each.
+ */
+function refusalIn(answer: URL) {
+	const fragment = new URLSearchParams(answer.hash.slice(1));
+	const said = fragment.has("error") ? fragment : answer.searchParams;
+	if (said.getAll("error_description").at(-1) === APP_REQUIRES_PKCE) return PKCE_LEFT_OUT;
+	return said.getAll("error").at(-1) ?? "";
+}
 
 /**
  * RS256 is what OpenID Connect requires of a provider, and what a library expects unless told otherwise,
@@ -279,10 +296,13 @@ function membersOnlyToWorkspaceApps(db: Database, issuer: string): BetterAuthPlu
 						if (app && !app.workspace) return;
 						const session = await getSessionFromCtx(ctx);
 						if (!session) {
+							const code = refusalIn(new URL(sends, issuer));
 							// An app asking quietly whether someone is signed in gets no quiet answer, or anyone
 							// could send anyone there through here. They can sign in instead, and go on to it.
-							const quietly = new URL(sends, issuer).searchParams.get("error") === "login_required";
-							throw ctx.redirect(quietly ? sameRequestWithout(ctx, "prompt") : "/login");
+							if (code === "login_required") throw ctx.redirect(sameRequestWithout(ctx, "prompt"));
+							// Nothing else depends on who they are: the provider looks at the request before the
+							// session. Signing in would not mend it, and the sign-in page would lose it.
+							throw ctx.redirect(`/request-refused?${new URLSearchParams({ error: code })}`);
 						}
 						if (!(await maySignIn(db, { user: session.user, app }))) {
 							throw ctx.redirect("/no-access");

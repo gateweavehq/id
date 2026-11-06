@@ -104,8 +104,9 @@ Your app hears nothing either.
 
 **ID sends nobody to your app until it knows they are a member.** Anyone can add an app, so if a mistake
 in a request sent people straight back to it, a link to ID could be a link to anywhere. So only a member
-who is signed in sees your app get an error for a wrong request. Anyone else stays on ID. If a sign-in
-seems to go nowhere, try it signed in as a member, and you will see the error.
+who is signed in sees your app get an error for a wrong request. Someone signed in from outside the
+workspace sees the page that names no app. Someone signed out sees a page saying the request was refused,
+and it names **Require PKCE** if that is why, since signing in would not change the answer.
 
 `prompt=none` follows the same rule. A member gets the usual answer, with a code or an error. Someone
 signed out is asked to sign in instead of your app getting `login_required`, and then goes on to your app.
