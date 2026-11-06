@@ -9,8 +9,21 @@ export { RateLimiter } from "./server/rate-limit";
 
 const turnstile = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY);
 
+/**
+ * A branch's Preview gets none of the Worker's bindings or secrets. Nothing works without the
+ * database. Without the secret, Better Auth signs with the default in its source, because with no
+ * NODE_ENV on a Worker it does not know this is production. So such a deployment serves nothing else.
+ */
+function notSetUp() {
+	return new Response(
+		"This deployment has no database or no BETTER_AUTH_SECRET, so it serves nothing. A Preview of a branch gets neither by itself: see Preview builds in docs/self-hosting.md.\n",
+		{ status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
+	);
+}
+
 export default {
 	async fetch(request) {
+		if (!env.DB || !env.BETTER_AUTH_SECRET) return notSetUp();
 		const nonce = newNonce();
 		const response = await handler.fetch(request, { context: { nonce } });
 		// Vite's dev server adds inline scripts of its own for hot reload, which have no nonce.

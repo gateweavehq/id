@@ -10,3 +10,14 @@ describe("what a deploy does to settings", () => {
 		expect(unstable_readConfig({ config }).keep_vars).toBe(true);
 	});
 });
+
+describe("what a branch's Preview gets", () => {
+	it("builds, with none of production's resources", () => {
+		// Wrangler refuses to build a Preview without this block, which fails every push to a branch,
+		// Dependabot's included.
+		const config = resolve(import.meta.dirname, "../../../wrangler.jsonc");
+		const { previews } = unstable_readConfig({ config });
+		expect(previews).toBeDefined();
+		expect(previews?.d1_databases ?? []).toEqual([]);
+	});
+});
