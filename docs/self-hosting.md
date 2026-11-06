@@ -160,6 +160,9 @@ pnpm --filter @gateweave/id-web apps:add --app wiki --name "Team wiki" \
   --redirect-uri https://wiki.example.com/oidc/callback
 ```
 
+Add `--client-auth client_secret_post` if the app's library sends its secret in the body of the request, and
+`--no-pkce` if it cannot do PKCE, in which case the app has to send a nonce and check it.
+
 Add `--backchannel-logout-uri` if the app has one, and signing out of ID then ends the session there. An app that
 is down when that happens gets it again for about 20 hours.
 

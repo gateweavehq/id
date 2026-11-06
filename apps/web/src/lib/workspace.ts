@@ -191,6 +191,9 @@ export interface WorkspaceApp {
 	redirectUris: string[];
 	/** The groups it is narrowed to. With none, every member can use it. */
 	groups: string[];
+	/** How it sends its secret. The server's own list is `CLIENT_AUTH_METHODS`. */
+	clientAuth: "client_secret_basic" | "client_secret_post";
+	requirePkce: boolean;
 	/** When it was added, in milliseconds. */
 	addedAt: number | null;
 	/**

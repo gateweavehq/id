@@ -36,6 +36,13 @@ describe("appRow", () => {
 		const { row } = appRow(app);
 		expect(row.subject_type).toBe("pairwise");
 		expect(row.require_pkce).toBe(1);
+		expect(row.token_endpoint_auth_method).toBe("client_secret_basic");
+	});
+
+	it("registers what an app's library needs, when it says", () => {
+		const { row } = appRow({ ...app, clientAuth: "client_secret_post", requirePkce: false });
+		expect(row.require_pkce).toBe(0);
+		expect(row.token_endpoint_auth_method).toBe("client_secret_post");
 	});
 });
 

@@ -30,8 +30,21 @@ and your app sees them as new people, because their ids in an app are computed f
 | Discovery         | `<issuer>/.well-known/openid-configuration`                            |
 | Client ID, secret | What the page showed                                                   |
 | Client auth       | `client_secret_basic`: HTTP Basic at the token endpoint                |
-| Flow              | Authorization code, with PKCE (`S256`), which is required              |
+| Flow              | Authorization code, with PKCE (`S256`)                                 |
 | Scopes            | `openid`, and any of `profile`, `email`, `offline_access` and `groups` |
+
+### If your library needs something else
+
+Both of these are under **If your app's library needs something else** when you add or edit the app.
+
+- **Client auth.** Choose `client_secret_post` if your library sends the secret in the body of the
+  request. An app is registered for one way, and the other is refused.
+- **PKCE.** Turn **Require PKCE** off only if your library cannot do it. Your app then has to send a
+  `nonce` and check it in the ID token, because nothing else stops a code that goes astray from signing
+  someone in. ID does not check that you do. A request for `offline_access` needs PKCE or a nonce either
+  way. An app that does send a challenge is held to it, on or off.
+
+Turning **Require PKCE** off asks for a recent sign-in, like adding an app.
 
 People are asked about scopes, so scopes decide what your app gets. The `claims` request parameter is
 ignored. There is no introspection endpoint, because your app has what it needs in the ID token and from
@@ -128,7 +141,7 @@ app until its own session ends. Back-channel logout is not available to apps a w
 
 Under **Apps** you can:
 
-- **Edit** its name and redirect URIs, on the same host.
+- **Edit** its name, its redirect URIs on the same host, and what its library needs.
 - **Replace the secret.** The old one stops working at once, so your app cannot refresh or sign anyone in
   until it has the new one. People stay signed in, and tokens already issued keep working until they
   expire.

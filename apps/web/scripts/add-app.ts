@@ -5,6 +5,9 @@
 //     --backchannel-logout-uri https://track.example.com/api/auth/backchannel-logout/oidc \
 //     --env staging
 //
+// An app whose library needs it can add --client-auth client_secret_post and --no-pkce. Without PKCE
+// the app has to send a nonce and check it.
+//
 // Without --env it uses the top-level environment. With --local it uses the local dev database.
 // Nothing else can add a first-party app: no route offers it, on purpose. A workspace's admins add
 // apps of their own, which only its members can use, through `src/server/auth/workspace-apps.ts`.
@@ -16,6 +19,7 @@ import { parseArgs } from "node:util";
 import {
 	appAddedStatement,
 	appRow,
+	CLIENT_AUTH_METHODS,
 	insertStatement,
 	problemWithRedirectUri,
 } from "../src/server/auth/app-row.ts";
@@ -27,6 +31,8 @@ const { values } = parseArgs({
 		"redirect-uri": { type: "string", multiple: true },
 		"post-logout-uri": { type: "string", multiple: true },
 		"backchannel-logout-uri": { type: "string" },
+		"client-auth": { type: "string" },
+		"no-pkce": { type: "boolean", default: false },
 		env: { type: "string" },
 		local: { type: "boolean", default: false },
 	},
@@ -56,12 +62,19 @@ for (const uri of [...redirectUris, ...(values["post-logout-uri"] ?? []), logout
 	if (problem) fail(problem);
 }
 
+const clientAuth = CLIENT_AUTH_METHODS.find((method) => method === values["client-auth"]);
+if (values["client-auth"] && !clientAuth) {
+	fail(`--client-auth takes ${CLIENT_AUTH_METHODS.join(" or ")}.`);
+}
+
 const { row, clientId, clientSecret } = appRow({
 	app,
 	name,
 	redirectUris,
 	postLogoutRedirectUris: values["post-logout-uri"],
 	backchannelLogoutUri: logoutUri,
+	clientAuth,
+	requirePkce: !values["no-pkce"],
 });
 
 const dir = mkdtempSync(join(tmpdir(), "gateweave-id-app-"));

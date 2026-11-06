@@ -1,7 +1,26 @@
 import { createHash, randomBytes } from "node:crypto";
 
+/**
+ * How an app can send its secret to the token endpoint. Libraries differ and some offer no choice, so an
+ * app says which, and the provider then takes only that one. `none` is not here, since every app has a
+ * secret, and nothing can be registered for a signed assertion.
+ */
+export const CLIENT_AUTH_METHODS = ["client_secret_basic", "client_secret_post"] as const;
+export type ClientAuthMethod = (typeof CLIENT_AUTH_METHODS)[number];
+
+/** What an app's library can do. With nothing said, it uses HTTP Basic and PKCE. */
+export interface AppLibrary {
+	clientAuth?: ClientAuthMethod | undefined;
+	/**
+	 * False lets it leave PKCE out, for a library that cannot do it. The app then has to send a nonce and
+	 * check it, because nothing else stops a code that goes astray. RFC 9700 allows that of an app with a
+	 * secret, and the provider still wants one or the other for `offline_access`.
+	 */
+	requirePkce?: boolean | undefined;
+}
+
 /** What a deployment says about an app it registers. */
-export interface NewApp {
+export interface NewApp extends AppLibrary {
 	/** The app's own id, such as `track`, which the check for who may sign in goes by. */
 	app: string;
 	name: string;
@@ -11,7 +30,7 @@ export interface NewApp {
 }
 
 /** What a workspace's admin says about an app. Everything else about it is decided here. */
-export interface NewWorkspaceApp {
+export interface NewWorkspaceApp extends AppLibrary {
 	workspace: string;
 	name: string;
 	redirectUris: string[];
@@ -45,8 +64,7 @@ const WORKSPACE_APP_SCOPES = [...FIRST_PARTY_SCOPES, "groups"];
 function baseRow(
 	clientId: string,
 	hashedSecret: string,
-	name: string,
-	uris: string[],
+	app: AppLibrary & { name: string; redirectUris: string[] },
 	scopes: string[],
 	now: Date,
 ) {
@@ -59,13 +77,13 @@ function baseRow(
 		scopes: JSON.stringify(scopes),
 		created_at: now.getTime(),
 		updated_at: now.getTime(),
-		name,
-		redirect_uris: JSON.stringify(uris),
-		token_endpoint_auth_method: "client_secret_basic",
+		name: app.name,
+		redirect_uris: JSON.stringify(app.redirectUris),
+		token_endpoint_auth_method: app.clientAuth ?? "client_secret_basic",
 		application_type: "web",
 		grant_types: JSON.stringify(["authorization_code", "refresh_token"]),
 		response_types: JSON.stringify(["code"]),
-		require_pkce: 1,
+		require_pkce: app.requirePkce === false ? 0 : 1,
 	};
 }
 
@@ -78,7 +96,7 @@ export function appRow(app: NewApp, now = new Date()) {
 	const clientId = newClientId();
 	const { clientSecret, hashed } = newClientSecret();
 	const row = {
-		...baseRow(clientId, hashed, app.name, app.redirectUris, FIRST_PARTY_SCOPES, now),
+		...baseRow(clientId, hashed, app, FIRST_PARTY_SCOPES, now),
 		// First-party apps do not ask. An app a workspace adds always does.
 		skip_consent: 1,
 		enable_end_session: 1,
@@ -102,7 +120,7 @@ export function workspaceAppRow(app: NewWorkspaceApp, now = new Date()) {
 	const clientId = newClientId();
 	const { clientSecret, hashed } = newClientSecret();
 	const row = {
-		...baseRow(clientId, hashed, app.name, app.redirectUris, WORKSPACE_APP_SCOPES, now),
+		...baseRow(clientId, hashed, app, WORKSPACE_APP_SCOPES, now),
 		// Otherwise any workspace's admin could receive a member's address without them being asked.
 		skip_consent: 0,
 		// With neither of these, the provider emits no `sid`, which two apps that do not trust each
