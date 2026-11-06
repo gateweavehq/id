@@ -15,6 +15,7 @@ import { breachedPasswords } from "./breached-passwords";
 import { deploymentPlugin, mayMakeAccount, SIGN_UP_CLOSED } from "./deployment";
 import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
+import { passwordRemoval } from "./password-removal";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 import { TWO_FACTOR_CLOSED_PATHS, twoFactorPlugins } from "./two-factor";
 import { workspaceAppsPlugin } from "./workspace-apps";
@@ -200,6 +201,7 @@ export function createAuth(config: AuthConfig) {
 			...(mailer ? [signUpCodes(mailer)] : []),
 			...(config.checkBreachedPasswords ? [breachedPasswords()] : []),
 			firstPassword(),
+			passwordRemoval(),
 			// A passkey is bound to a host for good, so it has to be set on purpose, as the issuer does.
 			...(config.baseURL
 				? passkeyPlugins(config.db, {
