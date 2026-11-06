@@ -4,9 +4,40 @@
 
 <h1 align="center">Gateweave ID</h1>
 
-An OpenID Connect provider that runs entirely on Cloudflare, with no server to run: one Worker, one
-D1 database, a Durable Object for rate limits and a Queue for logouts an app missed. It is meant to
-let people hold one account and sign in to any app that supports OIDC.
+<p align="center">
+  <strong>One sign-in for your team's apps, on one Cloudflare Worker.</strong><br>
+  An OpenID Connect provider with passkeys and groups, and no server to run.
+</p>
+
+<p align="center">
+  <a href="https://github.com/gateweavehq/id/releases/latest"><img src="https://img.shields.io/github/v/release/gateweavehq/id?label=release" alt="Latest release"></a>
+  <a href="https://github.com/gateweavehq/id/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/gateweavehq/id/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/gateweavehq/id" alt="License: AGPL-3.0"></a>
+</p>
+
+<p align="center">
+  <a href="https://gateweave.com/id"><strong>See what it does</strong></a> ·
+  <a href="#running-your-own"><strong>Deploy your own</strong></a> ·
+  <a href="docs/connect-an-app.md">Connect an app</a>
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/signin-dark.gif">
+  <img src="docs/images/signin-light.gif" alt="A browser signs in to Grafana with Gateweave ID. After the password, a page asks whether to allow Grafana, lists what it will see and says which workspace's admin added it. Back in Grafana, the profile shows the role Admin, which came from a group in that workspace.">
+</picture>
+
+<p align="center">
+  A real sign-in to Grafana against ID's staging server, with the time spent loading cut out.
+  Which role someone gets depends on the groups they are in.
+</p>
+
+<p align="center">
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/gateweavehq/id"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
+</p>
+
+It runs entirely on Cloudflare: one Worker, one D1 database, a Durable Object for rate limits and a
+Queue for logouts an app missed. It is meant to let people hold one account and sign in to any app
+that supports OIDC.
 
 Gateweave ID is part of [Gateweave](https://gateweave.com), the family of open-source business tools
 that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq/track) and
