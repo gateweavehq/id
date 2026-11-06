@@ -129,6 +129,7 @@ test("brings in the latest release as one commit, keeping what the copy changed"
 	assert.equal(run(copy, "log", "-1", "--format=%s"), "chore: update ID to v0.10.0");
 	assert.equal(run(copy, "status", "--porcelain"), "");
 	assert.equal(run(copy, "replace", "--list"), "");
+	assert.equal(run(copy, "for-each-ref", "refs/id-upstream/replace/"), "");
 	assert.equal(run(copy, "tag", "--list"), "");
 });
 
@@ -220,6 +221,7 @@ test("leaves real conflicts to be resolved, naming them, with nothing grafted", 
 	assert.doesNotMatch(result.stderr, /workflows/);
 	assert.equal(run(copy, "rev-parse", "HEAD"), head);
 	assert.equal(run(copy, "replace", "--list"), "");
+	assert.equal(run(copy, "for-each-ref", "refs/id-upstream/replace/"), "");
 	assert.match(read("src/app.txt"), /<<<<<<</);
 });
 
@@ -438,6 +440,96 @@ test("leaves wrangler.jsonc to a person when the copy did more than rewrite line
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /wrangler\.jsonc/);
 	assert.match(read("wrangler.jsonc"), /<<<<<<</);
+});
+
+/** A release with a setting on two lines alike, in two environments, each with a line beside it. */
+const twoEnvironments = (cloud, staging, beside) =>
+	wrangler(WORKER, {
+		comment: `"env": {
+		"cloud": {
+			${cloud}
+			"first": 1
+		},
+		"staging": {
+			${staging}
+			"second": ${beside}
+		}
+	},`,
+	});
+
+test("leaves wrangler.jsonc to a person when a line the copy rewrote appears twice", () => {
+	const line = (value) => `"vars": { "LIMIT": "${value}" },`;
+	updatingBetween(
+		twoEnvironments(line(1), line(1), 1),
+		twoEnvironments(line(1), line(1), 2),
+		twoEnvironments(line(1), line(2), 1),
+	);
+	const result = update();
+	assert.equal(result.status, 1, "the copy's staging change must not land on cloud's line");
+	assert.match(result.stderr, /wrangler\.jsonc/);
+	assert.match(read("wrangler.jsonc"), /<<<<<<</);
+});
+
+test("leaves wrangler.jsonc to a person when a release keeps only one of two lines alike", () => {
+	const line = (value) => `"vars": { "LIMIT": "${value}" },`;
+	updatingBetween(
+		twoEnvironments(line(1), line(1), 1),
+		twoEnvironments(line(1), '"vars": {},', 1),
+		twoEnvironments(line(1), line(2), 1),
+	);
+	const result = update();
+	assert.equal(result.status, 1, "the copy's staging change must not land on cloud's line");
+	assert.match(result.stderr, /wrangler\.jsonc/);
+	assert.match(read("wrangler.jsonc"), /<<<<<<</);
+});
+
+test("leaves wrangler.jsonc to a person when a release repeats a line the copy rewrote", () => {
+	const line = (value) => `"vars": { "LIMIT": "${value}" },`;
+	updatingBetween(
+		twoEnvironments('"vars": {},', line(1), 1),
+		twoEnvironments(line(1), line(1), 2),
+		twoEnvironments('"vars": {},', line(2), 1),
+	);
+	const result = update();
+	assert.equal(result.status, 1, "the copy's staging change must not land on cloud's new line");
+	assert.match(result.stderr, /wrangler\.jsonc/);
+	assert.match(read("wrangler.jsonc"), /<<<<<<</);
+});
+
+/** A commit of the copy's own, so that its newest commit has a parent a replacement can take away. */
+function commitOfOurOwn() {
+	writeFileSync(join(copy, "ours.txt"), "ours\n");
+	run(copy, "add", "-A");
+	run(copy, "commit", "--quiet", "-m", "something of ours");
+	return run(copy, "rev-parse", "HEAD");
+}
+
+test("is not stopped by what a run that stopped halfway left", () => {
+	const head = commitOfOurOwn();
+	execFileSync("git", ["replace", "--graft", head], {
+		cwd: copy,
+		env: { ...process.env, GIT_REPLACE_REF_BASE: "refs/id-upstream/replace/" },
+	});
+	assert.notEqual(
+		run(copy, "rev-parse", "HEAD~1"),
+		"",
+		"the copy's own git still sees its history",
+	);
+
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(run(copy, "rev-parse", "HEAD~1"), head);
+	assert.equal(run(copy, "for-each-ref", "refs/id-upstream/replace/"), "");
+});
+
+test("leaves a replacement of the copy's own alone", () => {
+	const head = commitOfOurOwn();
+	run(copy, "replace", "--graft", head);
+
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(run(copy, "replace", "--list"), head);
+	assert.equal(run(copy, "--no-replace-objects", "log", "-1", "--format=%P"), head);
 });
 
 test("refuses ID's own repository", () => {
