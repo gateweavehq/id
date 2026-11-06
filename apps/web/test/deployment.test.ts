@@ -1188,22 +1188,25 @@ describe("the owner's paths", () => {
 		const { email: late } = await invite(cookie);
 		const { email: fine } = await invite(cookie);
 		const after = Date.now();
-		const row = await id.db
-			.prepare("SELECT expires_at AS expiresAt FROM deployment_invitation WHERE email = ?")
-			.bind(fine)
-			.first<{ expiresAt: number }>();
-		expect(row?.expiresAt).toBeGreaterThan(before + 7 * DAY - HOUR);
-		expect(row?.expiresAt).toBeLessThan(after + 7 * DAY + HOUR);
+		const listed = async () => {
+			const response = await id.fetch(`${origin}/api/auth/deployment/get`, {
+				headers: { "cf-connecting-ip": newClient(), cookie },
+			});
+			const { invitations } = (await response.json()) as {
+				invitations: { email: string; expiresAt: string }[];
+			};
+			return invitations;
+		};
+		const link = (await listed()).find(({ email }) => email === fine);
+		const expiresAt = new Date(link?.expiresAt ?? 0).getTime();
+		expect(expiresAt).toBeGreaterThan(before + 7 * DAY - HOUR);
+		expect(expiresAt).toBeLessThan(after + 7 * DAY + HOUR);
 
 		await id.db
 			.prepare("UPDATE deployment_invitation SET expires_at = ? WHERE email = ?")
 			.bind(Date.now() - 1000, late)
 			.run();
-		const listed = await id.fetch(`${origin}/api/auth/deployment/get`, {
-			headers: { "cf-connecting-ip": newClient(), cookie },
-		});
-		const { invitations } = (await listed.json()) as { invitations: { email: string }[] };
-		expect(invitations.map(({ email }) => email)).toEqual([fine]);
+		expect((await listed()).map(({ email }) => email)).toEqual([fine]);
 	});
 
 	it("lets the person in, once, with the password they chose and a proven address", async () => {
