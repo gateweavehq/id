@@ -381,14 +381,17 @@ test("an admin says what an app's library needs, and it signs in that way", asyn
 		await other.getByRole("button", { name: "Edit Old Tool" }).click();
 		await otherApps.getByText("If your app's library needs something else").click();
 		await otherApps.getByLabel("Require PKCE").uncheck();
+		await otherApps.getByLabel(/client_secret_post/).check();
 		await other.getByRole("button", { name: "Save Old Tool" }).click();
 		await expect(otherApps).toContainText("It need not use PKCE");
+		await expect(otherApps).toContainText("It sends its secret in the body of the request.");
 		await other.close();
 
 		await page.getByRole("button", { name: "Save Old Tool" }).click();
 		await expect(page.getByRole("button", { name: "Edit Old Tool" })).toBeVisible();
 		await page.reload({ waitUntil: "networkidle" });
 		await expect(apps).toContainText("It need not use PKCE");
+		await expect(apps).toContainText("It sends its secret in the body of the request.");
 	});
 
 	expect(problems).toEqual([]);
