@@ -532,6 +532,23 @@ test("leaves a replacement of the copy's own alone", () => {
 	assert.equal(run(copy, "--no-replace-objects", "log", "-1", "--format=%P"), head);
 });
 
+test("stops before the copy's own replacement, on a git with no other place", () => {
+	const head = commitOfOurOwn();
+	run(copy, "replace", "--graft", head);
+	// Such a git works as this script does without the line that names the other place.
+	const script = readFileSync(SCRIPT, "utf8");
+	const ignoring = script.replace(/^process\.env\.GIT_REPLACE_REF_BASE = .*$/m, "");
+	assert.notEqual(ignoring, script);
+	writeFileSync(join(dir, "ignoring.mjs"), ignoring);
+
+	const result = spawnSync("node", [join(dir, "ignoring.mjs")], { cwd: copy, encoding: "utf8" });
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /git replace failed/);
+	assert.equal(run(copy, "rev-parse", "HEAD"), head);
+	assert.equal(run(copy, "replace", "--list"), head);
+	assert.equal(run(copy, "log", "-1", "--format=%P"), "", "the copy's own, as it made it");
+});
+
 test("refuses ID's own repository", () => {
 	run(copy, "remote", "add", "origin", "https://github.com/gateweavehq/id.git");
 	const result = update();

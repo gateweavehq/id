@@ -27,10 +27,11 @@ const WORKFLOWS = ".github/workflows";
 // Kept apart from the copy's own tags, which may share these names.
 const RELEASES = "refs/id-upstream/tags";
 // Every git command here reads replacements from this place and no other. So a copy's own stay out
-// of it, and a run that stops halfway leaves nothing the copy's own commands would see, and nothing
-// in the way of the next run. Git's source supports this but its manual does not name it. A git that
-// ignored it would use its default place, where all of this still works, without those two gains.
-process.env.GIT_REPLACE_REF_BASE = "refs/id-upstream/replace/";
+// of it, and a run that stops halfway leaves nothing the copy's own commands would see. Git's source
+// supports this but its manual does not name it. A git that ignored it would use its default place,
+// where an update still works, and stops rather than write over a replacement of the copy's own.
+const REPLACEMENTS = "refs/id-upstream/replace/";
+process.env.GIT_REPLACE_REF_BASE = REPLACEMENTS;
 
 function stop(message) {
 	console.error(message);
@@ -158,7 +159,9 @@ if (order > 0) stop(`This copy is on ${current}, which is newer than ${target}.`
 // Git finds the merge base by itself once the copy's commit seems to descend from its release.
 // That stays local and ends with the merge: the commit made below has the copy's real history.
 const head = git("rev-parse", "HEAD");
-git("replace", "--force", "--graft", head, `${RELEASES}/${current}^{commit}`);
+// What a run that stopped halfway left, by its full name so that it can be nothing else.
+attempt("update-ref", "-d", `${REPLACEMENTS}${head}`);
+git("replace", "--graft", head, `${RELEASES}/${current}^{commit}`);
 attempt("merge", "--squash", `${RELEASES}/${target}`);
 git("replace", "--delete", head);
 
