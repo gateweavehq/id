@@ -51,7 +51,7 @@ const auth = oauth.ClientSecretBasic(process.env.GATEWEAVE_CLIENT_SECRET);
 
 ## What your app gets
 
-The ID token is signed with ES256, and your library checks it against the keys in discovery.
+The ID token is signed with RS256, and your library checks it against the keys in discovery.
 
 | Claim                     | With scope | What it is                                           |
 | ------------------------- | ---------- | ---------------------------------------------------- |
