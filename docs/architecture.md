@@ -754,7 +754,7 @@ A throwaway Worker on workerd, driven by `oauth4webapi` and by Chromium's WebAut
 2026-11-04 with Better Auth 1.7.14. All of them were local, none on a deployed Worker:
 
 - The issuer at the origin, which `oauth4webapi`'s discovery accepts, and ES256 ID tokens with a P-256
-  key in JWKS.
+  key in JWKS. Signing has since moved to RS256, as the table above says.
 - Apps owned by a workspace through `clientReference`.
 - Pairwise subjects: two hosts see different values, one host always sees the same, and neither is the
   internal id.
