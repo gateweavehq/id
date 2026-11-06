@@ -552,7 +552,8 @@ test("an admin adds an app, and only members get in, once they agree", async ({
 	await test.step("a wrong link leads nobody signed out to the app", async () => {
 		const passerby = await newDevice(page, baseURL);
 		await goToSignIn(passerby, clientId, { code_challenge: "", code_challenge_method: "" });
-		await expect(passerby).toHaveURL(/^http:\/\/localhost:4732\/login$/);
+		await expect(passerby).toHaveURL(/^http:\/\/localhost:4732\/request-refused\?/);
+		await expect(passerby.getByText("This request was refused")).toBeVisible();
 		await expect(appHeading(passerby)).toHaveCount(0);
 		await passerby.context().close();
 	});

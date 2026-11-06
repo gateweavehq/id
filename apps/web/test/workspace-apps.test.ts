@@ -1483,6 +1483,24 @@ describe("who is sent to a workspace's app", () => {
 		expect(await page.text()).toContain("Nothing was shared with it");
 	});
 
+	// An app's own address can say anything. Taking its word would send someone round in a circle.
+	it.each([
+		["in the query", { scope: "openid nonsense" }],
+		["in the fragment", { response_type: "token" }],
+	])("goes by the answer %s, and not by what the app's address says", async (_where, params) => {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const redirectUri = `https://tool-${++hosts}.apps.test/callback?error=login_required`;
+		const added = await api("/workspaces/apps/add", {
+			who: owner,
+			body: { organizationId: workspace.id, name: "Odd", redirectUris: [redirectUri] },
+		});
+		expect(added.status).toBe(200);
+		const { clientId } = (await added.json()) as { clientId: string };
+		const sent = await authorize({ clientId, redirectUri }, NOBODY, params);
+		expect(sent.location.pathname).toBe("/request-refused");
+	});
+
 	it("says it was PKCE, for an app that requires it", async () => {
 		const { app } = await theApp();
 		// Left out altogether, as a library that cannot do it does. An empty one is refused for being empty.

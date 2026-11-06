@@ -29,13 +29,14 @@ const APP_REQUIRES_PKCE = "pkce is required for this client";
 /**
  * The code of what the provider would have told an app, in the query or in the fragment, as the response
  * type asked for would have been answered. Its description stays here: a page shows only words of ours.
+ * An app's address can hold a query that says anything, and no fragment, and the provider adds its own
+ * after that query, so what counts is the fragment and then the last of each.
  */
 function refusalIn(answer: URL) {
-	const said = answer.searchParams.has("error")
-		? answer.searchParams
-		: new URLSearchParams(answer.hash.slice(1));
-	if (said.get("error_description") === APP_REQUIRES_PKCE) return PKCE_LEFT_OUT;
-	return said.get("error") ?? "";
+	const fragment = new URLSearchParams(answer.hash.slice(1));
+	const said = fragment.has("error") ? fragment : answer.searchParams;
+	if (said.getAll("error_description").at(-1) === APP_REQUIRES_PKCE) return PKCE_LEFT_OUT;
+	return said.getAll("error").at(-1) ?? "";
 }
 
 /**
