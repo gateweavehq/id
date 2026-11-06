@@ -47,8 +47,8 @@ function AccountPage() {
 			<main className="mx-auto max-w-lg space-y-4 p-6 pt-24">
 				<h1 className="text-xl font-semibold tracking-tight">Your account is deleted</h1>
 				<p role="status" className="text-sm text-muted-foreground">
-					Apps you signed in to keep what they already hold about you, so delete your account in
-					each of them too.
+					Apps you signed in to keep what they already hold about you, and some may keep you signed
+					in for a while, so delete your account in each of them too.
 				</p>
 				<Button asChild variant="outline" size="sm">
 					<a href="/login">Go to sign-in</a>

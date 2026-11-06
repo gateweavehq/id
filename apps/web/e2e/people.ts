@@ -33,6 +33,14 @@ export async function newDevice(page: Page, baseURL: string | undefined) {
 }
 
 export async function signUp(page: Page, name: string, email: string) {
+	await signUpWithNoPassword(page, name, email);
+	await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+	await page.getByLabel("Repeat it").fill(PASSWORD);
+	await page.getByRole("button", { name: "Continue" }).click();
+}
+
+/** As far as the page that offers a password, which someone can walk away from. */
+export async function signUpWithNoPassword(page: Page, name: string, email: string) {
 	const since = Date.now() - 1000;
 	await page.goto("/signup", { waitUntil: "networkidle" });
 	await page.getByLabel("Name").fill(name);
@@ -42,9 +50,6 @@ export async function signUp(page: Page, name: string, email: string) {
 	await page.getByLabel("Code").fill(await codeSentSince(since, email));
 	await page.getByRole("button", { name: "Create account" }).click();
 	await expect(page.getByRole("heading", { name: "Choose a password" })).toBeVisible();
-	await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
-	await page.getByLabel("Repeat it").fill(PASSWORD);
-	await page.getByRole("button", { name: "Continue" }).click();
 }
 
 export async function makeWorkspace(page: Page, name: string, address = slug()) {

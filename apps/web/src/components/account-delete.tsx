@@ -56,8 +56,8 @@ export function AccountDelete({
 					</p>
 					<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
 						<li>
-							Apps you signed in to keep what they already hold about you, so delete your account in
-							each of them too.
+							Apps you signed in to keep what they already hold about you, and some may keep you
+							signed in for a while, so delete your account in each of them too.
 						</li>
 						<li>Workspaces keep the apps you added to them.</li>
 						<li>Invitations you sent that nobody has taken stop working.</li>

@@ -305,8 +305,9 @@ above proves it, and the invitation is waiting.
 it, at `/account/delete`.
 
 - **It takes a session from the last day, and the password if the account has one.** So a stolen cookie is not
-  enough wherever there is a password to ask for, and five tries a minute keep this from being a way to guess
-  one. An account with only GitHub or a passkey has a recent session and nothing else to show.
+  enough wherever there is a password to ask for, and removing the password first takes the password too. Five
+  tries a minute from one client address hold down guessing, as on the other paths that ask for one. An account
+  with only GitHub or a passkey has a recent session and nothing else to show.
 - **Two people have to stay.** The only owner of a workspace hands it over or deletes it first, and the answer
   names each one. Whoever runs the server stays until someone else does, as [self-hosting.md](self-hosting.md)
   says. The answers have words because the code asks first. The triggers `member_delete_keeps_an_owner` and
@@ -315,14 +316,18 @@ it, at `/account/delete`.
   ways of signing in, and the user last, so a trigger refusing that last step would leave someone with no way
   back. This ends the sessions through the adapter, so that the provider's hooks send back-channel logouts,
   and then deletes the user in one statement. Foreign keys take everything else with it, or a trigger refuses
-  all of it. That can happen if someone else leaves a workspace in the moment between. The person is signed
-  out and still has their account, and signing in again gets them the reason.
-- **Apps keep their own copy.** They hear that the session ended, and lose their tokens. What an app holds
-  about the person is its own: on a self-hosted server it is out of ID's reach, and Track and Agents keep
-  their own accounts on purpose. The page and the email say so.
+  all of it. That can happen if someone else leaves a workspace in the moment between. The request fails with
+  no reason given, and by then the person is signed out and the apps have been told. They still have their
+  account, and signing in again gets them the reason.
+- **Apps keep their own copy.** Every app's tokens go with the account. A first-party app signed in through a
+  session that is still alive also hears that it ended. One whose session with ID had already ended does not,
+  and neither does a workspace app, since those have no back-channel logout yet, so someone can stay signed in
+  there until the app's own session runs out. What an app holds about the person is its own: on a self-hosted
+  server it is out of ID's reach, and Track and Agents keep their own accounts on purpose. The page and the
+  email say so.
 - **What stays:** the audit log's rows, which have no foreign keys and last their 90 days, and an app's
   `added_by`, as the app list expects of someone who has left. A workspace keeps the apps they added and the
-  groups they were in, and its log says they left.
+  groups they were in. Each workspace they left gets a `member_left` row, for the view its admins will have.
 - **What goes that others might notice:** invitations they sent that nobody has taken, since
   `invitation.inviter_id` cascades. Leaving a workspace is different, as above.
 - **The address is free afterwards.** A new account with it starts from nothing, and on a closed server it
@@ -773,8 +778,8 @@ account can collect.
   addresses with no account for a stranger to send. `member_invited` does not say who was invited, for
   the same reason.
 - **No foreign keys.** A log someone can empty by deleting what it talks about is no log. Rows outlive
-  an account until their ninety days are up. ID cannot delete an account yet; a privacy policy has to
-  state this when it can.
+  an account until their ninety days are up, which the page that deletes one says, and a privacy policy
+  has to.
 
 A person sees their last 50 events on their account page: what happened to them, and what they did to
 someone else. Where someone else did it, they see who, and not that person's IP address or device. Nobody

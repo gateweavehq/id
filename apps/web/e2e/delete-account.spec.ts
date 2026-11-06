@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { watch } from "./helpers";
-import { address, makeWorkspace, newDevice, PASSWORD, signUp } from "./people";
+import {
+	address,
+	makeWorkspace,
+	newDevice,
+	PASSWORD,
+	signUp,
+	signUpWithNoPassword,
+} from "./people";
 
 // The Worker tests cover the rules. This covers that the page uses them, and that what it shows at the
 // end does not depend on a session that has just gone.
@@ -47,6 +54,37 @@ test("deleting an account asks for the password, then means it", async ({ page, 
 		await expect(device.getByRole("alert")).toBeVisible();
 		await device.goto("/account", { waitUntil: "networkidle" });
 		await expect(device).toHaveURL(/\/login/);
+	});
+
+	await device.context().close();
+	expect(problems).toEqual([]);
+});
+
+test("an account with no password types its address instead", async ({ page, baseURL }) => {
+	const device = await newDevice(page, baseURL);
+	const problems = await watch(device);
+	const email = address("no-password");
+	await signUpWithNoPassword(device, "Katherine Johnson", email);
+	await device.goto("/account", { waitUntil: "networkidle" });
+
+	const section = device.getByRole("region", { name: "Delete account" });
+	const confirm = section.getByLabel("Type your email address to confirm");
+
+	await test.step("another address changes nothing", async () => {
+		await section.getByRole("button", { name: "Delete account" }).click();
+		await expect(section.getByLabel("Your password")).toBeHidden();
+		await confirm.fill("someone-else@example.com");
+		await section.getByRole("button", { name: "Delete my account" }).click();
+		await expect(section.getByRole("alert")).toHaveText("That is not the address of this account.");
+		await device.reload({ waitUntil: "networkidle" });
+		await expect(device.getByRole("heading", { name: "Your account" })).toBeVisible();
+	});
+
+	await test.step("its own deletes it, however it is written", async () => {
+		await section.getByRole("button", { name: "Delete account" }).click();
+		await confirm.fill(email.toUpperCase());
+		await section.getByRole("button", { name: "Delete my account" }).click();
+		await expect(device.getByRole("heading", { name: "Your account is deleted" })).toBeVisible();
 	});
 
 	await device.context().close();

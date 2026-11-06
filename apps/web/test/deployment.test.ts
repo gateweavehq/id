@@ -953,6 +953,33 @@ describe("the owner's paths", () => {
 		expect((await call(method, path, body)).status).toBe(401);
 	});
 
+	it("makes someone who deleted their account come back by a new invitation", async () => {
+		await signUp(newAddress());
+		const email = newAddress();
+		await ownerInvites(email);
+		const first = await signUp(email);
+		expect((await post("/account/delete", {}, first.cookie)).status).toBe(200);
+		expect(await accountsWith(email)).toBe(0);
+
+		const stored = await codesStoredFor(email);
+		expect((await requestCode(email)).status).toBe(200);
+		expect(await codesStoredFor(email)).toBe(stored);
+
+		await ownerInvites(email);
+		expect((await requestCode(email)).status).toBe(200);
+		const codes = await vi.waitFor(
+			async () => {
+				const sent = await emailsTo(email, CODE_EMAIL);
+				if (sent.length < 2) throw new Error("No second code yet");
+				return sent;
+			},
+			{ timeout: 5_000 },
+		);
+		const otp = /\b\d{6}\b/.exec(codes.at(-1)?.text ?? "")?.[0] ?? "";
+		expect((await enterCode(email, otp)).status).toBe(200);
+		expect(await accountsWith(email)).toBe(1);
+	});
+
 	it("does not let anyone else withdraw an invitation that is there", async () => {
 		const { owner, member } = await ownerAndMember();
 		const { email, made } = await invite(owner.cookie);

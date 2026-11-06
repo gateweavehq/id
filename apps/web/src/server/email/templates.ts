@@ -123,7 +123,7 @@ export function accountDeletedEmail({ email }: { email: string }): Message {
 		heading: "Your account was deleted",
 		body: [
 			`The ${PRODUCT} account for ${email} has been deleted, from a session signed in to it. It cannot be brought back.`,
-			"Apps you signed in to with it keep what they already hold about you, so delete your account in each of them too.",
+			"Apps you signed in to with it keep what they already hold about you, and some may keep you signed in for a while, so delete your account in each of them too.",
 		],
 		footer:
 			"If this was not you, someone else had your password or a recent session. Tell whoever runs this server.",

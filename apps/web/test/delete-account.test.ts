@@ -300,6 +300,23 @@ describe("what it takes", () => {
 		expect((await deleteAccount({ cookie: cookieOf(signedInAgain) })).status).toBe(200);
 	});
 
+	it("takes nothing from another site, even with a live cookie and the right password", async () => {
+		const person = await newPerson();
+		const response = await id.fetch(`${origin}/api/auth/account/delete`, {
+			method: "POST",
+			headers: {
+				origin: "https://elsewhere.example",
+				"cf-connecting-ip": newClient(),
+				"content-type": "application/json",
+				cookie: person.cookie,
+			},
+			body: JSON.stringify({ password: PASSWORD }),
+		});
+		expect(response.status).toBe(403);
+		expect(await hasAccount(person)).toBe(true);
+		expect(await isSignedIn(person)).toBe(true);
+	});
+
 	it("reads only what it asks for", async () => {
 		const person = await newPerson();
 		const refused = await deleteAccount(person, { password: PASSWORD, userId: "someone-else" });
@@ -327,6 +344,51 @@ describe("what it takes", () => {
 });
 
 describe("who has to stay", () => {
+	it("leaves someone their ways in when the last step is refused", async () => {
+		// Stands in for someone else leaving a workspace between the question and the delete, which no
+		// request can be timed to do. With the adapter's own delete, this person would have no way back.
+		const person = await newPerson();
+		await id.db
+			.prepare(
+				`CREATE TRIGGER refused_for_this_test BEFORE DELETE ON user
+				WHEN old.id = '${person.userId}'
+				BEGIN SELECT RAISE(ABORT, 'refused for this test'); END`,
+			)
+			.run();
+		try {
+			expect((await deleteAccount(person)).status).toBe(500);
+		} finally {
+			await id.db.prepare("DROP TRIGGER refused_for_this_test").run();
+		}
+
+		expect(await hasAccount(person)).toBe(true);
+		expect(await rowsOf("account", "user_id", person.userId)).toBe(1);
+		expect(await isSignedIn(person)).toBe(false);
+
+		const back = await api("/sign-in/email", {
+			body: { email: person.email, password: PASSWORD },
+		});
+		expect(back.status).toBe(200);
+		expect((await deleteAccount({ cookie: cookieOf(back) })).status).toBe(200);
+		expect(await hasAccount(person)).toBe(false);
+
+		// Only the delete that happened is written down.
+		const countOfDeleted = () =>
+			id.db
+				.prepare(
+					"SELECT count(*) AS n FROM audit_event WHERE type = 'account_deleted' AND user_id = ?",
+				)
+				.bind(person.userId)
+				.first<number>("n");
+		await vi.waitFor(
+			async () => {
+				if (!(await countOfDeleted())) throw new Error("Nothing written yet");
+			},
+			{ timeout: 5_000 },
+		);
+		expect(await countOfDeleted()).toBe(1);
+	});
+
 	it("stops a workspace's only owner until each one is seen to, naming them", async () => {
 		const owner = await newPerson();
 		const other = await newPerson();
