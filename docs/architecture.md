@@ -299,6 +299,35 @@ above proves it, and the invitation is waiting.
   someone once they have an account with that address, and the page tells whoever made it to say so
   themselves. See "Who owns a deployment" for how someone gets an account there.
 
+## Deleting an account
+
+**Someone deletes their own account on the account page, and it goes at once.** `auth/delete-account.ts` does
+it, at `/account/delete`.
+
+- **It takes a session from the last day, and the password if the account has one.** So a stolen cookie is not
+  enough wherever there is a password to ask for, and five tries a minute keep this from being a way to guess
+  one. An account with only GitHub or a passkey has a recent session and nothing else to show.
+- **Two people have to stay.** The only owner of a workspace hands it over or deletes it first, and the answer
+  names each one. Whoever runs the server stays until someone else does, as [self-hosting.md](self-hosting.md)
+  says. The answers have words because the code asks first. The triggers `member_delete_keeps_an_owner` and
+  `deployment_keeps_its_owner` hold it whatever asks.
+- **Better Auth's `/delete-user` stays off.** Its `internalAdapter.deleteUser` removes the sessions, then the
+  ways of signing in, and the user last, so a trigger refusing that last step would leave someone with no way
+  back. This ends the sessions through the adapter, so that the provider's hooks send back-channel logouts,
+  and then deletes the user in one statement. Foreign keys take everything else with it, or a trigger refuses
+  all of it. That can happen if someone else leaves a workspace in the moment between. The person is signed
+  out and still has their account, and signing in again gets them the reason.
+- **Apps keep their own copy.** They hear that the session ended, and lose their tokens. What an app holds
+  about the person is its own: on a self-hosted server it is out of ID's reach, and Track and Agents keep
+  their own accounts on purpose. The page and the email say so.
+- **What stays:** the audit log's rows, which have no foreign keys and last their 90 days, and an app's
+  `added_by`, as the app list expects of someone who has left. A workspace keeps the apps they added and the
+  groups they were in, and its log says they left.
+- **What goes that others might notice:** invitations they sent that nobody has taken, since
+  `invitation.inviter_id` cascades. Leaving a workspace is different, as above.
+- **The address is free afterwards.** A new account with it starts from nothing, and on a closed server it
+  needs a new way in.
+
 ## Who may sign in
 
 Three rules, in this order:

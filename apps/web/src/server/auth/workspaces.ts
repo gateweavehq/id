@@ -272,7 +272,7 @@ function gateRules({ db, allowInvitation }: WorkspacesConfig): Record<string, Ch
 }
 
 /** What the log keeps about a workspace beyond its id, which is all that is left once it is gone. */
-function detailOf(workspace: string | undefined, role?: string) {
+export function detailOf(workspace: string | undefined, role?: string) {
 	return JSON.stringify({ workspace, role });
 }
 

@@ -40,6 +40,7 @@ afterAll(async () => {
 function startOver(db: typeof id.db) {
 	return db.batch(
 		[
+			"UPDATE deployment SET owner_id = NULL WHERE id = 1",
 			"DELETE FROM organization",
 			"DELETE FROM user",
 			"DELETE FROM deployment_invitation",
@@ -432,7 +433,11 @@ describe("the time an answer about an address takes", () => {
 	/** A first account, so that the server is closed and there is someone to tell from a stranger. */
 	async function firstAccount() {
 		const email = newAddress();
-		await timed.db.prepare("DELETE FROM user").run();
+		await timed.db.batch(
+			["UPDATE deployment SET owner_id = NULL WHERE id = 1", "DELETE FROM user"].map((statement) =>
+				timed.db.prepare(statement),
+			),
+		);
 		expect(
 			(await timeOf("/email-otp/send-verification-otp", { email, type: "sign-in" })).status,
 		).toBe(200);
@@ -535,12 +540,26 @@ describe("the database, whatever makes an account", () => {
 		expect((await theDeployment())?.ownerId).toBe(userId);
 	});
 
-	it("gives nobody the place of an owner whose account has gone, while others remain", async () => {
+	it("keeps its owner's account, however a request comes to delete it", async () => {
 		const { userId } = await signUp(newAddress());
 		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
-		await signUp(newAddress());
+		const { userId: other } = await signUp(newAddress());
+		await expect(id.db.prepare("DELETE FROM user WHERE id = ?").bind(userId).run()).rejects.toThrow(
+			/must keep its owner/,
+		);
+		expect((await theDeployment())?.ownerId).toBe(userId);
+
+		// Once someone else runs it, it is an account like any other.
+		await id.db.prepare("UPDATE deployment SET owner_id = ? WHERE id = 1").bind(other).run();
 		await id.db.prepare("DELETE FROM user WHERE id = ?").bind(userId).run();
-		expect((await theDeployment())?.ownerId).toBeNull();
+		expect((await theDeployment())?.ownerId).toBe(other);
+	});
+
+	it("gives nobody the place of an owner it has lost, while others remain", async () => {
+		await signUp(newAddress());
+		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
+		await signUp(newAddress());
+		await id.db.prepare("UPDATE deployment SET owner_id = NULL WHERE id = 1").run();
 
 		await signUp(newAddress());
 		expect((await theDeployment())?.ownerId).toBeNull();
