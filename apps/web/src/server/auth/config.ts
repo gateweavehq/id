@@ -12,6 +12,7 @@ import { passwordResetEmail } from "../email/templates";
 import { allowedAppsPlugin } from "./allowed-apps";
 import { auditDatabaseHooks, auditLog, auditRecorder, whereFrom } from "./audit";
 import { breachedPasswords } from "./breached-passwords";
+import { deleteAccountPlugin } from "./delete-account";
 import { deploymentPlugin, mayMakeAccount, SIGN_UP_CLOSED } from "./deployment";
 import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
@@ -212,6 +213,7 @@ export function createAuth(config: AuthConfig) {
 			// Before the provider, which must not see a session that a code is still owed for.
 			...twoFactorPlugins({ record, firstUseOfCode: config.firstUseOfCode }),
 			auditLog(config.db, record),
+			deleteAccountPlugin({ db: config.db, mailer, record }),
 			deploymentPlugin({
 				db: config.db,
 				mailer,

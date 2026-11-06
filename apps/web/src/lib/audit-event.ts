@@ -3,6 +3,7 @@ import { roleName } from "./workspace";
 /** What the audit log records, and how the account page says it. */
 export const AUDIT_EVENT_TYPES = [
 	"account_created",
+	"account_deleted",
 	"sign_in",
 	"sign_in_failed",
 	"two_factor_asked",
@@ -141,6 +142,8 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 	switch (type as AuditEventType) {
 		case "account_created":
 			return "Created this account";
+		case "account_deleted":
+			return "Deleted this account";
 		case "sign_in":
 			return detail && SIGNED_IN_WITH[detail]
 				? `Signed in with ${SIGNED_IN_WITH[detail]}`

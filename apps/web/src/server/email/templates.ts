@@ -116,6 +116,20 @@ export function serverInvitationEmail({
 	});
 }
 
+/** Nothing here can be undone, so it says what is left to do, and what it means if it was not them. */
+export function accountDeletedEmail({ email }: { email: string }): Message {
+	return compose({
+		subject: `Your ${PRODUCT} account was deleted`,
+		heading: "Your account was deleted",
+		body: [
+			`The ${PRODUCT} account for ${email} has been deleted, from a session signed in to it. It cannot be brought back.`,
+			"Apps you signed in to with it keep what they already hold about you, and some may keep you signed in for a while, so delete your account in each of them too.",
+		],
+		footer:
+			"If this was not you, someone else had your password or a recent session. Tell whoever runs this server.",
+	});
+}
+
 function compose({
 	subject,
 	heading,

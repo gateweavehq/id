@@ -1,6 +1,8 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
+import { useState } from "react";
 import { AccountActivity } from "#/components/account-activity";
 import { AccountApps } from "#/components/account-apps";
+import { AccountDelete } from "#/components/account-delete";
 import { AccountPasskeys } from "#/components/account-passkeys";
 import { AccountPassword } from "#/components/account-password";
 import { AccountProfile } from "#/components/account-profile";
@@ -36,7 +38,25 @@ function AccountPage() {
 	const data = Route.useLoaderData();
 	const router = useRouter();
 	const legal = useLegalLinks();
+	// In place, because a word on the sign-in page would be something anyone could put in a link.
+	const [deleted, setDeleted] = useState(false);
 	useDocumentTitle("Account");
+
+	if (deleted) {
+		return (
+			<main className="mx-auto max-w-lg space-y-4 p-6 pt-24">
+				<h1 className="text-xl font-semibold tracking-tight">Your account is deleted</h1>
+				<p role="status" className="text-sm text-muted-foreground">
+					Apps you signed in to keep what they already hold about you, and some may keep you signed
+					in for a while, so delete your account in each of them too.
+				</p>
+				<Button asChild variant="outline" size="sm">
+					<a href="/login">Go to sign-in</a>
+				</Button>
+				<LegalLinks links={legal} />
+			</main>
+		);
+	}
 
 	return (
 		<main className="mx-auto max-w-lg space-y-10 p-6 pt-24">
@@ -95,6 +115,11 @@ function AccountPage() {
 			{data.apps && <AccountApps />}
 
 			<AccountActivity />
+			<AccountDelete
+				email={session.user.email}
+				hasPassword={data.hasPassword}
+				onDeleted={() => setDeleted(true)}
+			/>
 
 			<LegalLinks links={legal} />
 		</main>

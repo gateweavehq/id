@@ -77,8 +77,8 @@ pnpm wrangler d1 execute DB --remote --command \
   "UPDATE deployment SET owner_id = (SELECT id FROM user WHERE email = 'someone@example.com') WHERE id = 1"
 ```
 
-The same statement gives a server an owner again if the owner's account has been deleted. Until then nobody can
-reach `/server`, and sign-up stays as it was.
+The owner's account cannot be deleted until someone else runs the server. The same statement gives a server an
+owner if it has none. Until then nobody can reach `/server`, and sign-up stays as it was.
 
 ## Without email
 
