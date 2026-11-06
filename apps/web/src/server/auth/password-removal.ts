@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
+import { z } from "zod";
 
 const UNLINK_ACCOUNT = "/unlink-account";
 
@@ -23,11 +24,13 @@ export function passwordRemoval() {
 						const accounts = await internalAdapter.findAccounts(session.user.id);
 						const row = accounts.find(({ id }) => id === ctx.body?.accountId);
 						if (row?.providerId !== "credential" || !row.password) return;
-						const given = ctx.body?.password;
+						const given = z
+							.string()
+							.max(password.config.maxPasswordLength)
+							.safeParse(ctx.body?.password);
 						const right =
-							typeof given === "string" &&
-							given.length <= password.config.maxPasswordLength &&
-							(await password.verify({ hash: row.password, password: given }));
+							given.success &&
+							(await password.verify({ hash: row.password, password: given.data }));
 						if (!right) {
 							throw APIError.from("BAD_REQUEST", {
 								code: "INVALID_PASSWORD",
