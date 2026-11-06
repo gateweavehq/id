@@ -231,14 +231,14 @@ test("a request naming an address the app has not registered stops here, and say
 	const problems = await watch(page);
 	const elsewhere = { redirect_uri: "https://elsewhere.test/callback" };
 	await goToSignIn(page, elsewhere);
-	await expect(page).toHaveURL(//request-refused?/);
+	await expect(page).toHaveURL(/\/request-refused\?/);
 	await expect(page.getByRole("heading", { name: "This request was refused" })).toBeVisible();
 	await expect(page.getByText("an address it has not registered")).toBeVisible();
 
 	// Signed in, the sign-in page would have sent them on to their account without a word.
 	await signInToTheApp(page);
 	await goToSignIn(page, elsewhere);
-	await expect(page).toHaveURL(//request-refused?/);
+	await expect(page).toHaveURL(/\/request-refused\?/);
 	await expect(page.getByText("an address it has not registered")).toBeVisible();
 	expect(problems).toEqual([]);
 });
