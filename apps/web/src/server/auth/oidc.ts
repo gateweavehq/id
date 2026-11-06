@@ -1,8 +1,8 @@
 import { getOAuthProviderState, oauthProvider } from "@better-auth/oauth-provider";
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
-import { jwt } from "better-auth/plugins/jwt";
-import { and, eq, gt } from "drizzle-orm";
+import { createJwk, type JwtOptions, jwt } from "better-auth/plugins/jwt";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
@@ -21,6 +21,12 @@ export interface OidcConfig {
 }
 
 const DAY = 86_400;
+
+/**
+ * RS256 is what OpenID Connect requires of a provider, and what a library expects unless told otherwise,
+ * since it is the default for `id_token_signed_response_alg`. Discovery says this and the keys must match.
+ */
+const SIGNING_ALGORITHM = "RS256";
 
 /** What the provider advertises by itself for the scopes it knows, which setting this replaces. */
 const STANDARD_CLAIMS_SUPPORTED = [
@@ -161,6 +167,39 @@ function sameRequestWithout(ctx: GenericEndpointContext, name: string): string {
 		for (const value of [values].flat()) asked.append(key, String(value));
 	}
 	return `${AUTHORIZE_PATH}?${asked}`;
+}
+
+/**
+ * A server that has signed before still holds the key it used, and the provider goes on using the newest
+ * live key when it has none of the algorithm it is set to, for up to 90 days, with discovery saying
+ * otherwise. Making one first moves it over at its next token, and the old key stays published until it
+ * runs out, for what was signed with it. Going by what is there means no step of a deploy can come first
+ * and leave this undone, and a rollback finds its old key still good.
+ */
+function signsWithOneAlgorithm(db: Database, options: JwtOptions): BetterAuthPlugin {
+	return {
+		id: "signs-with-one-algorithm",
+		hooks: {
+			before: [
+				{
+					matcher: (ctx) => ctx.path === "/oauth2/token",
+					handler: createAuthMiddleware(async (ctx) => {
+						const key = await db
+							.select({ id: schema.jwks.id })
+							.from(schema.jwks)
+							.where(
+								and(
+									eq(schema.jwks.alg, SIGNING_ALGORITHM),
+									or(isNull(schema.jwks.expiresAt), gt(schema.jwks.expiresAt, new Date())),
+								),
+							)
+							.get();
+						if (!key) await createJwk(ctx, options);
+					}),
+				},
+			],
+		},
+	};
 }
 
 /**
@@ -307,21 +346,23 @@ export function oidcPlugins(
 	{ issuer, pairwiseSecret, undelivered }: OidcConfig,
 	record: RecordEvent,
 ) {
+	const signing: JwtOptions = {
+		// Apps get tokens from the provider. A session has no business carrying a JWT as well.
+		disableSettingJwtHeader: true,
+		jwks: {
+			keyPairConfig: { alg: SIGNING_ALGORITHM, modulusLength: 2048 },
+			rotationInterval: 90 * DAY,
+			// Longer than any ID token lives or any app sensibly caches the keys.
+			gracePeriod: 30 * DAY,
+		},
+		jwt: { issuer },
+	};
 	return [
 		refuseResources(),
 		membersOnlyToWorkspaceApps(db, issuer),
 		auditOfApps(db, record),
-		jwt({
-			// Apps get tokens from the provider. A session has no business carrying a JWT as well.
-			disableSettingJwtHeader: true,
-			jwks: {
-				keyPairConfig: { alg: "ES256" },
-				rotationInterval: 90 * DAY,
-				// Longer than any ID token lives or any app sensibly caches the keys.
-				gracePeriod: 30 * DAY,
-			},
-			jwt: { issuer },
-		}),
+		signsWithOneAlgorithm(db, signing),
+		jwt(signing),
 		oauthProvider({
 			// Read by our patch of the provider (see "A patched dependency" in docs/architecture.md).
 			...(undelivered && ({ backchannelLogoutUndelivered: undelivered } as object)),
