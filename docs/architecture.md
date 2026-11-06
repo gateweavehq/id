@@ -386,7 +386,7 @@ app or breaks every integration, so each is decided here and not left to a defau
 | Value            | Decision                                                               | Why                                                                                     |
 | ---------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Issuer           | The bare origin, with discovery at `/.well-known/openid-configuration` | It is typed into customers' app settings. `/api/auth` is an implementation detail.      |
-| Signing          | ES256 (`jwks.keyPairConfig.alg`)                                       | Better Auth defaults to EdDSA, which is not on Cloudflare Access's documented list.     |
+| Signing          | RS256 (`jwks.keyPairConfig.alg`)                                       | OpenID Connect requires it, and libraries expect it unless told otherwise.              |
 | Subjects         | Pairwise for every app (`pairwiseSecret`)                              | With one shared issuer, a public `sub` would let unrelated customers match a person up. |
 | `pairwiseSecret` | Generated once, never rotated                                          | Rotating it changes every subject, so every app would see new people.                   |
 | Token prefixes   | `gwid_at_`, `gwid_rt_`, `gwid_cs_`                                     | Better Auth's docs call them effectively immutable.                                     |

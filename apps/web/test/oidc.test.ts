@@ -243,12 +243,12 @@ async function signatureHolds(jwt: string): Promise<boolean> {
 	const key = await crypto.subtle.importKey(
 		"jwk",
 		jwk,
-		{ name: "ECDSA", namedCurve: "P-256" },
+		{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
 		false,
 		["verify"],
 	);
 	return crypto.subtle.verify(
-		{ name: "ECDSA", hash: "SHA-256" },
+		"RSASSA-PKCS1-v1_5",
 		key,
 		Buffer.from(signature, "base64url"),
 		Buffer.from(`${header}.${payload}`),
@@ -261,8 +261,8 @@ describe("discovery", () => {
 		expect(as.authorization_endpoint).toBe(`${origin}/api/auth/oauth2/authorize`);
 		expect(as.token_endpoint).toBe(`${origin}/api/auth/oauth2/token`);
 		expect(as.jwks_uri).toBe(`${origin}/api/auth/jwks`);
-		expect(as.id_token_signing_alg_values_supported).toEqual(["ES256"]);
-		expect(as.subject_types_supported).toContain("pairwise");
+		expect(as.id_token_signing_alg_values_supported).toEqual(["RS256"]);
+		expect(as.subject_types_supported).toEqual(["pairwise"]);
 		expect(as.code_challenge_methods_supported).toEqual(["S256"]);
 		expect(as.grant_types_supported).toEqual(["authorization_code", "refresh_token"]);
 		expect(as.backchannel_logout_supported).toBe(true);
@@ -270,6 +270,17 @@ describe("discovery", () => {
 
 	it("offers nobody a way to register an app", () => {
 		expect(as.registration_endpoint).toBeUndefined();
+	});
+
+	it("says only what an app can use here", () => {
+		const methods = ["client_secret_basic", "client_secret_post"];
+		expect(as.token_endpoint_auth_methods_supported).toEqual(methods);
+		expect(as.revocation_endpoint_auth_methods_supported).toEqual(methods);
+		expect(as.prompt_values_supported).toEqual(["none", "login", "consent"]);
+		const named = Object.keys(as);
+		expect(named.filter((name) => name.startsWith("dpop_"))).toEqual([]);
+		expect(named.filter((name) => name.includes("_auth_signing_"))).toEqual([]);
+		expect(named.filter((name) => name.startsWith("introspection_"))).toEqual([]);
 	});
 
 	it("takes the issuer from settings, whatever host a request names", async () => {
@@ -298,10 +309,10 @@ describe("signing in to an app", () => {
 		expect(tokens.refresh_token).toMatch(/^gwid_rt_/);
 	});
 
-	it("signs ID tokens with ES256", async () => {
+	it("signs ID tokens with RS256", async () => {
 		const { tokens } = await signInToApp(await newApp(), await newPerson());
 		const [header = ""] = (tokens.id_token ?? "").split(".");
-		expect(JSON.parse(Buffer.from(header, "base64url").toString())).toMatchObject({ alg: "ES256" });
+		expect(JSON.parse(Buffer.from(header, "base64url").toString())).toMatchObject({ alg: "RS256" });
 	});
 
 	it("gives only what the scopes ask for", async () => {
@@ -1175,6 +1186,54 @@ describe("signing keys", () => {
 		await expireOldKey(Date.now() - 31 * DAY);
 		expect(await signatureHolds(before.tokens.id_token ?? "")).toBe(false);
 		expect(await signatureHolds(after.tokens.id_token ?? "")).toBe(true);
+	});
+
+	it("moves on from a key of another algorithm at the next token, and keeps publishing it", async () => {
+		// What a server that signed with ES256 holds when it is upgraded. Nothing can sign with this row,
+		// so a token signed with it fails outright rather than passing as something else.
+		const now = Date.now();
+		const held = await id.db
+			.prepare("SELECT id FROM jwks WHERE alg = 'RS256'")
+			.all<{ id: string }>();
+		const { publicKey } = await crypto.subtle.generateKey(
+			{ name: "ECDSA", namedCurve: "P-256" },
+			true,
+			["sign", "verify"],
+		);
+		const older = "an-older-key";
+		await id.db
+			.prepare(
+				"INSERT INTO jwks (id, public_key, private_key, created_at, expires_at, alg, crv) VALUES (?, ?, '{}', ?, ?, 'ES256', 'P-256')",
+			)
+			.bind(
+				older,
+				JSON.stringify(await crypto.subtle.exportKey("jwk", publicKey)),
+				now,
+				now + 86_400_000,
+			)
+			.run();
+		await id.db
+			.prepare("UPDATE jwks SET expires_at = ? WHERE alg = 'RS256'")
+			.bind(now - 1000)
+			.run();
+		try {
+			const app = await newApp();
+			const { tokens } = await exchange(
+				app,
+				await authorize(app, await newPerson()),
+				await discover(),
+			);
+			const [header = ""] = (tokens.id_token ?? "").split(".");
+			const { alg, kid } = JSON.parse(Buffer.from(header, "base64url").toString());
+			expect(alg).toBe("RS256");
+			expect(held.results.map((key: { id: string }) => key.id)).not.toContain(kid);
+			const published = (await (await appFetch(as.jwks_uri ?? "")).json()) as {
+				keys: { kid: string }[];
+			};
+			expect(published.keys.map((key) => key.kid)).toContain(older);
+		} finally {
+			await id.db.prepare("DELETE FROM jwks WHERE id = ?").bind(older).run();
+		}
 	});
 });
 
