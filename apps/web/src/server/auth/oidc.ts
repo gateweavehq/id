@@ -174,7 +174,9 @@ function sameRequestWithout(ctx: GenericEndpointContext, name: string): string {
  * live key when it has none of the algorithm it is set to, for up to 90 days, with discovery saying
  * otherwise. Making one first moves it over at its next token, and the old key stays published until it
  * runs out, for what was signed with it. Going by what is there means no step of a deploy can come first
- * and leave this undone, and a rollback finds its old key still good.
+ * and leave this undone, and a rollback finds its old key still good. Reading the keys makes one too, as
+ * it does on a server with none at all, because an app that reads them and then gets a token signed with
+ * a key it did not see may not read them again.
  */
 function signsWithOneAlgorithm(db: Database, options: JwtOptions): BetterAuthPlugin {
 	return {
@@ -182,7 +184,7 @@ function signsWithOneAlgorithm(db: Database, options: JwtOptions): BetterAuthPlu
 		hooks: {
 			before: [
 				{
-					matcher: (ctx) => ctx.path === "/oauth2/token",
+					matcher: (ctx) => ctx.path === "/oauth2/token" || ctx.path === "/jwks",
 					handler: createAuthMiddleware(async (ctx) => {
 						const key = await db
 							.select({ id: schema.jwks.id })

@@ -1259,9 +1259,11 @@ describe("signing keys", () => {
 		expect(await signatureHolds(after.tokens.id_token ?? "")).toBe(true);
 	});
 
-	it("moves on from a key of another algorithm at the next token, and keeps publishing it", async () => {
-		// What a server that signed with ES256 holds when it is upgraded. Nothing can sign with this row,
-		// so a token signed with it fails outright rather than passing as something else.
+	/**
+	 * What a server that signed with ES256 holds when it is upgraded. Nothing can sign with this row, so
+	 * a token signed with it fails outright rather than passing as something else.
+	 */
+	async function onAnUpgradedServer(work: (known: string[], older: string) => Promise<void>) {
 		const now = Date.now();
 		const held = await id.db
 			.prepare("SELECT id FROM jwks WHERE alg = 'RS256'")
@@ -1288,23 +1290,48 @@ describe("signing keys", () => {
 			.bind(now - 1000)
 			.run();
 		try {
-			const app = await newApp();
-			const { tokens } = await exchange(
-				app,
-				await authorize(app, await newPerson()),
-				await discover(),
+			await work(
+				held.results.map((key: { id: string }) => key.id),
+				older,
 			);
-			const [header = ""] = (tokens.id_token ?? "").split(".");
-			const { alg, kid } = JSON.parse(Buffer.from(header, "base64url").toString());
-			expect(alg).toBe("RS256");
-			expect(held.results.map((key: { id: string }) => key.id)).not.toContain(kid);
-			const published = (await (await appFetch(as.jwks_uri ?? "")).json()) as {
-				keys: { kid: string }[];
-			};
-			expect(published.keys.map((key) => key.kid)).toContain(older);
 		} finally {
 			await id.db.prepare("DELETE FROM jwks WHERE id = ?").bind(older).run();
 		}
+	}
+
+	async function tokenHeader() {
+		const app = await newApp();
+		const { tokens } = await exchange(
+			app,
+			await authorize(app, await newPerson()),
+			await discover(),
+		);
+		const [header = ""] = (tokens.id_token ?? "").split(".");
+		return JSON.parse(Buffer.from(header, "base64url").toString()) as { alg: string; kid: string };
+	}
+
+	async function publishedKeys() {
+		const answer = await appFetch(as.jwks_uri ?? "");
+		return ((await answer.json()) as { keys: { kid: string; alg: string }[] }).keys;
+	}
+
+	it("moves on from a key of another algorithm at the next token, and keeps publishing it", async () => {
+		await onAnUpgradedServer(async (known, older) => {
+			const { alg, kid } = await tokenHeader();
+			expect(alg).toBe("RS256");
+			expect(known).not.toContain(kid);
+			expect((await publishedKeys()).map((key) => key.kid)).toContain(older);
+		});
+	});
+
+	it("has the new key out already for an app that reads the keys before its first token", async () => {
+		await onAnUpgradedServer(async (known, older) => {
+			const read = await publishedKeys();
+			expect(read.map((key) => key.kid)).toContain(older);
+			const fresh = read.filter((key) => key.alg === "RS256" && !known.includes(key.kid));
+			expect(fresh).toHaveLength(1);
+			expect((await tokenHeader()).kid).toBe(fresh[0]?.kid);
+		});
 	});
 });
 
