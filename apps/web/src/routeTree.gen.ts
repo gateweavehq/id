@@ -16,6 +16,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as NoAccessRouteImport } from './routes/no-access'
+import { Route as RequestRefusedRouteImport } from './routes/request-refused'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ServerRouteImport } from './routes/server'
 import { Route as SignupRouteImport } from './routes/signup'
@@ -60,6 +61,11 @@ const LoginRoute = LoginRouteImport.update({
 const NoAccessRoute = NoAccessRouteImport.update({
   id: '/no-access',
   path: '/no-access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RequestRefusedRoute = RequestRefusedRouteImport.update({
+  id: '/request-refused',
+  path: '/request-refused',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/no-access': typeof NoAccessRoute
+  '/request-refused': typeof RequestRefusedRoute
   '/reset-password': typeof ResetPasswordRoute
   '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/no-access': typeof NoAccessRoute
+  '/request-refused': typeof RequestRefusedRoute
   '/reset-password': typeof ResetPasswordRoute
   '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/no-access': typeof NoAccessRoute
+  '/request-refused': typeof RequestRefusedRoute
   '/reset-password': typeof ResetPasswordRoute
   '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
@@ -182,6 +191,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/no-access'
+    | '/request-refused'
     | '/reset-password'
     | '/server'
     | '/signup'
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/no-access'
+    | '/request-refused'
     | '/reset-password'
     | '/server'
     | '/signup'
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/no-access'
+    | '/request-refused'
     | '/reset-password'
     | '/server'
     | '/signup'
@@ -240,6 +252,7 @@ export interface RootRouteChildren {
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
   NoAccessRoute: typeof NoAccessRoute
+  RequestRefusedRoute: typeof RequestRefusedRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   ServerRoute: typeof ServerRoute
   SignupRoute: typeof SignupRoute
@@ -301,6 +314,13 @@ declare module '@tanstack/react-router' {
       path: '/no-access'
       fullPath: '/no-access'
       preLoaderRoute: typeof NoAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/request-refused': {
+      id: '/request-refused'
+      path: '/request-refused'
+      fullPath: '/request-refused'
+      preLoaderRoute: typeof RequestRefusedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -384,6 +404,7 @@ const rootRouteChildren: RootRouteChildren = {
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
   NoAccessRoute: NoAccessRoute,
+  RequestRefusedRoute: RequestRefusedRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   ServerRoute: ServerRoute,
   SignupRoute: SignupRoute,
