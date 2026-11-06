@@ -225,6 +225,24 @@ test("an app asking to see nothing hears that nobody is signed in", async ({ pag
 	expect(new URL(page.url()).searchParams.get("error")).toBe("login_required");
 });
 
+test("a request naming an address the app has not registered stops here, and says so", async ({
+	page,
+}) => {
+	const problems = await watch(page);
+	const elsewhere = { redirect_uri: "https://elsewhere.test/callback" };
+	await goToSignIn(page, elsewhere);
+	await expect(page).toHaveURL(/\/request-refused\?/);
+	await expect(page.getByRole("heading", { name: "This request was refused" })).toBeVisible();
+	await expect(page.getByText("an address it has not registered")).toBeVisible();
+
+	// Signed in, the sign-in page would have sent them on to their account without a word.
+	await signInToTheApp(page);
+	await goToSignIn(page, elsewhere);
+	await expect(page).toHaveURL(/\/request-refused\?/);
+	await expect(page.getByText("an address it has not registered")).toBeVisible();
+	expect(problems).toEqual([]);
+});
+
 test("an app can ask someone signed in to sign in again", async ({ page }) => {
 	const problems = await watch(page);
 	await signInToTheApp(page);

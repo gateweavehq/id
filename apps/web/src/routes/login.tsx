@@ -13,7 +13,7 @@ import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, owesACode } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
 import { getAuthOptions, getSession } from "#/lib/session";
-import { signInRefusal } from "#/lib/sign-in-refusal";
+import { requestRefusal, signInRefusal } from "#/lib/sign-in-refusal";
 import { useTurnstile } from "#/lib/turnstile";
 
 // Loose, because on the way to an app the query is the app's signed request. See `lib/oauth-flow`.
@@ -29,6 +29,10 @@ const loginSearch = z.looseObject({
 export const Route = createFileRoute("/login")({
 	validateSearch: loginSearch,
 	beforeLoad: async ({ search }) => {
+		// Signing in would not help, and someone signed in would be sent on with no word of what happened.
+		if (requestRefusal(search.error)) {
+			throw redirect({ to: "/request-refused", search: { error: search.error } });
+		}
 		// On the way to an app, someone signed in only comes here when the app wants them to sign in again.
 		if (inFlow(search)) return;
 		if (await getSession()) throw redirect({ href: safeRedirect(search.redirect) ?? "/account" });

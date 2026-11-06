@@ -1151,6 +1151,77 @@ describe("signing out", () => {
 	});
 });
 
+describe("a request that cannot go back to the app", () => {
+	const ELSEWHERE = "https://elsewhere.test/callback";
+
+	/** Where a browser ends up, following redirects as a browser does. */
+	async function endOf(url: string, cookie?: string) {
+		const headers = { "cf-connecting-ip": newClient(), ...(cookie && { cookie }) };
+		let at = new URL(url);
+		for (let hop = 0; hop < 5; hop++) {
+			const { status, location } = await id.navigate(at.href, headers);
+			if (status < 300 || status >= 400 || !location) break;
+			at = new URL(location, origin);
+		}
+		return at;
+	}
+
+	function asking(clientId: string, redirectUri: string) {
+		const url = new URL(`${origin}/api/auth/oauth2/authorize`);
+		url.search = new URLSearchParams({
+			client_id: clientId,
+			redirect_uri: redirectUri,
+			response_type: "code",
+			scope: "openid",
+		}).toString();
+		return url.href;
+	}
+
+	it("stops on a page of its own, signed in or not", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		for (const cookie of [undefined, person.cookie]) {
+			const end = await endOf(asking(app.clientId, ELSEWHERE), cookie);
+			expect(end.pathname).toBe("/request-refused");
+			expect(end.searchParams.get("error")).toBe("invalid_redirect");
+		}
+	});
+
+	it("stops there for an app nobody knows too", async () => {
+		const end = await endOf(asking("no-such-app", ELSEWHERE));
+		expect(end.pathname).toBe("/request-refused");
+		expect(end.searchParams.get("error")).toBe("invalid_client");
+	});
+
+	async function page(query: string) {
+		const response = await id.fetch(`${origin}/request-refused?${query}`);
+		expect(response.status).toBe(200);
+		return response.text();
+	}
+
+	it("says what happened in its own words, whatever the link says", async () => {
+		const words = "an address it has not registered";
+		expect(await page("error=invalid_redirect")).toContain(words);
+		const html = await page(
+			"error=invalid_redirect&error_description=Call%20this%20number%20to%20recover%20your%20account",
+		);
+		expect(html).toContain(words);
+		expect(html).not.toContain("Call this number");
+	});
+
+	it("has plain words for a code it does not know", async () => {
+		const plain = "This server could not answer that request.";
+		expect(await page("error=constructor")).toContain(plain);
+		expect(await page("")).toContain(plain);
+	});
+
+	it("leaves a refusal from GitHub on the sign-in page", async () => {
+		const response = await id.fetch(`${origin}/login?error=access_denied`);
+		expect(response.status).toBe(200);
+		expect(await response.text()).toContain("You chose not to sign in with GitHub.");
+	});
+});
+
 describe("signing keys", () => {
 	it("gives a key 90 days, then rotates it, and publishes the old one for 30 more", async () => {
 		const DAY = 86_400_000;
