@@ -323,7 +323,8 @@ it, at `/account/delete`.
   and then deletes the user in one statement. Foreign keys take everything else with it, or a trigger refuses
   all of it. That can happen if someone else leaves a workspace in the moment between. The request fails with
   no reason given, and by then the person is signed out and the apps have been told. They still have their
-  account, and signing in again gets them the reason.
+  account, and signing in again gets them the reason. When two devices ask together, only the request that
+  removed the row writes it down and sends the email.
 - **Apps keep their own copy.** Every app's tokens go with the account. A first-party app signed in through a
   session that is still alive also hears that it ended. One whose session with ID had already ended does not,
   and neither does a workspace app, since those have no back-channel logout yet, so someone can stay signed in

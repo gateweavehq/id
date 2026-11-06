@@ -110,8 +110,14 @@ export function deleteAccountPlugin({ db, mailer, record }: DeleteAccountConfig)
 					// trigger that refuses it, because someone else has just left a workspace, leaves the
 					// person their account. Signing in again gets them the reason.
 					await internalAdapter.deleteUserSessions(user.id);
-					await db.delete(schema.user).where(eq(schema.user.id, user.id)).run();
+					const gone = await db
+						.delete(schema.user)
+						.where(eq(schema.user.id, user.id))
+						.returning({ id: schema.user.id })
+						.get();
 					deleteSessionCookie(ctx);
+					// Another device got here first: the account has gone as asked, and that one tells people.
+					if (!gone) return { deleted: true };
 
 					const from = whereFrom(ctx.headers);
 					record("account_deleted", { userId: user.id, ...from });

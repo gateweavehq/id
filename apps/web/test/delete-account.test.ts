@@ -231,6 +231,39 @@ describe("deleting an account", () => {
 		expect(JSON.stringify(row)).not.toContain("Ada");
 	});
 
+	it("leaves the telling to another device that got there first", async () => {
+		// Stands in for the other device's delete landing between this one's two steps, which no request
+		// can be timed to do: here the second device is refused at its session every time.
+		const person = await newPerson();
+		const workspace = await newWorkspace(runsTheServer);
+		await join(person, workspace, runsTheServer);
+		await id.db
+			.prepare(
+				`CREATE TRIGGER gone_for_this_test AFTER DELETE ON session
+				WHEN old.user_id = '${person.userId}'
+				BEGIN DELETE FROM user WHERE id = old.user_id; END`,
+			)
+			.run();
+		try {
+			const deleted = await deleteAccount(person);
+			expect(deleted.status).toBe(200);
+			expect(await deleted.json()).toEqual({ deleted: true });
+		} finally {
+			await id.db.prepare("DROP TRIGGER gone_for_this_test").run();
+		}
+		expect(await hasAccount(person)).toBe(false);
+
+		// These are written after the answer, so anything on its way gets a moment to arrive.
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		const written = (await id.auditEvents(person.userId)).map(({ type }) => type);
+		expect(written).not.toContain("account_deleted");
+		expect(written).not.toContain("member_left");
+		const told = (await id.emails()).filter(
+			({ to, text }) => to === person.email && /has been deleted/.test(text),
+		);
+		expect(told).toHaveLength(0);
+	});
+
 	it("leaves the address free for a new account, which starts from nothing", async () => {
 		const person = await newPerson();
 		const workspace = await newWorkspace(runsTheServer);
