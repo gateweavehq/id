@@ -336,7 +336,7 @@ describe("the audit log", () => {
 		const removed = await post(
 			"/unlink-account",
 			client,
-			{ accountId: await accountRow(client, cookie, "credential") },
+			{ accountId: await accountRow(client, cookie, "credential"), password: PASSWORD },
 			cookie,
 		);
 		expect(removed.status).toBe(200);
@@ -347,6 +347,78 @@ describe("the audit log", () => {
 		});
 		const events = await id.auditEvents(userId);
 		expect(events.map(({ type }) => type)).not.toContain("provider_unlinked");
+	});
+
+	it("will not let a recent cookie take a password away to choose another", async () => {
+		const { response, client } = await signInAs(person());
+		const cookie = cookieOf(response);
+		await post("/account/first-password", client, { newPassword: PASSWORD }, cookie);
+		const accountId = await accountRow(client, cookie, "credential");
+
+		for (const proof of [
+			{},
+			{ password: "not-the-password" },
+			{ password: "" },
+			{ password: 42 },
+			{ password: "x".repeat(1000) },
+		]) {
+			const refused = await post("/unlink-account", newClient(), { accountId, ...proof }, cookie);
+			expect(refused.status).toBe(400);
+			expect(((await refused.json()) as { code: string }).code).toBe("INVALID_PASSWORD");
+		}
+
+		// Removing it was only ever the first step.
+		const replaced = await post(
+			"/account/first-password",
+			newClient(),
+			{ newPassword: "a-password-someone-else-chose" },
+			cookie,
+		);
+		expect(replaced.status).toBe(400);
+		expect(await accountRow(client, cookie, "credential")).toBe(accountId);
+
+		const nobody = await post("/unlink-account", newClient(), { accountId, password: PASSWORD });
+		expect(nobody.status).toBe(401);
+
+		const removed = await post(
+			"/unlink-account",
+			newClient(),
+			{ accountId, password: PASSWORD },
+			cookie,
+		);
+		expect(removed.status).toBe(200);
+	});
+
+	it("does not take guesses at a password through removing it", async () => {
+		const { response, client } = await signInAs(person());
+		const cookie = cookieOf(response);
+		await post("/account/first-password", client, { newPassword: PASSWORD }, cookie);
+		const accountId = await accountRow(client, cookie, "credential");
+
+		const answers: number[] = [];
+		for (let attempt = 0; attempt < 6; attempt++) {
+			const answer = await post(
+				"/unlink-account",
+				client,
+				{ accountId, password: "not-the-password" },
+				cookie,
+			);
+			answers.push(answer.status);
+		}
+		expect(answers).toEqual([400, 400, 400, 400, 400, 429]);
+	});
+
+	it("asks for no password to disconnect GitHub, which is not one", async () => {
+		const { response, client } = await signInAs(person());
+		const cookie = cookieOf(response);
+		await post("/account/first-password", client, { newPassword: PASSWORD }, cookie);
+		const unlinked = await post(
+			"/unlink-account",
+			newClient(),
+			{ accountId: await accountRow(client, cookie, "github") },
+			cookie,
+		);
+		expect(unlinked.status).toBe(200);
 	});
 
 	it("records nothing when an unlink is refused", async () => {
