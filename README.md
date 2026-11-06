@@ -30,7 +30,8 @@ that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq
   decide who in a workspace may sign in to which app, and an app can ask for them as a `groups` claim.
   These apps do not hear about a sign-out yet. One of them can be
   [Cloudflare Access](docs/cloudflare-access.md), which puts an internal app behind ID through a tunnel,
-  with no server of your own to run.
+  with no server of your own to run. There are guides for [Grafana](docs/recipes/grafana.md),
+  [Gitea](docs/recipes/gitea.md) and [Outline](docs/recipes/outline.md), each signed in to for real.
 - **Your own server.** The first account owns it. Sign-up stays closed until you open it, and while it
   is closed only people who are invited get in. It also runs without email, with less.
 

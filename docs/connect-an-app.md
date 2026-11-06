@@ -64,6 +64,17 @@ const client = { client_id: process.env.GATEWEAVE_CLIENT_ID };
 const auth = oauth.ClientSecretBasic(process.env.GATEWEAVE_CLIENT_SECRET);
 ```
 
+### Apps that have been tried
+
+These have been signed in to for real, and each guide says how far that went.
+
+| App                                       | Version | What it needs                                             |
+| ----------------------------------------- | ------- | --------------------------------------------------------- |
+| [Grafana](recipes/grafana.md)             | 13.3.0  | Nothing beyond the defaults                               |
+| [Outline](recipes/outline.md)             | 1.12.0  | `client_secret_post`                                      |
+| [Gitea](recipes/gitea.md)                 | 28.3.0  | **Require PKCE** off, which has a cost its guide explains |
+| [Cloudflare Access](cloudflare-access.md) | Hosted  | Nothing beyond the defaults                               |
+
 ## What your app gets
 
 The ID token is signed with RS256, and your library checks it against the keys in discovery.
