@@ -102,28 +102,37 @@ An Access rule can use the groups in your workspace, as long as two things are s
 
 Cloudflare's documentation shows no field for scopes in the dashboard, and a provider made without them holds
 `openid`, `email` and `profile`. The way this has been seen to work is to make the provider through the API,
-with a token that has **Access: Organizations, Identity Providers, and Groups Write**:
+with a token that has **Access: Organizations, Identity Providers, and Groups Write**.
+
+Put the settings in a file, so that the client secret stays out of your shell's history:
+
+```json
+{
+	"name": "Gateweave ID",
+	"type": "oidc",
+	"config": {
+		"client_id": "<client id>",
+		"client_secret": "<client secret>",
+		"auth_url": "<issuer>/api/auth/oauth2/authorize",
+		"token_url": "<issuer>/api/auth/oauth2/token",
+		"certs_url": "<issuer>/api/auth/jwks",
+		"pkce_enabled": true,
+		"email_claim_name": "email",
+		"scopes": ["openid", "email", "profile", "groups"],
+		"claims": ["groups"]
+	}
+}
+```
+
+Then send it, and delete the file:
 
 ```sh
 curl "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/identity_providers" \
   --request POST \
   --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   --header "Content-Type: application/json" \
-  --data '{
-    "name": "Gateweave ID",
-    "type": "oidc",
-    "config": {
-      "client_id": "<client id>",
-      "client_secret": "<client secret>",
-      "auth_url": "<issuer>/api/auth/oauth2/authorize",
-      "token_url": "<issuer>/api/auth/oauth2/token",
-      "certs_url": "<issuer>/api/auth/jwks",
-      "pkce_enabled": true,
-      "email_claim_name": "email",
-      "scopes": ["openid", "email", "profile", "groups"],
-      "claims": ["groups"]
-    }
-  }'
+  --data @provider.json
+rm provider.json
 ```
 
 **Not settled:** whether a provider made in the dashboard, with `groups` only under **OIDC Claims**, asks for the
