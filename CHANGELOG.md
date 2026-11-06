@@ -7,6 +7,54 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.9.0] - 2026-11-06
+
+ID now signs with RS256, as OpenID Connect requires, and the OpenID Foundation's conformance suite passes its Basic OP
+and Config OP plans against it, in a run anyone can repeat. ID is not certified: that is a separate step with the
+Foundation, and all this says is that the suite passes, with the differences written down. A standard library that sends
+its secret in the body or has no PKCE can now connect, and a request that stops at ID gets a page that says why.
+
+**Read this before updating.** Moving to RS256 takes more than updating ID, as the first two items below say.
+
+### Changed
+
+- **ID tokens and logout tokens are signed with RS256, with a 2048-bit key.** OpenID Connect Core requires it of a
+  provider, and it is what a library expects if nobody told it otherwise. The first time discovery, the keys or a token
+  is asked for, a server makes the key itself, with no migration and nothing to set. The old ES256 key stays published
+  until it runs out and for 30 days after, so tokens already out still verify. **An app set to accept only ES256 has to
+  accept RS256 before you update.** v0.8.0's docs said ES256, so one you set up from them may be. (#54, #57, #59)
+- **If you run Gateweave Track or Gateweave Agents against your own ID, redeploy them straight after updating it, and
+  again if you roll ID back past this release.** They read which algorithms to accept from discovery when an isolate
+  starts, and keep the answer for as long as it lives. Until then a running one refuses every RS256 token, sign-ins and
+  logouts alike, and ID does not try a refused logout again. Any other app that holds on to discovery the same way needs
+  the same. (#59)
+- **Discovery says only what works.** It no longer offers `private_key_jwt` and the algorithms for it, DPoP, `public`
+  subjects or `select_account`, none of which an app could use here. (#54)
+
+### Added
+
+- **An app can say what its library needs.** It can send its secret in the body of the request instead of by HTTP Basic,
+  and can do without PKCE. Both are under "If your app's library needs something else" on the form for a workspace's
+  apps, and `--client-auth` and `--no-pkce` on `apps:add`. Nothing changes for an app that says nothing. An app without
+  PKCE has to send a nonce and check it, which ID cannot see. The form says so, and turning PKCE off asks for a recent
+  sign-in. [Connect an
+  app](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md#if-your-library-needs-something-else) has the
+  details. (#56)
+- **`pnpm test:conformance` runs the OpenID conformance suite against a local build.** It needs Docker, runs in a few
+  minutes, and fails on any difference from what is written down, a better result included. CI runs it when the app's
+  code or its dependencies change, and weekly. [The suite's
+  page](https://github.com/gateweavehq/id/blob/main/docs/conformance.md) lists what does not plainly pass, and why:
+  warnings that stay, skips the suite allows, pages it leaves for a person to look at, and one test that fails on
+  purpose for apps a workspace adds, since a quiet redirect to an app anyone can add would make ID an open redirector.
+  (#58)
+
+### Fixed
+
+- **A request ID cannot answer says so.** When a request names a redirect address its app has not registered, or an app
+  that does not exist, there is nowhere safe to send someone back to. Someone signed in used to land on their account
+  page with no word of what happened, and someone signed out on the sign-in page, told that signing in with GitHub had
+  not worked. It now stops at a page that says what happened in its own words. (#55)
+
 ## [0.8.0] - 2026-11-06
 
 A server you run yourself now belongs to its first account and closes behind it, can invite people with or without
