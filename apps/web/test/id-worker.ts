@@ -208,6 +208,8 @@ export async function startId(
 		pinned = true,
 		settings = {},
 		newDeployment = false,
+		withoutDatabase = false,
+		withoutSecret = false,
 	}: {
 		isolates?: number;
 		email?: boolean;
@@ -218,6 +220,9 @@ export async function startId(
 		pinned?: boolean;
 		settings?: Record<string, string>;
 		newDeployment?: boolean;
+		/** What a branch's Preview lacks. */
+		withoutDatabase?: boolean;
+		withoutSecret?: boolean;
 	} = {},
 ) {
 	const config = JSON.parse(readFileSync(join(serverDir, "wrangler.json"), "utf8")) as BuiltConfig;
@@ -246,7 +251,7 @@ export async function startId(
 					compatibilityDate: config.compatibility_date,
 					compatibilityFlags: config.compatibility_flags,
 					bindings: {
-						BETTER_AUTH_SECRET: secret,
+						...(withoutSecret ? {} : { BETTER_AUTH_SECRET: secret }),
 						...(pinned ? { BETTER_AUTH_URL: origin } : {}),
 						...(email ? { EMAIL_FROM: `${EMAIL_FROM.name} <${EMAIL_FROM.email}>` } : {}),
 						...(turnstile
@@ -273,7 +278,7 @@ export async function startId(
 						queueConsumers: { logouts: { maxBatchTimeout: 1, maxRetries: 20 } },
 					}),
 					serviceBindings: { EMAIL: "outbox" },
-					d1Databases: { DB: "id-test" },
+					d1Databases: { [withoutDatabase ? "UNBOUND_DB" : "DB"]: "id-test" },
 					// Every copy uses the first one's Durable Objects.
 					durableObjects: {
 						RATE_LIMITER: { className: "RateLimiter", useSQLite: true, scriptName: names[0] },
@@ -307,7 +312,7 @@ export async function startId(
 		}),
 	);
 
-	const db = await mf.getD1Database("DB");
+	const db = await mf.getD1Database(withoutDatabase ? "UNBOUND_DB" : "DB");
 	const migrations = join(app, "migrations");
 	for (const file of readdirSync(migrations)
 		.filter((name) => name.endsWith(".sql"))

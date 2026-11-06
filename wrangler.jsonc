@@ -9,6 +9,10 @@
 	// Settings made in the dashboard stay through a deploy. Wrangler otherwise removes a plain-text
 	// variable it does not find here, so the next push would quietly turn off Turnstile or email.
 	"keep_vars": true,
+	// Wrangler will not build a branch's Preview without this block, which would fail every push to a
+	// branch, Dependabot's included. A Preview gets none of this file's bindings and none of the
+	// Worker's secrets, so it only says that it is not set up. docs/self-hosting.md has the rest.
+	"previews": {},
 	"observability": { "enabled": true },
 	"upload_source_maps": true,
 	// Accounts and sessions. The database is provisioned on first deploy.

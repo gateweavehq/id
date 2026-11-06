@@ -24,6 +24,7 @@ const UPSTREAM_URL = "https://github.com/gateweavehq/id.git";
 const OWN_REPOSITORY = /gateweavehq\/id(\.git)?\/?$/;
 const RELEASE = /^v\d+\.\d+\.\d+$/;
 const WORKFLOWS = ".github/workflows";
+const DEPENDABOT = ".github/dependabot.yml";
 // Kept apart from the copy's own tags, which may share these names.
 const RELEASES = "refs/id-upstream/tags";
 // Every git command here reads replacements from this place and no other. So a copy's own stay out
@@ -166,9 +167,10 @@ attempt("merge", "--squash", `${RELEASES}/${target}`);
 git("replace", "--delete", head);
 
 // The button leaves workflows out of a copy, so new and changed ones of ours stay out too. They
-// would run our CI on the copy, and pushing them takes a token with the workflow scope.
-const kept = new Set(lines(git("ls-tree", "-r", "--name-only", head, "--", WORKFLOWS)));
-for (const file of new Set(lines(git("ls-files", "--", WORKFLOWS)))) {
+// would run our CI on the copy, and pushing them takes a token with the workflow scope. The guide
+// suggests deleting Dependabot's file from a copy, so that stays out as well once it has gone.
+const kept = new Set(lines(git("ls-tree", "-r", "--name-only", head, "--", WORKFLOWS, DEPENDABOT)));
+for (const file of new Set(lines(git("ls-files", "--", WORKFLOWS, DEPENDABOT)))) {
 	if (!kept.has(file)) git("rm", "--force", "--quiet", "--", file);
 }
 

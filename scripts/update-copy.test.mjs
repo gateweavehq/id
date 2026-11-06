@@ -549,6 +549,37 @@ test("stops before the copy's own replacement, on a git with no other place", ()
 	assert.equal(run(copy, "log", "-1", "--format=%P"), "", "the copy's own, as it made it");
 });
 
+const withDependabot = (version, file) => ({
+	...RELEASES["v0.10.0"],
+	"CHANGELOG.md": `# Changelog\n\n## [${version}] - 2026-03-01\n`,
+	".github/dependabot.yml": file,
+});
+
+test("keeps Dependabot's file out of a copy that does not have it", () => {
+	release("v0.11.0", withDependabot("0.11.0", "version: 2\n"));
+	assert.equal(update().status, 0);
+	assert.equal(existsSync(join(copy, ".github/dependabot.yml")), false);
+
+	release("v0.12.0", withDependabot("0.12.0", "version: 2\nupdates: []\n"));
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(existsSync(join(copy, ".github/dependabot.yml")), false);
+});
+
+test("updates Dependabot's file in a copy that kept it", () => {
+	release("v0.11.0", withDependabot("0.11.0", "version: 2\n"));
+	mkdirSync(join(copy, ".github"), { recursive: true });
+	writeFileSync(join(copy, ".github/dependabot.yml"), "version: 2\n");
+	run(copy, "add", "-A");
+	run(copy, "commit", "--quiet", "-m", "as the button would have left it");
+	assert.equal(update().status, 0);
+
+	release("v0.12.0", withDependabot("0.12.0", "version: 2\nupdates: []\n"));
+	const result = update();
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(read(".github/dependabot.yml"), "version: 2\nupdates: []\n");
+});
+
 test("refuses ID's own repository", () => {
 	run(copy, "remote", "add", "origin", "https://github.com/gateweavehq/id.git");
 	const result = update();
