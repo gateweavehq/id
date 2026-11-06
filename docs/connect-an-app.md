@@ -1,7 +1,8 @@
 # Connect an app
 
 Your own app can sign people in with Gateweave ID. It works with any library that speaks OpenID Connect,
-and only members of the workspace that added it can use it.
+and only members of the workspace that added it can use it. To put a sign-in in front of an app without
+changing the app, use [Cloudflare Access](cloudflare-access.md).
 
 Gateweave ID is not certified. The OpenID conformance suite's Basic OP and Config OP plans pass, and
 [The OpenID conformance suite](conformance.md) says what differs and why, so check that it does what you need
