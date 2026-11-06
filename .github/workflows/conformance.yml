@@ -1,17 +1,16 @@
 name: Conformance
 
 # The OpenID Foundation's conformance suite against a local build of ID (docs/conformance.md). It takes
-# a while and pulls large images, so it runs for what can change its answer: the code that signs people
-# in, the library behind it, and the suite's own files. A weekly run notices anything else. It decides
-# nothing about deploying, which goes by CI alone.
+# a while and pulls large images, so it runs for what can change its answer: the app's code, the library
+# behind it, and the suite's own files. A weekly run notices anything else. It decides nothing about
+# deploying, which goes by CI alone.
 on:
   pull_request:
     paths:
       - ".github/workflows/conformance.yml"
       - "apps/web/conformance/**"
       - "apps/web/e2e/server.mjs"
-      - "apps/web/src/routes/**"
-      - "apps/web/src/server/auth/**"
+      - "apps/web/src/**"
       - "patches/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -21,8 +20,7 @@ on:
       - ".github/workflows/conformance.yml"
       - "apps/web/conformance/**"
       - "apps/web/e2e/server.mjs"
-      - "apps/web/src/routes/**"
-      - "apps/web/src/server/auth/**"
+      - "apps/web/src/**"
       - "patches/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"

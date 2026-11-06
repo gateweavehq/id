@@ -19,9 +19,10 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { request } from "node:https";
+import { request } from "node:http";
 import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
+import { hashPassword } from "better-auth/crypto";
 import { PERSON } from "../e2e/fixtures.ts";
 import { appRow, insertStatement, workspaceAppRow } from "../src/server/auth/app-row.ts";
 import { expectedOf, namedTests } from "./expected.ts";
@@ -34,8 +35,12 @@ const compose = ["compose", "-f", resolve(here, "docker-compose.yml")];
 // ID as the browser and the suite both see it, through the `id` service of docker-compose.yml.
 const ID = "https://id.localhost:4734";
 const SUITE = "https://localhost.emobix.co.uk:8443";
+// The suite itself, for this script to talk to, without the certificate nothing here could check.
+const SUITE_API = "http://127.0.0.1:4735";
 const PREVIEW = "http://localhost:4732";
 const WORKSPACE = "conformance-workspace";
+// The preview listens on every address for a run, and the seeded person's password is in this repository.
+const PASSWORD = randomBytes(24).toString("base64url");
 
 const named = process.argv.slice(2);
 const kinds = named.length > 0 ? named : ["first-party", "workspace"];
@@ -43,17 +48,18 @@ const only = process.env.CONFORMANCE_TESTS?.split(",") ?? null;
 const say = (line) => console.log(line);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Talks to the suite. Only these requests take its self-signed certificate. */
+/** Talks to the suite. */
 function suite(method, path, body, contentType = "application/json") {
 	return new Promise((done, fail) => {
 		const data = body === undefined || typeof body === "string" ? body : JSON.stringify(body);
 		const req = request(
-			`${SUITE}/${path}`,
+			`${SUITE_API}/${path}`,
 			{
 				method,
-				rejectUnauthorized: false,
 				headers: {
 					accept: "application/json",
+					// It answers 500 to a request that says it did not come over https, as nginx would say.
+					"x-forwarded-proto": "https",
 					...(data === undefined
 						? {}
 						: { "content-type": contentType, "content-length": Buffer.byteLength(data) }),
@@ -128,9 +134,10 @@ function appsOf(kind) {
 	};
 }
 
-function seedStatements(apps) {
+async function seedStatements(apps) {
 	const now = Date.now();
 	return [
+		`UPDATE "account" SET password = '${await hashPassword(PASSWORD)}' WHERE user_id = 'seeded-person';`,
 		`INSERT INTO "organization" (id, name, slug, created_at) VALUES ('${WORKSPACE}', 'Conformance', 'conformance', ${now});`,
 		`INSERT INTO "member" (id, organization_id, user_id, role, created_at) VALUES ('conformance-member', '${WORKSPACE}', 'seeded-person', 'owner', ${now});`,
 		...apps.flatMap((app) => app.rows.map(insertStatement)),
@@ -148,7 +155,7 @@ async function fillSignIn(page) {
 	await page.waitForLoadState("networkidle").catch(() => {});
 	await page.getByRole("heading", { name: "Sign in to Gateweave ID" }).waitFor({ timeout: 15_000 });
 	await page.getByLabel("Email").fill(PERSON.email);
-	await page.getByLabel("Password", { exact: true }).fill(PERSON.password);
+	await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
 	await page.getByRole("button", { name: "Sign in", exact: true }).click();
 }
 
@@ -213,6 +220,15 @@ async function settle(page, test, folder, seen) {
 
 async function visit(context, entry, test, folder, seen, index) {
 	const page = await context.newPage();
+	// A page's address changes only once something other than a redirect has answered, so a page resting
+	// at a path of the API was given something, and what it was is the first thing to ask.
+	let answered;
+	page.on("response", (response) => {
+		const request = response.request();
+		if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+			answered = response.status();
+		}
+	});
 	try {
 		if (entry.method === "POST") {
 			const target = new URL(entry.url);
@@ -241,7 +257,8 @@ async function visit(context, entry, test, folder, seen, index) {
 		const where = await settle(page, test, folder, seen);
 		const shot = resolve(folder, `${test}-${index}.png`);
 		await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-		return { where, shot };
+		const resting = where.startsWith("back") || answered === undefined;
+		return { where: resting ? where : `${where}, answered ${answered}`, shot };
 	} finally {
 		await page.close().catch(() => {});
 	}
@@ -334,8 +351,18 @@ async function runTest(browser, signedIn, planId, module, kind, folder) {
 	};
 }
 
-function newContext(browser) {
-	return browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1100, height: 760 } });
+/** What failed in a page. The suite cannot see it, and a page that throws is wrong whatever it says. */
+const pageErrors = new Set();
+
+async function newContext(browser) {
+	const context = await browser.newContext({
+		ignoreHTTPSErrors: true,
+		viewport: { width: 1100, height: 760 },
+	});
+	context.on("page", (page) => {
+		page.on("pageerror", (error) => pageErrors.add(error.message.slice(0, 200)));
+	});
+	return context;
 }
 
 async function runPlan(browser, planName, variant, config, kind) {
@@ -347,22 +374,18 @@ async function runPlan(browser, planName, variant, config, kind) {
 	const signedIn = await newContext(browser);
 	await signedIn.setExtraHTTPHeaders({ "cf-connecting-ip": nextAddress() });
 	const first = await signedIn.newPage();
-	const problems = new Set();
-	signedIn.on("page", (page) => {
-		page.on("pageerror", (error) => problems.add(error.message.slice(0, 200)));
-	});
-	first.on("pageerror", (error) => problems.add(error.message.slice(0, 200)));
 	await first.goto(`${ID}/login`, { waitUntil: "networkidle" });
 	await fillSignIn(first);
 	await first.waitForURL((url) => url.pathname === "/account", { timeout: 30_000 });
 	await first.close();
 
 	const rows = [];
+	const planned = created.json.modules.map((module) => module.testModule);
+	const filtered = only && planName === "oidcc-basic-certification-test-plan";
+	const unknown = filtered ? only.filter((test) => !planned.includes(test)) : [];
+	if (unknown.length > 0) throw new Error(`the plan has no such test: ${unknown.join(", ")}`);
 	const wanted = created.json.modules.filter(
-		(module) =>
-			planName !== "oidcc-basic-certification-test-plan" ||
-			!only ||
-			only.includes(module.testModule),
+		(module) => !filtered || only.includes(module.testModule),
 	);
 	for (const module of wanted) {
 		const started = Date.now();
@@ -372,8 +395,7 @@ async function runPlan(browser, planName, variant, config, kind) {
 		say(`  ${row.test}: ${row.result ?? row.status} (${seconds} s)`);
 	}
 	await signedIn.close().catch(() => {});
-	for (const problem of problems) say(`  a page failed: ${problem}`);
-	return { rows, problems: [...problems], planned: created.json.modules.map((m) => m.testModule) };
+	return { rows, planned };
 }
 
 /** Everything that differs from `expected.ts`. */
@@ -471,7 +493,7 @@ try {
 
 	const apps = Object.fromEntries(kinds.map((kind) => [kind, appsOf(kind)]));
 	const seedFile = resolve(output, "seed.sql");
-	writeFileSync(seedFile, seedStatements(Object.values(apps)));
+	writeFileSync(seedFile, await seedStatements(Object.values(apps)));
 	const log = openSync(resolve(output, "server.log"), "w");
 	server = spawn(process.execPath, [resolve(root, "e2e/server.mjs")], {
 		cwd: root,
@@ -518,6 +540,13 @@ try {
 		writeFileSync(resolve(output, `${kind}.json`), JSON.stringify(plan.rows, null, 1));
 	}
 	await browser.close();
+	if (pageErrors.size > 0) {
+		sections.push({
+			title: "Pages",
+			rows: [],
+			differ: [...pageErrors].map((error) => ({ test: "a page threw", said: error })),
+		});
+	}
 	report(sections);
 	failed = sections.some((section) => section.differ.length > 0);
 } catch (error) {
@@ -525,6 +554,21 @@ try {
 	say(`The run stopped: ${error?.stack ?? error}`);
 } finally {
 	stop(server);
+	if (failed) {
+		// What the containers said goes with the results, which CI keeps when a run fails. Taking the
+		// containers down loses it. Nothing in it outlives the run: the apps, the person and the server
+		// are all made for it. The Worker's own log is server.log, which is why these have other names.
+		for (const [service, name] of [
+			["id", "proxy.log"],
+			["server", "suite.log"],
+		]) {
+			const logs = spawnSync("docker", [...compose, "logs", "--no-color", service], {
+				cwd: here,
+				maxBuffer: 512 * 1024 * 1024,
+			});
+			writeFileSync(resolve(output, name), logs.stdout ?? "");
+		}
+	}
 	if (!process.env.CONFORMANCE_KEEP) docker("down", "--volumes", "--timeout", "5");
 }
 process.exit(failed ? 1 : 0);

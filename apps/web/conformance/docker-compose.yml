@@ -20,6 +20,9 @@ services:
       OIDC_GOOGLE_SECRET: not-used
       OIDC_GITLAB_CLIENTID: not-used
       OIDC_GITLAB_SECRET: not-used
+    # For run.mjs, on this machine only. Everything else comes through nginx.
+    ports:
+      - "127.0.0.1:4735:8080"
     depends_on:
       - mongodb
 

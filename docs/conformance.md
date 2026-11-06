@@ -55,7 +55,8 @@ that keeps the defaults. The Worker tests and browser tests cover those.
 
 It needs Docker, and the browser the browser tests use
 (`pnpm --filter @gateweave/id-web exec playwright install chromium`). The ports are 8443 and 8444 for the
-suite, 4734 for ID over https, and 4732 and 4733 as for the browser tests, so run neither at the same time.
+suite, 4734 for ID over https, 4735 for the script to reach the suite, and 4732 and 4733 as for the browser
+tests, so do not run both at the same time.
 
 ```sh
 pnpm test:conformance
@@ -71,15 +72,26 @@ build this script has already made.
 ## In CI
 
 [`conformance.yml`](../.github/workflows/conformance.yml) runs it on pull requests and pushes to `main` that
-touch the code that signs people in, the routes, the lockfile or the suite's own files, and once a week for
-anything else. An upgrade of Better Auth is what it is most likely to catch, which is why the lockfile is on
-that list. It is not a required check and it has no part in deploying.
+touch the app's code, the lockfile or the suite's own files, and once a week for anything else. An upgrade of
+Better Auth is what it is most likely to catch, which is why the lockfile is on that list. It is not a required
+check and it has no part in deploying.
 
 ## When it fails
 
-Read which test differs and what the suite said. A new failure gets fixed, in ID or, if it is Better Auth's,
-upstream too. Change `expected.ts` only when the new result is right, say why in the same line, and change
-this page with it. A test that starts to pass is good news, and takes the same change.
+Read which test differs and what the suite said. A page that throws fails the run too, whatever the suite says.
+A new failure gets fixed, in ID or, if it is Better Auth's, upstream too. Change `expected.ts` only when the new
+result is right, say why in the same line, and change this page with it. A test that starts to pass is good
+news, and takes the same change.
+
+A failed run keeps three logs in `apps/web/conformance/results`, which CI saves with the pictures: `server.log`
+from the Worker, `proxy.log` from nginx and `suite.log` from the suite.
+
+`Socket closed` from the suite means a request had no answer for 60 seconds, when the suite gives up and closes
+it. A page that stopped with a 504 is the same wait, seen from the browser. Read `proxy.log` before ID's code.
+On Docker Desktop a connection from a container to this machine is now and then lost, and `while connecting to
+upstream` there says so. The proxy gives each try three seconds and makes three, which has been enough, since
+nothing has reached ID at that point. Those lines also appear when a later try worked, so they only matter next
+to a test that differs. Tests are never run twice: a run says what the suite said the one time.
 
 ## How it reaches ID
 
@@ -91,7 +103,8 @@ find `id.localhost` as that service, and a browser takes anything under `.localh
 use the same address, as the issuer requires.
 
 The preview listens on every address for the length of a run, because a container reaches this machine by
-something other than `localhost`. It holds nothing but the run's seeded person and apps.
+something other than `localhost`. It holds nothing but the run's seeded person and apps, and that person's
+password is made for the run, because the one in the browser tests' fixtures is public.
 
 The same plans can run against a deployed ID, with a person and apps made there. Nothing in this repository
 does that, because Turnstile can stop a script at the sign-in page. It was done by hand on staging, as

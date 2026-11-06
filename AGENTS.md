@@ -159,7 +159,7 @@ them, check whether the others have the same bug, especially in auth and rate li
   Say `withoutTheOfferInTheEmailField` first in any test that is about something else.
 - `apps/web/conformance` runs the OpenID Foundation's conformance suite against the same build, over
   https on port 4734, and fails on any difference from `expected.ts`. It needs Docker, and is not part of
-  `pnpm verify`: CI runs it as its own workflow when the code that signs people in changes. See
+  `pnpm verify`: CI runs it as its own workflow when the app's code changes. See
   [docs/conformance.md](docs/conformance.md).
 - Every bug fix gets a test that fails without the fix. Never weaken or skip a test to make a
   change pass.
