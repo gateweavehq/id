@@ -1333,6 +1333,42 @@ describe("signing keys", () => {
 			expect((await tokenHeader()).kid).toBe(fresh[0]?.kid);
 		});
 	});
+
+	it("signs a logout with the new key once an app has read discovery, which is when it stops taking others", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		await exchange(app, await authorize(app, person), await discover());
+
+		await onAnUpgradedServer(async (known) => {
+			const read = await appFetch(`${origin}/.well-known/openid-configuration`);
+			const { id_token_signing_alg_values_supported: accepted } = (await read.json()) as {
+				id_token_signing_alg_values_supported: string[];
+			};
+			expect(accepted).toEqual(["RS256"]);
+
+			const out = await api("/sign-out", {
+				client: person.client,
+				cookie: person.cookie,
+				body: {},
+			});
+			expect(out.status).toBe(200);
+			const logoutUri = `https://${app.host}/logout`;
+			let delivered: { url: string; body: string } | undefined;
+			for (let attempt = 0; attempt < 100 && !delivered; attempt++) {
+				delivered = id.outboundBodies.find((request) => request.url === logoutUri);
+				if (!delivered) await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+			const token = new URLSearchParams(delivered?.body).get("logout_token") ?? "";
+			const [encoded = ""] = token.split(".");
+			const header = JSON.parse(Buffer.from(encoded, "base64url").toString()) as {
+				alg: string;
+				kid: string;
+			};
+			expect(accepted).toContain(header.alg);
+			expect(known).not.toContain(header.kid);
+			expect((await publishedKeys()).map((key) => key.kid)).toContain(header.kid);
+		});
+	});
 });
 
 describe("rate limits", () => {
