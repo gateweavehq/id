@@ -409,6 +409,12 @@ Other rules:
   as soon as it exists, because Better Auth has no way to publish one first. So an app that fetched the
   JWKS in the seconds before a rotation can fail to verify one sign-in until it fetches again, which
   clients do when they meet an unknown key. Four times a year, this is accepted.
+- **Changing the signing algorithm takes more than ID.** An app learns what it may accept from discovery.
+  ID makes a key of the new algorithm when discovery, the keys or a token is first asked for, so that an app
+  that has read the new answer never gets anything else. An app that read the old one is not so lucky: Track
+  and Agents read discovery when an isolate starts, and keep the answer for as long as it lives. Until then
+  they refuse every token of the new algorithm, logout tokens too, which ID does not try again. So redeploy
+  them straight after ID, and again after rolling ID back over such a change.
 - **Access tokens are opaque, and `resource` is refused.** A JWT access token's subject is the real user
   id, whatever the app's subject type. Registering no resources is not enough: the provider always accepts
   its own userinfo endpoint as one, so any app could ask for a JWT by naming it. So a request that names

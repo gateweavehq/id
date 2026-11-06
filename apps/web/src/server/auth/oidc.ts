@@ -176,7 +176,9 @@ function sameRequestWithout(ctx: GenericEndpointContext, name: string): string {
  * runs out, for what was signed with it. Going by what is there means no step of a deploy can come first
  * and leave this undone, and a rollback finds its old key still good. Reading the keys makes one too, as
  * it does on a server with none at all, because an app that reads them and then gets a token signed with
- * a key it did not see may not read them again.
+ * a key it did not see may not read them again. So does reading discovery, which is where an app learns
+ * what it may accept. From then on it refuses anything else, and a logout token signed before the next
+ * ID token would be refused, and lost, since a refusal is final.
  */
 function signsWithOneAlgorithm(db: Database, options: JwtOptions): BetterAuthPlugin {
 	return {
@@ -184,7 +186,10 @@ function signsWithOneAlgorithm(db: Database, options: JwtOptions): BetterAuthPlu
 		hooks: {
 			before: [
 				{
-					matcher: (ctx) => ctx.path === "/oauth2/token" || ctx.path === "/jwks",
+					matcher: (ctx) =>
+						ctx.path === "/oauth2/token" ||
+						ctx.path === "/jwks" ||
+						ctx.path === "/.well-known/openid-configuration",
 					handler: createAuthMiddleware(async (ctx) => {
 						const key = await db
 							.select({ id: schema.jwks.id })
