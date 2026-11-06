@@ -849,9 +849,15 @@ whose settings were chosen in the form, the one failure [that page](conformance.
 day, signing with RS256, a real sign-in to Track and to Agents on staging worked, and so did the back-channel
 logout each of them got.
 
+Also that day, a real Cloudflare Access signed people in to a small app behind a real tunnel, with staging as its
+provider and an app added through the workspace form at its defaults, as
+[Cloudflare Access](cloudflare-access.md) describes. It used HTTP Basic, PKCE and RS256. It sent no `nonce`, and in
+12 sign-ins it fetched the keys each time and never called userinfo, so what it knows comes from the ID token. That
+was through Cloudflare's API, not its dashboard.
+
 Still unproven:
 
 - A real passkey, from Windows Hello or a phone, rather than a virtual authenticator.
 - An invitation email sent by a deployed Worker.
 - A workspace's app that someone runs, rather than one a script plays.
-- Cloudflare Access against a deployed ID.
+- Whether a provider made in Cloudflare's dashboard asks for the `groups` scope.
