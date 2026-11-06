@@ -196,9 +196,9 @@ is on. If a link you sent may have reached the wrong person, delete that account
 
 ### Sign in with GitHub
 
-Create a [GitHub OAuth App](https://github.com/settings/developers) with the callback URL
-`https://id.example.com/api/auth/callback/github` (your address), then set `GITHUB_CLIENT_ID` and
-`GITHUB_CLIENT_SECRET`. The form that claims a server goes away here too, since GitHub can prove an address and
+Create a [GitHub OAuth App](https://github.com/settings/developers) whose redirect URI, which GitHub has also
+called the callback URL, is `https://id.example.com/api/auth/callback/github` (your address), then set
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. The form that claims a server goes away here too, since GitHub can prove an address and
 the form cannot.
 
 ### Turnstile
