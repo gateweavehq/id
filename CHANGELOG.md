@@ -7,6 +7,56 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.8.0] - 2026-11-06
+
+A server you run yourself now belongs to its first account and closes behind it, can invite people with or without
+email, and has a guide. Signing out reaches an app that was down for hours. One fix here is for a security problem in
+every release so far.
+
+### Security
+
+- **An address written with the Kelvin sign skipped the cap on sign-up codes.** U+212A lowercases to `k`, and the check
+  in front of a code read the address as typed while the code path lowercased it first. So an address containing a `k`,
+  written that way, could keep getting new codes past the cap on codes per address, each with new tries at guessing it.
+  Rate limits by client and Turnstile still applied. Every release so far has this. (#47)
+- **How long an answer takes no longer tells addresses apart.** Asking for a sign-up code, entering one and asking to
+  reset a password now take at least a second, whatever the answer, which covers the differences we measured. A rare
+  slower answer could still differ. (#47, #50)
+
+### Added
+
+- **A new server belongs to its first account.** It starts closed, with no owner, and whoever makes the first account
+  owns it, so claim it as soon as it is up. A deployment that upgrades stays open, and its oldest account owns it. (#43)
+- **The owner decides who can join.** A "This server" section on their account page opens or closes sign-up and invites
+  people, by email or with a link to pass on. While it is closed, only the owner makes workspaces, only workspaces they
+  run can invite, and an admin elsewhere cannot get around that by promoting the owner. (#43, #45, #49, #50)
+- **A server can run without email.** A new deployment starts that way. The first account claims it with a form, the
+  owner's word stands in for proof of an address, and GitHub does not reach an account nothing proved. With GitHub set
+  up, the first account comes from GitHub instead, and claiming goes behind Turnstile where that is set up. (#45, #48)
+- **A guide to running your own ID.**
+  [`docs/self-hosting.md`](https://github.com/gateweavehq/id/blob/main/docs/self-hosting.md) covers the Deploy button,
+  the command line, every setting, someone who is locked out, backups and updating. `scripts/update-copy.mjs` takes a
+  release into a copy made with the button. (#46)
+- **Missed sign-outs are tried again.** When an app cannot be reached, its back-channel logout goes on a Cloudflare
+  Queue and is tried for about 20 hours, each time with a new token. (#44)
+- **A workspace's app list says who added each app,** and when that person has left. (#42)
+- **ID has its own mark,** a key, on its favicon, home page and README, and the home page says what ID does today. (#51)
+
+### Fixed
+
+- An app repeating a refused refresh is recorded once an hour, so it cannot push the rest of someone's activity off
+  their page. (#41)
+- Long names no longer push confirm buttons off a phone's screen. (#40)
+
+### Upgrading
+
+- Migrations `0012` to `0015`, which a deploy applies.
+- **A deployment that upgrades keeps working as it did:** sign-up stays open and its oldest account becomes the owner,
+  who can close it.
+- **There is a new queue,** which a deploy from the command line makes. A token you deploy with needs the Queues
+  permission. Whether the Workers Builds token can make the queue has not been tried. On a copy made with the button, if
+  the deploy stops there, run `pnpm wrangler queues create` with your queue's name, then deploy again.
+
 ## [0.7.0] - 2026-11-05
 
 A deployment can now link its legal notice, privacy policy and terms from every page of ID. (#36)
