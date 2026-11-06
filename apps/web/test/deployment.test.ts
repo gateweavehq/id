@@ -19,6 +19,7 @@ const origin = "https://id.test";
 const CODE_EMAIL = "is your Gateweave ID code";
 const EXISTS_EMAIL = "You already have a Gateweave ID account";
 const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 const PASSWORD = "a-long-password-for-tests";
 /** Lowercases to a plain k. */
 const KELVIN = "\u212A";
@@ -868,6 +869,17 @@ describe("a workspace's invitations on a closed server", () => {
 		);
 	});
 
+	it("stay a way in when something writes the address in another case", async () => {
+		const owner = await signUp(newAddress());
+		const made = await makeWorkspace(owner.cookie, "the-owners");
+		const { id: organizationId } = (await made.json()) as { id: string };
+		const email = newAddress();
+		expect((await invite(owner.cookie, organizationId, email)).status).toBe(200);
+
+		await insertAccount(email.toUpperCase());
+		expect(await accountsWith(email.toUpperCase())).toBe(1);
+	});
+
 	it("do not tell someone who may not send one that they may", async () => {
 		const owner = await signUp(newAddress());
 		const made = await makeWorkspace(owner.cookie, "the-owners");
@@ -920,6 +932,50 @@ describe("the owner's paths", () => {
 		const { member } = await ownerAndMember();
 		expect((await call(method, path, body, member.cookie)).status).toBe(404);
 		expect((await call(method, path, body)).status).toBe(401);
+	});
+
+	it("does not let anyone else withdraw an invitation that is there", async () => {
+		const { owner, member } = await ownerAndMember();
+		const { email, made } = await invite(owner.cookie);
+		const { token } = await linkTo(email);
+
+		expect(
+			(await post("/deployment/invitations/cancel", { id: made.id }, member.cookie)).status,
+		).toBe(404);
+		const read = await post("/deployment/invitations/read", { token });
+		expect(await read.json()).toEqual({ email });
+	});
+
+	it("limits how often anyone can ask", async () => {
+		const client = newClient();
+		const answers: number[] = [];
+		for (let asked = 0; asked < 62; asked++) {
+			const response = await id.fetch(`${origin}/api/auth/deployment/get`, {
+				headers: { "cf-connecting-ip": client },
+			});
+			answers.push(response.status);
+		}
+		expect(answers.slice(0, 60)).toEqual(Array(60).fill(401));
+		expect(answers).toContain(429);
+	});
+
+	it("keeps what it answers out of caches", async () => {
+		const { cookie } = await signUp(newAddress());
+		const changed = await post("/deployment/sign-up", { signUp: "closed" }, cookie);
+		const made = await post("/deployment/invitations/create", { email: newAddress() }, cookie);
+		const { id: invitationId } = (await made.clone().json()) as { id: string };
+		const withdrawn = await post("/deployment/invitations/cancel", { id: invitationId }, cookie);
+		const { email } = await invite(cookie);
+		const { token } = await linkTo(email);
+		const used = await post("/deployment/invitations/accept", {
+			token,
+			name: "Someone",
+			newPassword: PASSWORD,
+		});
+		for (const response of [changed, made, withdrawn, used]) {
+			expect(response.status).toBe(200);
+			expect(response.headers.get("cache-control")).toContain("no-store");
+		}
 	});
 
 	it("lets the owner open sign-up and close it, and says so in their activity", async () => {
@@ -994,6 +1050,7 @@ describe("the owner's paths", () => {
 		expect(settings).toContain(email);
 		expect(settings).not.toContain(token);
 		expect(settings).not.toContain(stored?.hash ?? "?");
+		expect(JSON.parse(settings)).toMatchObject({ sendsEmail: true });
 		expect(listed.headers.get("cache-control")).toContain("no-store");
 	});
 
@@ -1006,6 +1063,19 @@ describe("the owner's paths", () => {
 			.bind(email)
 			.first<{ rows: number }>();
 		expect(row?.rows).toBe(1);
+	});
+
+	it("refuses an address longer than any can be", async () => {
+		const { cookie } = await signUp(newAddress());
+		await refused(
+			await post(
+				"/deployment/invitations/create",
+				{ email: `${"a".repeat(243)}@example.com` },
+				cookie,
+			),
+			"INVALID_REQUEST",
+			400,
+		);
 	});
 
 	it("refuses to invite an address that has an account", async () => {
@@ -1054,6 +1124,8 @@ describe("the owner's paths", () => {
 		const { userId, cookie } = await signUp(newAddress());
 		const { email, made } = await invite(cookie);
 		const { token } = await linkTo(email);
+		const other = await invite(cookie);
+		const { token: otherToken } = await linkTo(other.email);
 
 		expect((await post("/deployment/invitations/cancel", { id: made.id }, cookie)).status).toBe(
 			200,
@@ -1079,6 +1151,9 @@ describe("the owner's paths", () => {
 			404,
 		);
 		await id.auditEventRecorded(userId, { type: "deployment_invitation_canceled" });
+
+		const stillGood = await post("/deployment/invitations/read", { token: otherToken });
+		expect(await stillGood.json()).toEqual({ email: other.email });
 	});
 
 	it("makes a link that has run out stop working", async () => {
@@ -1105,6 +1180,33 @@ describe("the owner's paths", () => {
 			404,
 		);
 		expect(await accountsWith(email)).toBe(0);
+	});
+
+	it("gives a link a week, and lists only those still good", async () => {
+		const { cookie } = await signUp(newAddress());
+		const before = Date.now();
+		const { email: late } = await invite(cookie);
+		const { email: fine } = await invite(cookie);
+		const after = Date.now();
+		const listed = async () => {
+			const response = await id.fetch(`${origin}/api/auth/deployment/get`, {
+				headers: { "cf-connecting-ip": newClient(), cookie },
+			});
+			const { invitations } = (await response.json()) as {
+				invitations: { email: string; expiresAt: string }[];
+			};
+			return invitations;
+		};
+		const link = (await listed()).find(({ email }) => email === fine);
+		const expiresAt = new Date(link?.expiresAt ?? 0).getTime();
+		expect(expiresAt).toBeGreaterThan(before + 7 * DAY - HOUR);
+		expect(expiresAt).toBeLessThan(after + 7 * DAY + HOUR);
+
+		await id.db
+			.prepare("UPDATE deployment_invitation SET expires_at = ? WHERE email = ?")
+			.bind(Date.now() - 1000, late)
+			.run();
+		expect((await listed()).map(({ email }) => email)).toEqual([fine]);
 	});
 
 	it("lets the person in, once, with the password they chose and a proven address", async () => {
@@ -1173,6 +1275,15 @@ describe("the owner's paths", () => {
 			"INVALID_REQUEST",
 			400,
 		);
+		await refused(
+			await post("/deployment/invitations/accept", {
+				token,
+				name: "a".repeat(101),
+				newPassword: PASSWORD,
+			}),
+			"INVALID_REQUEST",
+			400,
+		);
 		expect(await accountsWith(email)).toBe(0);
 		expect(
 			(
@@ -1234,16 +1345,25 @@ describe("the owner's paths", () => {
 			expect([400, 404]).toContain(response.status);
 			expect(await response.text()).not.toContain("@");
 		}
+		await refused(
+			await post("/deployment/invitations/read", { token: "a".repeat(201) }),
+			"INVALID_REQUEST",
+			400,
+		);
 	});
 
-	it("limits guesses at a link", async () => {
+	it.each<[string, object]>([
+		["/deployment/invitations/read", { token: "guess" }],
+		["/deployment/invitations/accept", { token: "guess", name: "Someone", newPassword: PASSWORD }],
+		["/deployment/claim", { email: "someone@example.com", name: "Someone", newPassword: PASSWORD }],
+	])("limits guesses at %s", async (path, body) => {
 		const client = newClient();
 		const answers: number[] = [];
 		for (let asked = 0; asked < 12; asked++) {
-			const response = await id.fetch(`${origin}/api/auth/deployment/invitations/read`, {
+			const response = await id.fetch(`${origin}/api/auth${path}`, {
 				method: "POST",
 				headers: { origin, "cf-connecting-ip": client, "content-type": "application/json" },
-				body: JSON.stringify({ token: "guess" }),
+				body: JSON.stringify(body),
 			});
 			answers.push(response.status);
 		}
@@ -1327,12 +1447,14 @@ describe("a server that sends no email", () => {
 		const email = newAddress();
 		const claimed = await claim(email.toUpperCase());
 		expect(claimed.status).toBe(200);
+		expect(claimed.headers.get("cache-control")).toContain("no-store");
 		expect(cookieOf(claimed)).toContain("session_token");
 		const owner = await bare.db
 			.prepare("SELECT id, email_verified AS verified FROM user WHERE email = ?")
 			.bind(email)
 			.first<{ id: string; verified: number }>();
 		expect(owner?.verified).toBe(1);
+		await bare.auditEventRecorded(owner?.id ?? "?", { type: "sign_in", detail: "claim" });
 		const row = await bare.db
 			.prepare("SELECT owner_id AS ownerId, sign_up AS signUp FROM deployment")
 			.first();
@@ -1396,6 +1518,10 @@ describe("a server that sends no email", () => {
 		const { link } = (await asked.json()) as { link: string };
 		expect(link.startsWith(`${bareOrigin}/join#`)).toBe(true);
 		expect(await bare.emails()).toEqual([]);
+		const settings = await bare.fetch(`${bareOrigin}/api/auth/deployment/get`, {
+			headers: { "cf-connecting-ip": newClient(), cookie },
+		});
+		expect(await settings.json()).toMatchObject({ sendsEmail: false });
 
 		const accepted = await barePost("/deployment/invitations/accept", {
 			token: new URL(link).hash.slice(1),
@@ -1535,15 +1661,30 @@ describe("a server with GitHub and no email", () => {
 });
 
 describe("claiming a server that sends email", () => {
+	const mailOrigin = "https://mail.test";
+	let mail: Awaited<ReturnType<typeof startId>>;
+
+	beforeAll(async () => {
+		mail = await startId(mailOrigin, { newDeployment: true });
+	});
+
+	afterAll(async () => {
+		await mail?.dispose();
+	});
+
 	it("is not there: the first account proves its address with a code", async () => {
-		const email = newAddress();
-		const claimed = await post("/deployment/claim", {
-			email,
-			name: "The Owner",
-			newPassword: PASSWORD,
+		const claimed = await mail.fetch(`${mailOrigin}/api/auth/deployment/claim`, {
+			method: "POST",
+			headers: {
+				origin: mailOrigin,
+				"cf-connecting-ip": newClient(),
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({ email: newAddress(), name: "The Owner", newPassword: PASSWORD }),
 		});
 		expect(claimed.status).toBe(404);
-		expect(await accountsWith(email)).toBe(0);
+		const row = await mail.db.prepare("SELECT COUNT(*) AS accounts FROM user").first();
+		expect(row).toEqual({ accounts: 0 });
 	});
 });
 
