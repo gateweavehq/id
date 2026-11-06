@@ -22,3 +22,6 @@ worker-configuration.d.ts
 .claude/worktrees/
 
 .DS_Store
+
+# What a conformance run saw (apps/web/conformance/run.mjs)
+apps/web/conformance/results/

@@ -12,8 +12,9 @@ Gateweave ID is part of [Gateweave](https://gateweave.com), the family of open-s
 that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq/track) and
 [Gateweave Agents](https://github.com/gateweavehq/agents).
 
-> **Status: early.** It has not been through the OpenID conformance suite, so check that it does what
-> you need before you rely on it. [docs/architecture.md](docs/architecture.md) describes what it is
+> **Status: early.** It is not certified. The OpenID conformance suite's Basic OP and Config OP plans
+> pass, and [docs/conformance.md](docs/conformance.md) says what differs and why, so check that it does
+> what you need before you rely on it. [docs/architecture.md](docs/architecture.md) describes what it is
 > being built to be, including what is decided and what is still unproven.
 
 ## What works today

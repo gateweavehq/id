@@ -39,20 +39,21 @@ from the repository root, where the build leaves its pointer next to `wrangler.j
 Requirements: Node.js 24 (see `.node-version`; 22+ works) and pnpm 12. Run from the repository
 root unless noted.
 
-| Command           | Purpose                                                                      |
-| ----------------- | ---------------------------------------------------------------------------- |
-| `pnpm install`    | Install dependencies                                                         |
-| `pnpm doctor`     | Check the local toolchain and setup, with fixes for anything missing         |
-| `pnpm dev:setup`  | One-time: create `.dev.vars` and migrate the local D1 database               |
-| `pnpm dev`        | Run the app on http://localhost:4730 (Workers, D1 and Durable Objects local) |
-| `pnpm check`      | Biome lint and format check (`pnpm format` fixes most findings)              |
-| `pnpm typecheck`  | Type-check every package (regenerates Wrangler and route types first)        |
-| `pnpm test`       | Run every test suite                                                         |
-| `pnpm test:e2e`   | Build, then run the browser tests (Playwright, Chromium) on port 4732        |
-| `pnpm build`      | Production build                                                             |
-| `pnpm verify`     | Everything CI runs: check, typecheck, test, build                            |
-| `pnpm run deploy` | Build, apply D1 migrations, deploy                                           |
-| `pnpm wrangler`   | The pinned Wrangler, run from the repository root                            |
+| Command                 | Purpose                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `pnpm install`          | Install dependencies                                                         |
+| `pnpm doctor`           | Check the local toolchain and setup, with fixes for anything missing         |
+| `pnpm dev:setup`        | One-time: create `.dev.vars` and migrate the local D1 database               |
+| `pnpm dev`              | Run the app on http://localhost:4730 (Workers, D1 and Durable Objects local) |
+| `pnpm check`            | Biome lint and format check (`pnpm format` fixes most findings)              |
+| `pnpm typecheck`        | Type-check every package (regenerates Wrangler and route types first)        |
+| `pnpm test`             | Run every test suite                                                         |
+| `pnpm test:e2e`         | Build, then run the browser tests (Playwright, Chromium) on port 4732        |
+| `pnpm test:conformance` | Build, then run the OpenID conformance suite against it (needs Docker)       |
+| `pnpm build`            | Production build                                                             |
+| `pnpm verify`           | Everything CI runs: check, typecheck, test, build                            |
+| `pnpm run deploy`       | Build, apply D1 migrations, deploy                                           |
+| `pnpm wrangler`         | The pinned Wrangler, run from the repository root                            |
 
 Gateweave's own deployments are the `staging` and `cloud` environments in `wrangler.jsonc`:
 `pnpm --filter @gateweave/id-web deploy:staging` and `db:migrate:staging` for staging; production
@@ -156,6 +157,10 @@ them, check whether the others have the same bug, especially in auth and rate li
   `e2e/authenticator.ts` gives a page Chromium's virtual authenticator. It answers the offer under
   the email field by itself, so once it holds a passkey, signing out signs that person back in.
   Say `withoutTheOfferInTheEmailField` first in any test that is about something else.
+- `apps/web/conformance` runs the OpenID Foundation's conformance suite against the same build, over
+  https on port 4734, and fails on any difference from `expected.ts`. It needs Docker, and is not part of
+  `pnpm verify`: CI runs it as its own workflow when the app's code changes. See
+  [docs/conformance.md](docs/conformance.md).
 - Every bug fix gets a test that fails without the fix. Never weaken or skip a test to make a
   change pass.
 

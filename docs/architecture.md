@@ -842,10 +842,16 @@ Gateweave sent ID's token endpoint junk, and worked a minute later. The same run
 by its zone signed in during the junk, while that Worker was refused: of 8,848 requests it sent, 7,463 got a 429.
 That browser then held ID's session and passkey cookies and Track's session cookie, and no others.
 
+On 2026-11-06 the OpenID Foundation's conformance suite ran against staging, with a person and apps made for the
+run, and against a local build, as [The OpenID conformance suite](conformance.md) describes and CI repeats. Both
+said the same. Config OP passed. Basic OP found nothing wrong with first-party apps, and for apps a workspace adds,
+whose settings were chosen in the form, the one failure [that page](conformance.md) says is on purpose. The same
+day, signing with RS256, a real sign-in to Track and to Agents on staging worked, and so did the back-channel
+logout each of them got.
+
 Still unproven:
 
 - A real passkey, from Windows Hello or a phone, rather than a virtual authenticator.
 - An invitation email sent by a deployed Worker.
 - A workspace's app that someone runs, rather than one a script plays.
 - Cloudflare Access against a deployed ID.
-- The OpenID conformance suite, which Pocket ID has passed and ID should too.
