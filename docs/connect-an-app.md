@@ -46,6 +46,10 @@ Both of these are under **If your app's library needs something else** when you 
   someone in. ID does not check that you do. A request for `offline_access` needs PKCE or a nonce either
   way. An app that does send a challenge is held to it, on or off.
 
+An app that leaves out PKCE while **Require PKCE** is on does not get anyone signed in. A member who is
+already signed in goes back to your app with `invalid_request`, and anyone signed out stays on a page here
+that says what was left out, since only a member may be sent to your app.
+
 Turning **Require PKCE** off asks for a recent sign-in, like adding an app.
 
 People are asked about scopes, so scopes decide what your app gets. The `claims` request parameter is

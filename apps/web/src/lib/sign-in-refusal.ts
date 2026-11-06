@@ -16,11 +16,16 @@ const NOTHING_SHARED = "Nothing was shared with it. Let whoever runs the app kno
 const NOT_DONE_HERE = `The app asked for something this server does not do. ${NOTHING_SHARED}`;
 const NOT_KNOWN = "This server does not know that app, or it has been turned off.";
 
+/** A code of ours, for an app that left out what its own settings ask of it. */
+export const PKCE_LEFT_OUT = "pkce_left_out";
+
 /**
  * The provider sends what it cannot answer to the same address as GitHub's refusals, and these are the
  * ones where it has nowhere safe to send someone back to. They are about the app and not about signing in.
  */
 const REQUEST_REFUSALS: Record<string, string> = {
+	[PKCE_LEFT_OUT]: `The app left out PKCE, which this server requires of it. ${NOTHING_SHARED} If its library cannot do PKCE, they can turn off Require PKCE where they added it.`,
+	invalid_scope: NOT_DONE_HERE,
 	invalid_redirect: `The app asked to send you back to an address it has not registered here. ${NOTHING_SHARED}`,
 	invalid_client: NOT_KNOWN,
 	client_disabled: NOT_KNOWN,
