@@ -93,6 +93,9 @@ Better Auth's `/verify-password` is closed. It would tell anyone with the cookie
 only the default limit and no audit row, and nothing here uses it. `/get-access-token`, `/refresh-token` and
 `/account-info` are closed too, since an account keeps none of a provider's tokens for them to give.
 
+`apps/web/src/server/auth/routes.test.ts` lists every route that answers, so a Better Auth upgrade that adds one fails
+until someone decides whether it stays open.
+
 ## Who owns a deployment
 
 **On a new server, the first account owns it and sign-up closes behind it.** Someone who deploys ID for
