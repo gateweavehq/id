@@ -408,26 +408,28 @@ export function deploymentPlugin({
 						});
 					}
 
-					// Asking again takes the earlier link away, or one gone astray would stay good after the
-					// person had used the new one.
-					const { verification } = schema;
-					await db
-						.delete(verification)
-						.where(
-							and(
-								like(verification.identifier, `${RESET_IDENTIFIER}%`),
-								eq(verification.value, person.user.id),
-							),
-						)
-						.run();
-					// The row a reset email's link leads to, so that using this goes through all that does.
 					const secret = randomBytes(32).toString("base64url");
 					const expiresAt = new Date(Date.now() + PASSWORD_LINK_LIFETIME_MS);
-					await internalAdapter.createVerificationValue({
-						identifier: `${RESET_IDENTIFIER}${secret}`,
-						value: person.user.id,
-						expiresAt,
-					});
+					const { verification } = schema;
+					// Asking again takes the earlier link away, or one gone astray would stay good after the
+					// person had used the new one. Together, or two asked for at once would both stay.
+					await db.batch([
+						db
+							.delete(verification)
+							.where(
+								and(
+									like(verification.identifier, `${RESET_IDENTIFIER}%`),
+									eq(verification.value, person.user.id),
+								),
+							),
+						// The row a reset email's link leads to, so that using this goes through all that does.
+						db.insert(verification).values({
+							id: randomBytes(16).toString("hex"),
+							identifier: `${RESET_IDENTIFIER}${secret}`,
+							value: person.user.id,
+							expiresAt,
+						}),
+					]);
 					record("password_link_made", {
 						userId: person.user.id,
 						actorId: session.user.id,

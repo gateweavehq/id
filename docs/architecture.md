@@ -166,8 +166,8 @@ else's account, so it holds to more than an invitation does:
   operator has no such thing.
 - It wants the owner's password, where they have one, as well as a recent session, and spends the same allowance
   per person as the other paths where a session shows a password. A stolen cookie is not enough.
-- The link lasts 24 hours rather than a week. Asking again deletes the earlier one, or one gone astray would stay
-  good after the person had used the new one.
+- The link lasts 24 hours rather than a week. Asking again deletes the earlier one in the same batch that writes
+  the new one, or one gone astray would stay good after the person had used the new one.
 - The person's activity names the owner, and says so again when the password changes. The row is the owner's to
   write anyway, as they run the database, so what this adds is that the person can see it.
 

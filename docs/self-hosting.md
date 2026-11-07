@@ -134,7 +134,7 @@ ID works without email, with less. Compared with a server that sends it:
   ```sh
   TOKEN=$(openssl rand -hex 32)
   pnpm wrangler d1 execute DB --remote --command \
-    "INSERT INTO verification (id, identifier, value, expires_at) SELECT '$TOKEN', 'reset-password:$TOKEN', id, (unixepoch() + 3600) * 1000 FROM user WHERE email = 'you@example.com'"
+    "INSERT INTO verification (id, identifier, value, expires_at) SELECT '$TOKEN', 'reset-password:$TOKEN', owner_id, (unixepoch() + 3600) * 1000 FROM deployment"
   echo "https://your-server/reset-password#$TOKEN"
   ```
 

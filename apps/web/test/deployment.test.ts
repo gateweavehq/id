@@ -1817,6 +1817,19 @@ describe("a server that sends no email", () => {
 			await refused(await makeLink(owner, ownerEmail), "YOUR_OWN_ACCOUNT", 400);
 		});
 
+		it("leaves one link when several are asked for at once", async () => {
+			const { owner, person } = await ownerAndPerson();
+			const tokens = await Promise.all(
+				[1, 2, 3, 4].map(async () => tokenFrom(await makeLink(owner, person.email))),
+			);
+
+			const statuses: number[] = [];
+			for (const token of tokens) {
+				statuses.push((await choose(token, `${NEW_PASSWORD}-${statuses.length}`)).status);
+			}
+			expect(statuses.filter((status) => status === 200)).toHaveLength(1);
+		});
+
 		it("takes an earlier link away when asked again, and only that person's", async () => {
 			const { owner, person } = await ownerAndPerson();
 			const other = await letIn(owner, "Someone Else");
@@ -1892,10 +1905,10 @@ describe("a server that sends no email", () => {
 			);
 			const statement = /"(INSERT INTO verification [^"]+)"/.exec(guide)?.[1];
 			if (!statement) throw new Error("The guide has no such statement");
+			// An address can hold a quote or a $( ), and this runs in a shell and in SQL. It needs none.
+			expect(statement).not.toContain("@");
 			const token = "a-token-as-openssl-would-make-it";
-			await bare.db
-				.prepare(statement.replaceAll("$TOKEN", token).replace("you@example.com", ownerEmail))
-				.run();
+			await bare.db.prepare(statement.replaceAll("$TOKEN", token)).run();
 
 			expect((await choose(token)).status).toBe(200);
 			expect((await signIn(ownerEmail, NEW_PASSWORD)).status).toBe(200);

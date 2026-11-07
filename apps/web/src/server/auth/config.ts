@@ -149,7 +149,9 @@ export function createAuth(config: AuthConfig) {
 			onPasswordReset: async ({ user }, request) => {
 				record("password_changed", {
 					userId: user.id,
-					// Without email nobody can ask for a reset, so this came from the server's owner.
+					// Without email nobody can ask for a reset, so this came from the server's owner. A link
+					// still good when email is turned on or off gets the other word. That the owner made
+					// one is written when they do, whatever happens to email afterwards.
 					detail: mailer ? "reset" : "link",
 					...whereFrom(request?.headers),
 				});
