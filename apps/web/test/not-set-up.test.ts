@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startId } from "./id-worker";
 
-// A branch's Preview gets none of the Worker's bindings or secrets. A deployment missing either the
-// database or the secret says why and serves nothing else.
+// A branch's Preview gets none of the Worker's bindings or secrets, and accounts can't be run
+// safely without the database and the secret. So a deployment missing either says why and serves
+// nothing else.
 
 const origin = "https://id.test";
 
