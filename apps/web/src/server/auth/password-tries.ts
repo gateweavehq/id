@@ -1,5 +1,7 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
+import type { Mailer } from "../email/mailer";
+import { passwordTriesSpentEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
 
 /** Where someone with a session shows a password, and what the request calls it. */
@@ -22,10 +24,44 @@ function offersAPassword(path: string, body: Record<string, unknown> | undefined
 	return field !== undefined && typeof body?.[field] === "string";
 }
 
+interface Person {
+	id: string;
+	email: string;
+	emailVerified: boolean;
+}
+
 export interface PasswordTriesSettings {
 	record: RecordEvent;
 	/** Whether someone signed in as this person may offer another password. Unlimited without it. */
 	allow: ((userId: string) => Promise<boolean>) | undefined;
+	/** Called when `allow` says no. */
+	tell: (person: Person) => Promise<void>;
+}
+
+/**
+ * Emails someone whose allowance has run out, which may be the first they hear of someone else
+ * holding a copy of their session, and spending it keeps them from changing their password. Only at
+ * an address they have shown is theirs, since anyone can sign up with a stranger's and have this
+ * sent there. Resolves either way: the request is refused whatever becomes of the email.
+ *
+ * The day's email is counted before it is sent, so requests sent together send one, and one that
+ * fails is not tried again until the next day. Counting after would let whoever holds the cookie use
+ * up what an address may be sent, which a password reset needs.
+ */
+export async function tellOfSpentTries(
+	{ id, email, emailVerified }: Person,
+	mailer: Mailer | undefined,
+	allowEmail: ((userId: string) => Promise<boolean>) | undefined,
+) {
+	if (!mailer || !allowEmail || !emailVerified) return;
+	try {
+		if (await allowEmail(id)) {
+			await mailer.send({ to: email, ...passwordTriesSpentEmail({ email }) });
+		}
+	} catch (error) {
+		const kind = error instanceof Error ? error.name : "unknown";
+		console.warn(`could not send the email about spent password tries: ${kind}`);
+	}
 }
 
 /**
@@ -40,7 +76,7 @@ export interface PasswordTriesSettings {
  *
  * What it allows also bounds the rows a wrong password writes.
  */
-export function passwordTries({ record, allow }: PasswordTriesSettings) {
+export function passwordTries({ record, allow, tell }: PasswordTriesSettings) {
 	const matcher = ({ path = "" }: { path?: string | undefined }) => path in PASSWORD_FIELDS;
 	return {
 		id: "password-tries",
@@ -53,6 +89,8 @@ export function passwordTries({ record, allow }: PasswordTriesSettings) {
 						// Someone with no session gets the route's answer.
 						const session = await getSessionFromCtx(ctx);
 						if (session && !(await allow(session.user.id))) {
+							// The refusal does not wait, or how long it took would say whether an email went out.
+							await ctx.context.runInBackgroundOrAwait(tell(session.user));
 							throw APIError.from("TOO_MANY_REQUESTS", TOO_MANY_TRIES);
 						}
 					}),

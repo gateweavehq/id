@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	accountExistsEmail,
 	passwordResetEmail,
+	passwordTriesSpentEmail,
 	signUpCodeEmail,
 	workspaceInvitationEmail,
 } from "./templates";
@@ -14,6 +15,19 @@ describe("passwordResetEmail", () => {
 		expect(email.text).toContain(url);
 		expect(email.text).toContain("signs you out on every device");
 		expect(email.html).toContain(`href="${url}"`);
+	});
+});
+
+describe("passwordTriesSpentEmail", () => {
+	it("names the account, says it is refused for now and what to do, and links nowhere", () => {
+		const email = passwordTriesSpentEmail({ email: "ada@example.com" });
+		expect(email.subject).toBe("Too many tries at your Gateweave ID password");
+		expect(email.text).toContain("ada@example.com");
+		expect(email.text).toContain("even if it is the right one");
+		expect(email.text).toContain("Sign out everywhere");
+		// Someone who reads this may be under attack, and a link would teach them to follow one.
+		expect(email.text).not.toContain("http");
+		expect(email.html).not.toContain("href");
 	});
 });
 

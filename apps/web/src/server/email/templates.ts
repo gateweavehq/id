@@ -129,6 +129,19 @@ export function passwordChangedEmail({ email }: { email: string }): Message {
 	});
 }
 
+/** To someone whose tries at their password ran out, which may not have been them. */
+export function passwordTriesSpentEmail({ email }: { email: string }): Message {
+	return compose({
+		subject: `Too many tries at your ${PRODUCT} password`,
+		heading: "Too many tries at your password",
+		body: [
+			`Someone signed in to the ${PRODUCT} account for ${email} has tried a password too many times lately. For now a password offered from a signed-in session is refused, even if it is the right one, so your password and two-factor settings can't be changed on your account page. Signing in still works, and this comes back by itself, a little at a time.`,
+		],
+		footer:
+			'If this was not you, someone may have a copy of a session. Choose "Sign out everywhere" on your account page, which asks for no password. If you have a password, reset it from the sign-in page. Then tell whoever runs this server.',
+	});
+}
+
 /** Nothing here can be undone, so it says what is left to do, and what it means if it was not them. */
 export function accountDeletedEmail({ email }: { email: string }): Message {
 	return compose({

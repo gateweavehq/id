@@ -6,6 +6,7 @@ import {
 	allowInvitation,
 	allowPasswordTry,
 	allowSignUpCode,
+	allowSpentTriesEmail,
 	authRateLimits,
 	firstUseOfCode,
 } from "../rate-limit";
@@ -65,6 +66,7 @@ function buildAuth() {
 		firstUseOfCode,
 		allowInvitation,
 		allowPasswordTry,
+		allowSpentTriesEmail,
 		turnstileSecretKey: turnstile?.secretKey,
 		checkBreachedPasswords: env.CHECK_BREACHED_PASSWORDS === "1",
 		oidc,
