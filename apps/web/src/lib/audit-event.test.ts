@@ -190,6 +190,12 @@ describe("describeActivity", () => {
 		expect(words("two_factor_disabled", "operator")).toContain("for you");
 	});
 
+	it("tells a wrong password given while signed in from a failed sign-in", () => {
+		expect(describeActivity(activity({ type: "password_refused" }))).toBe(
+			"A wrong password was entered while signed in",
+		);
+	});
+
 	it("says which way of signing in failed", () => {
 		expect(describeActivity(activity({ type: "sign_in_failed", detail: "passkey" }))).toBe(
 			"A sign-in with a passkey failed",

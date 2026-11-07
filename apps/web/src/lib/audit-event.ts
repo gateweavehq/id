@@ -15,6 +15,7 @@ export const AUDIT_EVENT_TYPES = [
 	"token_revoked",
 	"sessions_revoked",
 	"password_changed",
+	"password_refused",
 	"passkey_added",
 	"passkey_removed",
 	"two_factor_enabled",
@@ -171,6 +172,8 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 		case "password_changed":
 			if (detail === "first") return "Added a password";
 			return detail === "removed" ? "Removed the password" : "Changed the password";
+		case "password_refused":
+			return "A wrong password was entered while signed in";
 		case "passkey_added":
 			return "Added a passkey";
 		case "passkey_removed":

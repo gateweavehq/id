@@ -89,6 +89,13 @@ Removing a password takes the password, as changing one does, though no page off
 the path above. So `auth/password-removal.ts` asks for it there, with five tries a minute from one client address.
 Disconnecting GitHub still takes only the recent session.
 
+A limit per address does little against a stolen cookie sent from many, so every path where a session shows a
+password also shares an allowance per person (`auth/password-tries.ts`): 10 at once, refilling over an hour, within
+30 that refill over a day. Those are changing or removing a password, turning two-factor on or off, replacing
+recovery codes and deleting the account. It counts only requests with a session for that account, so nobody can lock
+a person out with their address alone, and signing in is not part of it. Whoever holds the cookie can use it up, but
+signing out other devices asks for no password and a reset asks for no session.
+
 Better Auth's `/verify-password` is closed. It would tell anyone with the cookie whether a password is right, with
 only the default limit and no audit row, and nothing here uses it. `/get-access-token`, `/refresh-token` and
 `/account-info` are closed too, since an account keeps none of a provider's tokens for them to give.
@@ -323,7 +330,8 @@ it, at `/account/delete`.
 
 - **It takes a session from the last day, and the password if the account has one.** So a stolen cookie is not
   enough wherever there is a password to ask for, and removing the password first takes the password too. Five
-  tries a minute from one client address hold down guessing, as on the other paths that ask for one. An account
+  tries a minute from one client address and the allowance per person hold down guessing, as on the other paths
+  that ask for one. An account
   with only GitHub or a passkey has a recent session and nothing else to show.
 - **Two people have to stay.** The only owner of a workspace hands it over or deletes it first, and the answer
   names each one. Whoever runs the server stays until someone else does, as [self-hosting.md](self-hosting.md)
@@ -767,6 +775,8 @@ holds it, in D1.
   by the check at authorization or on refresh, `consent_granted`, `consent_denied`, `consent_revoked` when
   someone takes an app back, and `token_revoked` when an app revokes a token. That last one names no person: an app's server is asking, and tokens are
   stored hashed.
+- **A wrong password from a session:** `password_refused`, since the person would want to know that someone with
+  their session is guessing. The allowance per person bounds how many of these there can be.
 - **Changes to an account:** `password_changed` (`first`, `changed`, `reset` or `removed`), `passkey_added`,
   `passkey_removed`, `two_factor_enabled`, `two_factor_disabled` (`operator` when `two-factor:remove` did
   it), `recovery_codes_replaced`, `provider_linked`, `provider_unlinked`, and `sessions_revoked` for

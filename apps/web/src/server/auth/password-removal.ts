@@ -1,6 +1,7 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { z } from "zod";
+import { type RecordEvent, whereFrom } from "./audit";
 
 const UNLINK_ACCOUNT = "/unlink-account";
 
@@ -9,7 +10,7 @@ const UNLINK_ACCOUNT = "/unlink-account";
  * password asks for the old one, and `/account/first-password` only sets one where there is none, so
  * this was the way around both: a stolen cookie could remove the password and then choose its own.
  */
-export function passwordRemoval() {
+export function passwordRemoval(record: RecordEvent) {
 	return {
 		id: "password-removal",
 		hooks: {
@@ -32,6 +33,10 @@ export function passwordRemoval() {
 							given.success &&
 							(await password.verify({ hash: row.password, password: given.data }));
 						if (!right) {
+							// Refused in a hook, so the route's after hooks, which write this elsewhere, never run.
+							if (given.success) {
+								record("password_refused", { userId: session.user.id, ...whereFrom(ctx.headers) });
+							}
 							throw APIError.from("BAD_REQUEST", {
 								code: "INVALID_PASSWORD",
 								message: "That password is not right.",
