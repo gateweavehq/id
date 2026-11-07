@@ -10,6 +10,7 @@ import {
 	type SentEmail,
 	startId,
 } from "./id-worker";
+import { totp } from "./totp";
 
 // Who owns a deployment and who may make an account on it, through the public routes of the built
 // Worker. What this protects is in "Who owns a deployment" in docs/architecture.md.
@@ -918,6 +919,7 @@ describe("the owner's paths", () => {
 		["POST", "/deployment/sign-up", { signUp: "open" }],
 		["POST", "/deployment/invitations/create", { email: "someone@example.com" }],
 		["POST", "/deployment/invitations/cancel", { id: "any" }],
+		["POST", "/deployment/password-link", { email: "someone@example.com", password: "any" }],
 	];
 
 	function call(method: string, path: string, body: object | undefined, cookie?: string) {
@@ -1608,6 +1610,296 @@ describe("a server that sends no email", () => {
 		});
 		const { invitations } = (await listed.json()) as { invitations: { workspace: string }[] };
 		expect(invitations.map(({ workspace }) => workspace)).toEqual(["Solo"]);
+	});
+
+	describe("helping someone back in", () => {
+		const NEW_PASSWORD = "another-long-password-for-tests";
+
+		function idOf(email: string) {
+			return bare.db
+				.prepare("SELECT id FROM user WHERE email = ?")
+				.bind(email)
+				.first<{ id: string }>();
+		}
+
+		async function letIn(owner: string, name: string) {
+			const email = newAddress();
+			const asked = await barePost("/deployment/invitations/create", { email }, owner);
+			const { link } = (await asked.json()) as { link: string };
+			const accepted = await barePost("/deployment/invitations/accept", {
+				token: new URL(link).hash.slice(1),
+				name,
+				newPassword: PASSWORD,
+			});
+			expect(accepted.status).toBe(200);
+			return { email, cookie: cookieOf(accepted), id: (await idOf(email))?.id ?? "?" };
+		}
+
+		/** The owner and someone they let in, each signed in. */
+		async function ownerAndPerson() {
+			const ownerEmail = newAddress();
+			const owner = cookieOf(await claim(ownerEmail));
+			return {
+				owner,
+				ownerEmail,
+				ownerId: (await idOf(ownerEmail))?.id ?? "?",
+				person: await letIn(owner, "Someone"),
+			};
+		}
+
+		function makeLink(owner: string, email: string, password: string | undefined = PASSWORD) {
+			return barePost("/deployment/password-link", { email, password }, owner);
+		}
+
+		async function tokenFrom(response: Response) {
+			expect(response.status).toBe(200);
+			expect(response.headers.get("cache-control")).toContain("no-store");
+			const { link } = (await response.json()) as { link: string };
+			expect(link.startsWith(`${bareOrigin}/reset-password#`)).toBe(true);
+			return new URL(link).hash.slice(1);
+		}
+
+		function choose(token: string, newPassword = NEW_PASSWORD) {
+			return barePost("/reset-password", { token, newPassword });
+		}
+
+		function signIn(email: string, password: string) {
+			return barePost("/sign-in/email", { email, password });
+		}
+
+		async function activityOf(cookie: string) {
+			const response = await bare.fetch(`${bareOrigin}/api/auth/account/activity`, {
+				headers: { "cf-connecting-ip": newClient(), cookie },
+			});
+			const { events } = (await response.json()) as {
+				events: {
+					type: string;
+					detail: string | null;
+					byOther?: boolean;
+					other?: string | null;
+					ip: string | null;
+				}[];
+			};
+			return events;
+		}
+
+		it("lets whoever opens the link choose a password, once, and ends the sessions there were", async () => {
+			const { owner, ownerId, person } = await ownerAndPerson();
+			const token = await tokenFrom(await makeLink(owner, person.email));
+			expect(await bare.emails()).toEqual([]);
+
+			// Until it is used, nothing has changed for them.
+			expect((await signIn(person.email, PASSWORD)).status).toBe(200);
+			const stillIn = await bare.fetch(`${bareOrigin}/api/auth/get-session`, {
+				headers: { "cf-connecting-ip": newClient(), cookie: person.cookie },
+			});
+			expect(await stillIn.json()).toMatchObject({ user: { email: person.email } });
+
+			expect((await choose(token)).status).toBe(200);
+			const ended = await bare.fetch(`${bareOrigin}/api/auth/get-session`, {
+				headers: { "cf-connecting-ip": newClient(), cookie: person.cookie },
+			});
+			expect(await ended.json()).toBeNull();
+			expect((await signIn(person.email, PASSWORD)).status).toBe(401);
+			const back = await signIn(person.email, NEW_PASSWORD);
+			expect(back.status).toBe(200);
+			await refused(await choose(token, "yet-another-long-password"), "INVALID_TOKEN", 400);
+
+			await bare.auditEventRecorded(person.id, {
+				type: "password_link_made",
+				actor_id: ownerId,
+			});
+			await bare.auditEventRecorded(person.id, { type: "password_changed", detail: "link" });
+			expect(await activityOf(cookieOf(back))).toContainEqual(
+				expect.objectContaining({
+					type: "password_link_made",
+					byOther: true,
+					other: "The Owner",
+					// Where the owner was is not this person's to see.
+					ip: null,
+				}),
+			);
+			expect(await activityOf(owner)).toContainEqual(
+				expect.objectContaining({ type: "password_link_made", byOther: false, other: "Someone" }),
+			);
+		});
+
+		it("takes the address however it is typed", async () => {
+			const { owner, person } = await ownerAndPerson();
+			const token = await tokenFrom(await makeLink(owner, person.email.toUpperCase()));
+			expect((await choose(token)).status).toBe(200);
+		});
+
+		it("wants the owner's password, and writes down a wrong one", async () => {
+			const { owner, ownerId, person } = await ownerAndPerson();
+			await refused(
+				await barePost("/deployment/password-link", { email: person.email }, owner),
+				"INVALID_PASSWORD",
+				400,
+			);
+			await refused(
+				await makeLink(owner, person.email, "not-the-password"),
+				"INVALID_PASSWORD",
+				400,
+			);
+			const links = await bare.db
+				.prepare(
+					"SELECT COUNT(*) AS links FROM verification WHERE identifier LIKE 'reset-password:%'",
+				)
+				.first<{ links: number }>();
+			expect(links?.links).toBe(0);
+			await bare.auditEventRecorded(ownerId, { type: "password_refused" });
+			expect(await activityOf(person.cookie)).not.toContainEqual(
+				expect.objectContaining({ type: "password_link_made" }),
+			);
+		});
+
+		it("gives a stolen cookie only so many tries at the owner's password", async () => {
+			const { owner, person } = await ownerAndPerson();
+			// `PASSWORD_TRIES_PER_PERSON` in src/server/rate-limit/index.ts.
+			for (let attempt = 0; attempt < 10; attempt++) {
+				await refused(
+					await makeLink(owner, person.email, `wrong-${attempt}`),
+					"INVALID_PASSWORD",
+					400,
+				);
+			}
+			await refused(await makeLink(owner, person.email), "TOO_MANY_PASSWORD_TRIES", 429);
+		});
+
+		it("asks no password of an owner with none", async () => {
+			const { owner, ownerId, person } = await ownerAndPerson();
+			await bare.db
+				.prepare("DELETE FROM account WHERE user_id = ? AND provider_id = 'credential'")
+				.bind(ownerId)
+				.run();
+			const asked = await barePost("/deployment/password-link", { email: person.email }, owner);
+			expect((await choose(await tokenFrom(asked))).status).toBe(200);
+		});
+
+		it("wants a recent sign-in, even with the right password", async () => {
+			const { owner, ownerId, person } = await ownerAndPerson();
+			await bare.db
+				.prepare("UPDATE session SET created_at = ? WHERE user_id = ?")
+				.bind(Date.now() - 2 * DAY, ownerId)
+				.run();
+			await refused(await makeLink(owner, person.email), "SESSION_NOT_FRESH");
+		});
+
+		it("is not there for anyone else, who can't tell it from a path that doesn't exist", async () => {
+			const { person, ownerEmail } = await ownerAndPerson();
+			expect((await makeLink(person.cookie, ownerEmail)).status).toBe(404);
+			expect((await barePost("/deployment/password-link", { email: ownerEmail })).status).toBe(401);
+		});
+
+		it("is not there on a server that sends email, even for its owner", async () => {
+			const owner = await signUp(newAddress());
+			const invited = newAddress();
+			await ownerInvites(invited);
+			await signUp(invited);
+			const asked = await post(
+				"/deployment/password-link",
+				{ email: invited, password: "any" },
+				owner.cookie,
+			);
+			expect(asked.status).toBe(404);
+			const links = await id.db
+				.prepare(
+					"SELECT COUNT(*) AS links FROM verification WHERE identifier LIKE 'reset-password:%'",
+				)
+				.first<{ links: number }>();
+			expect(links?.links).toBe(0);
+		});
+
+		it("says so of an address with no account, and of the owner's own", async () => {
+			const { owner, ownerEmail } = await ownerAndPerson();
+			await refused(await makeLink(owner, newAddress()), "NO_SUCH_ACCOUNT", 400);
+			await refused(await makeLink(owner, ownerEmail), "YOUR_OWN_ACCOUNT", 400);
+		});
+
+		it("takes an earlier link away when asked again, and only that person's", async () => {
+			const { owner, person } = await ownerAndPerson();
+			const other = await letIn(owner, "Someone Else");
+			const others = await tokenFrom(await makeLink(owner, other.email));
+			const astray = await tokenFrom(await makeLink(owner, person.email));
+			const again = await tokenFrom(await makeLink(owner, person.email));
+
+			await refused(await choose(astray), "INVALID_TOKEN", 400);
+			expect((await choose(again)).status).toBe(200);
+			expect((await choose(others)).status).toBe(200);
+		});
+
+		it("lasts a day, and stops working after", async () => {
+			const { owner, person } = await ownerAndPerson();
+			const token = await tokenFrom(await makeLink(owner, person.email));
+			const row = await bare.db
+				.prepare("SELECT expires_at AS expiresAt FROM verification WHERE identifier = ?")
+				.bind(`reset-password:${token}`)
+				.first<{ expiresAt: number }>();
+			expect(row?.expiresAt).toBeGreaterThan(Date.now() + 23 * HOUR);
+			expect(row?.expiresAt).toBeLessThanOrEqual(Date.now() + DAY);
+
+			await bare.db
+				.prepare("UPDATE verification SET expires_at = ? WHERE identifier = ?")
+				.bind(Date.now() - 1000, `reset-password:${token}`)
+				.run();
+			await refused(await choose(token), "INVALID_TOKEN", 400);
+			expect((await signIn(person.email, PASSWORD)).status).toBe(200);
+		});
+
+		it("does not spend the link on a password it refuses", async () => {
+			const { owner, person } = await ownerAndPerson();
+			const token = await tokenFrom(await makeLink(owner, person.email));
+			await refused(await choose(token, PWNED_PASSWORDS.breached), "PASSWORD_COMPROMISED", 400);
+			await refused(await choose(token, "short"), "PASSWORD_TOO_SHORT", 400);
+			expect((await signIn(person.email, PASSWORD)).status).toBe(200);
+			expect((await choose(token)).status).toBe(200);
+		});
+
+		it("leaves two-factor sign-in on, so the link alone gets nobody in", async () => {
+			const { owner, person } = await ownerAndPerson();
+			const asked = await barePost("/two-factor/enable", { password: PASSWORD }, person.cookie);
+			const { totpURI } = (await asked.json()) as { totpURI: string };
+			const key = new URL(totpURI).searchParams.get("secret") ?? "";
+			const on = await barePost("/two-factor/verify-totp", { code: totp(key) }, person.cookie);
+			expect(on.status).toBe(200);
+
+			const token = await tokenFrom(await makeLink(owner, person.email));
+			expect((await choose(token)).status).toBe(200);
+
+			const signedIn = await signIn(person.email, NEW_PASSWORD);
+			expect(signedIn.status).toBe(200);
+			expect(await signedIn.json()).toMatchObject({ twoFactorRedirect: true });
+			expect(cookieOf(signedIn)).not.toContain("session_token");
+		});
+
+		it("gives a password to someone with none", async () => {
+			const { owner, person } = await ownerAndPerson();
+			await bare.db
+				.prepare("DELETE FROM account WHERE user_id = ? AND provider_id = 'credential'")
+				.bind(person.id)
+				.run();
+			const token = await tokenFrom(await makeLink(owner, person.email));
+			expect((await choose(token)).status).toBe(200);
+			expect((await signIn(person.email, NEW_PASSWORD)).status).toBe(200);
+		});
+
+		it("lets an owner who is locked out back in with the statement in the guide", async () => {
+			const { ownerEmail } = await ownerAndPerson();
+			const guide = readFileSync(
+				join(import.meta.dirname, "..", "..", "..", "docs", "self-hosting.md"),
+				"utf8",
+			);
+			const statement = /"(INSERT INTO verification [^"]+)"/.exec(guide)?.[1];
+			if (!statement) throw new Error("The guide has no such statement");
+			const token = "a-token-as-openssl-would-make-it";
+			await bare.db
+				.prepare(statement.replaceAll("$TOKEN", token).replace("you@example.com", ownerEmail))
+				.run();
+
+			expect((await choose(token)).status).toBe(200);
+			expect((await signIn(ownerEmail, NEW_PASSWORD)).status).toBe(200);
+		});
 	});
 });
 

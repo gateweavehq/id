@@ -70,6 +70,7 @@ const SERVED = [
 	"POST /deployment/invitations/cancel",
 	"POST /deployment/invitations/create",
 	"POST /deployment/invitations/read",
+	"POST /deployment/password-link",
 	"POST /deployment/sign-up",
 
 	// Workspaces. The gate in workspaces.ts has a rule for each of the organization plugin's.

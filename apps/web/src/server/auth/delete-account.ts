@@ -9,6 +9,7 @@ import type { Mailer } from "../email/mailer";
 import { accountDeletedEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
 import { ownsDeployment } from "./deployment";
+import { ownPasswordField, requireOwnPassword } from "./own-password";
 import { noStore, parseBody } from "./workspace-access";
 import { detailOf } from "./workspaces";
 
@@ -21,8 +22,6 @@ const RUNS_THE_SERVER = {
 	message:
 		"You run this server, so this account has to stay until someone else does. The self-hosting guide says how to hand it over.",
 };
-
-const WRONG_PASSWORD = { code: "INVALID_PASSWORD", message: "That password is not right." };
 
 /** What the trigger `member_delete_keeps_an_owner` would refuse, in names someone can act on. */
 async function workspacesOnlyTheyOwn(db: Database, userId: string): Promise<string[]> {
@@ -63,17 +62,9 @@ export function deleteAccountPlugin({ db, mailer, record }: DeleteAccountConfig)
 				{ method: "POST", use: [freshSessionMiddleware] },
 				async (ctx) => {
 					noStore(ctx);
-					const { session, internalAdapter, password } = ctx.context;
+					const { session, internalAdapter } = ctx.context;
 					const { user } = session;
-					const body = parseBody(
-						z.strictObject({
-							password: z
-								.string()
-								.max(password.config.maxPasswordLength, WRONG_PASSWORD.message)
-								.optional(),
-						}),
-						ctx.body,
-					);
+					const body = parseBody(z.strictObject({ password: ownPasswordField(ctx) }), ctx.body);
 
 					if (await ownsDeployment(db, user.id)) {
 						throw APIError.from("FORBIDDEN", RUNS_THE_SERVER);
@@ -86,15 +77,7 @@ export function deleteAccountPlugin({ db, mailer, record }: DeleteAccountConfig)
 						});
 					}
 
-					// A cookie from the last day is not enough for this, where there is a password to ask for.
-					const accounts = await internalAdapter.findAccounts(user.id);
-					const hash = accounts.find(({ providerId }) => providerId === "credential")?.password;
-					if (hash) {
-						const right =
-							body.password !== undefined &&
-							(await password.verify({ hash, password: body.password }));
-						if (!right) throw APIError.from("BAD_REQUEST", WRONG_PASSWORD);
-					}
+					await requireOwnPassword(ctx, user.id, body.password);
 
 					const workspaces = await db
 						.select({ id: schema.organization.id, name: schema.organization.name })

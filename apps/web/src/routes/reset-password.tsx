@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
 import { LiveButton } from "#/components/live-button";
@@ -8,10 +8,12 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { carriesASignature } from "#/lib/oauth-flow";
+import { getAuthOptions } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 
 // Better Auth checks the emailed link and sends the browser here with the token, or with an
-// error when the link is used up or expired.
+// error when the link is used up or expired. A link from the owner of a server that sends no email
+// comes straight here with the token after the #, which a browser sends to nobody.
 const resetSearch = z.object({
 	token: z.string().optional().catch(undefined),
 	error: z.string().optional().catch(undefined),
@@ -29,16 +31,25 @@ export const Route = createFileRoute("/reset-password")({
 	},
 	// The token is in this page's URL, so it must not travel on as a referrer.
 	head: () => ({ meta: [{ name: "referrer", content: "no-referrer" }] }),
+	loader: () => getAuthOptions(),
 	component: ResetPasswordPage,
 });
 
 function ResetPasswordPage() {
-	const { token, error: linkError } = Route.useSearch();
+	const options = Route.useLoaderData();
+	const { token: emailed, error: linkError } = Route.useSearch();
+	// Only the browser can read it, so until this has run there is nothing to say about the link.
+	const [passedOn, setPassedOn] = useState<string | null | undefined>(undefined);
+	const token = emailed ?? passedOn;
 	const [expired, setExpired] = useState(false);
 	const [done, setDone] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	useDocumentTitle("Choose a new password");
+
+	useEffect(() => {
+		setPassedOn(window.location.hash.slice(1) || null);
+	}, []);
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -74,7 +85,27 @@ function ResetPasswordPage() {
 		);
 	}
 
+	if (token === undefined && !linkError) {
+		return (
+			<AuthPage title="Choose a new password">
+				<p className="text-sm text-muted-foreground">Reading your link…</p>
+			</AuthPage>
+		);
+	}
+
 	if (!token || linkError || expired) {
+		if (!options.email) {
+			return (
+				<AuthPage
+					title="This link no longer works"
+					description="It works once, for 24 hours. Ask whoever runs this server for another."
+				>
+					<Button asChild className="w-full">
+						<Link to="/login">Back to sign in</Link>
+					</Button>
+				</AuthPage>
+			);
+		}
 		return (
 			<AuthPage
 				title="This link no longer works"

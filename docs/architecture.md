@@ -156,6 +156,25 @@ the owner's to answer for, as they could write the row themselves. And the first
 neither email nor GitHub is claimed at `/signup` with a name, an address and a password, a path that answers
 404 once there is an account and on any server that can prove an address.
 
+**Nor can it send anyone a reset link, so the owner can make one.** `/deployment/password-link` writes the row a
+reset email's link leads to, so what the person does next goes through `/reset-password` as anyone's reset does:
+the breached-password check, one use, and every session ended, which tells the apps. Two-factor sign-in and
+passkeys stay as they were, so where the person has them the link alone gets nobody in. It is a way into someone
+else's account, so it holds to more than an invitation does:
+
+- It answers 404 on a server that sends email, where people can do this for themselves. So Gateweave Cloud's
+  operator has no such thing.
+- It wants the owner's password, where they have one, as well as a recent session, and spends the same allowance
+  per person as the other paths where a session shows a password. A stolen cookie is not enough.
+- The link lasts 24 hours rather than a week. Asking again deletes the earlier one, or one gone astray would stay
+  good after the person had used the new one.
+- The person's activity names the owner, and says so again when the password changes. The row is the owner's to
+  write anyway, as they run the database, so what this adds is that the person can see it.
+
+Better Auth keeps this token as it comes, rather than a hash of it as invitations have, because its route looks
+it up that way. Whoever can read the database for those 24 hours could use it, as they could a reset email's for
+an hour. They are no one new on a server like this, since its owner runs the database.
+
 ## Signing in with GitHub
 
 GitHub is a second way to prove an address, under the same rule: no account without a verified one.

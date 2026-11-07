@@ -144,18 +144,19 @@ export function createAuth(config: AuthConfig) {
 			// Accounts come from a sign-up code or GitHub. See "Sign-up" in docs/architecture.md.
 			disableSignUp: true,
 			requireEmailVerification: true,
+			// A reset is how someone takes an account back, so it ends every other session.
+			revokeSessionsOnPasswordReset: true,
+			onPasswordReset: async ({ user }, request) => {
+				record("password_changed", {
+					userId: user.id,
+					// Without email nobody can ask for a reset, so this came from the server's owner.
+					detail: mailer ? "reset" : "link",
+					...whereFrom(request?.headers),
+				});
+			},
 			...(mailer && {
 				sendResetPassword: async ({ user, url }) => {
 					await mailer.send({ to: user.email, ...passwordResetEmail({ url }) });
-				},
-				// A reset is how someone takes an account back, so it ends every other session.
-				revokeSessionsOnPasswordReset: true,
-				onPasswordReset: async ({ user }, request) => {
-					record("password_changed", {
-						userId: user.id,
-						detail: "reset",
-						...whereFrom(request?.headers),
-					});
 				},
 			}),
 		},

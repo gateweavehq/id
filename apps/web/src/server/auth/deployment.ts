@@ -2,13 +2,14 @@ import { createHash, randomBytes } from "node:crypto";
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
-import { and, asc, eq, gt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, like, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
 import { serverInvitationEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
+import { ownPasswordField, requireOwnPassword } from "./own-password";
 import { noStore, parseBody, requireFreshSession } from "./workspace-access";
 
 // "Who owns a deployment" in docs/architecture.md. The triggers in `0014_deployment_hold.sql` hold this
@@ -43,6 +44,12 @@ const NO_INVITATION = {
 };
 
 const INVITATION_LIFETIME_DAYS = 7;
+
+/** Far shorter than an invitation's week: whoever holds this has an account that is in use. */
+const PASSWORD_LINK_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+/** Where Better Auth's `/reset-password` looks for what it was given. */
+const RESET_IDENTIFIER = "reset-password:";
 
 /** What the page that makes accounts has to tell someone. */
 export type SignUpState = "open" | "by-invitation" | "unclaimed";
@@ -366,6 +373,68 @@ export function deploymentPlugin({
 						...whereFrom(ctx.headers),
 					});
 					return { canceled: true };
+				},
+			),
+			makePasswordLink: createAuthEndpoint(
+				"/deployment/password-link",
+				{ method: "POST", use: [sessionMiddleware] },
+				async (ctx) => {
+					noStore(ctx);
+					const { session, internalAdapter, baseURL } = ctx.context;
+					await requireOwner(db, session.user.id);
+					// Where email goes out, people do this for themselves, and nobody needs a way into their
+					// accounts. That includes whoever runs Gateweave's own server.
+					if (mailer) throw APIError.fromStatus("NOT_FOUND");
+					const body = parseBody(
+						z.strictObject({ email: address, password: ownPasswordField(ctx) }),
+						ctx.body,
+					);
+					// This opens someone else's account, so a stolen cookie must not be enough for it.
+					requireFreshSession(session, ctx);
+					await requireOwnPassword(ctx, session.user.id, body.password);
+
+					const person = await internalAdapter.findUserByEmail(body.email.toLowerCase());
+					if (!person) {
+						throw APIError.from("BAD_REQUEST", {
+							code: "NO_SUCH_ACCOUNT",
+							message: "That address has no account here.",
+						});
+					}
+					if (person.user.id === session.user.id) {
+						throw APIError.from("BAD_REQUEST", {
+							code: "YOUR_OWN_ACCOUNT",
+							message:
+								"That is your own account. You can change your password on your account page.",
+						});
+					}
+
+					// Asking again takes the earlier link away, or one gone astray would stay good after the
+					// person had used the new one.
+					const { verification } = schema;
+					await db
+						.delete(verification)
+						.where(
+							and(
+								like(verification.identifier, `${RESET_IDENTIFIER}%`),
+								eq(verification.value, person.user.id),
+							),
+						)
+						.run();
+					// The row a reset email's link leads to, so that using this goes through all that does.
+					const secret = randomBytes(32).toString("base64url");
+					const expiresAt = new Date(Date.now() + PASSWORD_LINK_LIFETIME_MS);
+					await internalAdapter.createVerificationValue({
+						identifier: `${RESET_IDENTIFIER}${secret}`,
+						value: person.user.id,
+						expiresAt,
+					});
+					record("password_link_made", {
+						userId: person.user.id,
+						actorId: session.user.id,
+						...whereFrom(ctx.headers),
+					});
+					// In the part after the #, a browser sends it to nobody, so no log or Referer holds it.
+					return { link: `${new URL(baseURL).origin}/reset-password#${secret}`, expiresAt };
 				},
 			),
 			readDeploymentInvitation: createAuthEndpoint(
