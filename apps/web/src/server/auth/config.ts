@@ -27,6 +27,11 @@ export interface AuthConfig {
 	db: Database;
 	secret: string;
 	baseURL?: string | undefined;
+	/**
+	 * Marks cookies `Secure` whatever the base URL says. Without a pinned `baseURL`, Better Auth
+	 * decides from NODE_ENV, which a Worker never has, and leaves the attribute off.
+	 */
+	secureCookies?: boolean | undefined;
 	github?: { clientId: string; clientSecret: string } | undefined;
 	/**
 	 * Sends email. Without it there are no sign-up codes and no password reset, so the only way to
@@ -109,6 +114,9 @@ export function createAuth(config: AuthConfig) {
 				// and Better Auth puts every request whose address it cannot trust in one bucket.
 				ipAddressHeaders: ["cf-connecting-ip"],
 			},
+			// Only the attribute: `useSecureCookies` would also rename the cookies to `__Secure-...`,
+			// which signs everyone out.
+			...(config.secureCookies && { defaultCookieAttributes: { secure: true } }),
 			// Email goes out after the response, so sending it is no part of how long an answer takes.
 			// `even-answer.ts` holds the rest of that time to a minimum.
 			...(config.runInBackground && {
