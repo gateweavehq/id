@@ -7,6 +7,17 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.10.6] - 2026-11-07
+
+Nobody can choose the address of their own picture any more. No migration.
+
+### Security
+
+- **`/update-user` and a sign-up code took any picture address,** which reached apps as the `picture` claim, where other
+  people's browsers fetched it. That told the server at that address when they were looking and from where. ID's pages
+  send no picture, so both now refuse one. GitHub's stays, and pictures already stored are not changed.
+  ([#82](https://github.com/gateweavehq/id/pull/82))
+
 ## [0.10.5] - 2026-11-07
 
 Closes the password check a stolen session cookie could use. Self-hosted copies should update. No migration.
