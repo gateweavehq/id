@@ -7,6 +7,18 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.10.4] - 2026-11-07
+
+A deployment with no `BETTER_AUTH_URL` now marks its cookies `Secure`. No migration.
+
+### Fixed
+
+- **Session cookies had no `Secure` on a deployment without `BETTER_AUTH_URL`.** The setting is optional until the
+  OpenID Connect provider is on, and without it a browser could send the cookie over plain HTTP, such as on the first
+  request to a custom domain. Now it can't, unless this is local dev. Cookies keep their names, so nobody is signed out.
+  Sign-in needs HTTPS on your own domain, as it already did with the setting, and the guide now says so.
+  ([#78](https://github.com/gateweavehq/id/pull/78))
+
 ## [0.10.3] - 2026-11-07
 
 Someone signed out now hears why an app's request was refused, and there are guides for three real apps. No migration.
