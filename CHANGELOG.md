@@ -7,6 +7,17 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.10.5] - 2026-11-07
+
+Closes the password check a stolen session cookie could use. Self-hosted copies should update. No migration.
+
+### Security
+
+- **A stolen cookie could try passwords.** `/verify-password` took one from any session. Nothing here uses it, and it is
+  closed. ([#80](https://github.com/gateweavehq/id/pull/80))
+- **`/get-access-token`, `/refresh-token` and `/account-info` are closed too.** An account keeps none of a provider's
+  tokens, so they had nothing to give, and nothing uses them. ([#80](https://github.com/gateweavehq/id/pull/80))
+
 ## [0.10.4] - 2026-11-07
 
 A deployment with no `BETTER_AUTH_URL` now marks its cookies `Secure`. No migration.
