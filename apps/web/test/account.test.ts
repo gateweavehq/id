@@ -278,6 +278,40 @@ describe("sessions", () => {
 	});
 });
 
+// It reaches apps as the `picture` claim, and their pages have other people's browsers fetch it, so
+// whoever chooses its address would learn who is looking and from where. GitHub's stays.
+describe("the picture", () => {
+	const ELSEWHERE = "https://elsewhere.test/pixel.png";
+
+	it("cannot be set on an account", async () => {
+		const person = await newPerson();
+		const refused = await api("/update-user", {
+			client: person.client,
+			cookie: person.cookie,
+			body: { image: ELSEWHERE },
+		});
+		expect(refused.status).toBe(400);
+		const session = (await (await api("/get-session", person)).json()) as {
+			user: { image: string | null };
+		};
+		expect(session.user.image).toBeNull();
+	});
+
+	it("cannot come with a sign-up code", async () => {
+		const email = `picture-${++people}@example.com`;
+		const client = newClient();
+		await api("/email-otp/send-verification-otp", { client, body: { email, type: "sign-in" } });
+		const otp = await codeSentTo(email);
+		const refused = await api("/sign-in/email-otp", {
+			client,
+			body: { email, otp, name: "Ada", image: ELSEWHERE },
+		});
+		expect(refused.status).toBe(400);
+		const entered = await api("/sign-in/email-otp", { client, body: { email, otp, name: "Ada" } });
+		expect(entered.status).toBe(200);
+	});
+});
+
 describe("the name", () => {
 	it("changes, within the rules", async () => {
 		const person = await newPerson();
