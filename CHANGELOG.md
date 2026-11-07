@@ -7,6 +7,25 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.11.4] - 2026-11-07
+
+People now hear by email when the tries at their password run out. There is no migration in this release, and the
+signing algorithm doesn't change.
+
+### Security
+
+- **An email when the tries at a password run out.** Whoever holds a copy of a session can use up the person's
+  allowance, which keeps them from changing their password or two-factor on their account page for a while. They now get
+  an email at the first refusal, saying what happened and what to do, at most once a day and only at an address they
+  have verified. The refusal doesn't wait for it, and it is the same as before.
+  ([#94](https://github.com/gateweavehq/id/pull/94))
+
+### If you run your own
+
+- **Nothing to do for this release.** With no email set up, nothing changes.
+- **The self-hosting guide now says where your database lives and how to choose.** A D1 database stays where it was
+  made, so this is worth reading before your first deploy. ([#93](https://github.com/gateweavehq/id/pull/93))
+
 ## [0.11.3] - 2026-11-07
 
 Reading a session takes one trip to the database instead of two. There is no migration in this release, and no change of
