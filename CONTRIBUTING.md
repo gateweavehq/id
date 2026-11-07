@@ -3,6 +3,13 @@
 Thanks for helping out! This guide covers how to get a working setup and what we look for in a
 pull request. Everyone taking part is expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Where to start
+
+Issues labelled [good first issue](https://github.com/gateweavehq/id/labels/good%20first%20issue)
+are small, and each says where to look and when it's done. Say in the issue that you're taking
+one, so nobody does it twice, and ask there if you get stuck. If you have something else in
+mind, open an issue first for anything large.
+
 ## Setup
 
 ```sh
