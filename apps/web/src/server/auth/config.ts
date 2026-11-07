@@ -16,6 +16,7 @@ import { deleteAccountPlugin } from "./delete-account";
 import { deploymentPlugin, mayMakeAccount, SIGN_UP_CLOSED } from "./deployment";
 import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
+import { passwordChange } from "./password-change";
 import { passwordRemoval } from "./password-removal";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 import { TWO_FACTOR_CLOSED_PATHS, twoFactorPlugins } from "./two-factor";
@@ -217,6 +218,7 @@ export function createAuth(config: AuthConfig) {
 			...(mailer ? [signUpCodes(mailer)] : []),
 			...(config.checkBreachedPasswords ? [breachedPasswords()] : []),
 			firstPassword(),
+			passwordChange(mailer),
 			passwordRemoval(),
 			// A passkey is bound to a host for good, so it has to be set on purpose, as the issuer does.
 			...(config.baseURL
