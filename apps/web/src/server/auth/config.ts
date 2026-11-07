@@ -36,8 +36,8 @@ export interface AuthConfig {
 	secureCookies?: boolean | undefined;
 	github?: { clientId: string; clientSecret: string } | undefined;
 	/**
-	 * Sends email. Without it there are no sign-up codes and no password reset, so the only way to
-	 * an account is GitHub.
+	 * Sends email. Without it there are no sign-up codes, an account comes from GitHub or a link from
+	 * the server's owner, and only that owner can make a link for choosing a new password.
 	 */
 	mailer?: Mailer | undefined;
 	/** Keeps work such as sending email going after the response, like `ctx.waitUntil`. */
@@ -144,18 +144,21 @@ export function createAuth(config: AuthConfig) {
 			// Accounts come from a sign-up code or GitHub. See "Sign-up" in docs/architecture.md.
 			disableSignUp: true,
 			requireEmailVerification: true,
+			// A reset is how someone takes an account back, so it ends every other session.
+			revokeSessionsOnPasswordReset: true,
+			onPasswordReset: async ({ user }, request) => {
+				record("password_changed", {
+					userId: user.id,
+					// Without email nobody can ask for a reset, so this came from the server's owner. A link
+					// still good when email is turned on or off gets the other word. That the owner made
+					// one is written when they do, whatever happens to email afterwards.
+					detail: mailer ? "reset" : "link",
+					...whereFrom(request?.headers),
+				});
+			},
 			...(mailer && {
 				sendResetPassword: async ({ user, url }) => {
 					await mailer.send({ to: user.email, ...passwordResetEmail({ url }) });
-				},
-				// A reset is how someone takes an account back, so it ends every other session.
-				revokeSessionsOnPasswordReset: true,
-				onPasswordReset: async ({ user }, request) => {
-					record("password_changed", {
-						userId: user.id,
-						detail: "reset",
-						...whereFrom(request?.headers),
-					});
 				},
 			}),
 		},

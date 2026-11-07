@@ -57,6 +57,24 @@ export async function linkSentSince(since: number, email: string): Promise<strin
 	throw new Error(`No invitation reached ${email}`);
 }
 
+/**
+ * The token in a reset email sent since `since`. What it says does not name anyone, so only one test
+ * can ask for one.
+ */
+export async function resetTokenSentSince(since: number): Promise<string> {
+	for (let attempt = 0; attempt < 100; attempt++) {
+		const texts = readdirSync(OUTBOX, { recursive: true, encoding: "utf8" })
+			.filter((file) => file.includes("email-text"))
+			.map((file) => join(OUTBOX, file))
+			.filter((file) => statSync(file).isFile() && statSync(file).mtimeMs >= since)
+			.map((file) => readFileSync(file, "utf8"));
+		const token = texts.map((text) => /reset-password\/([^?\s]+)/.exec(text)?.[1]).find(Boolean);
+		if (token) return token;
+		await new Promise((done) => setTimeout(done, 100));
+	}
+	throw new Error("No reset email was sent");
+}
+
 /** Signs in on the page. It lands on the account page. */
 export async function signIn(page: Page, email: string, password: string) {
 	await page.goto("/login", { waitUntil: "networkidle" });

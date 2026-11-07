@@ -223,6 +223,25 @@ describe("describeActivity", () => {
 		expect(describeActivity(activity({ type: "password_changed", detail: "removed" }))).toBe(
 			"Removed the password",
 		);
+		expect(describeActivity(activity({ type: "password_changed", detail: "link" }))).toBe(
+			"A new password was chosen with a link from this server's owner",
+		);
+	});
+
+	it("says who made a link to someone's account, to both of them", () => {
+		const link = { type: "password_link_made" };
+		expect(describeActivity(activity({ ...link, byOther: true, other: "The Owner" }))).toBe(
+			"The Owner made a link to choose a new password for this account",
+		);
+		expect(describeActivity(activity({ ...link, byOther: true, other: null }))).toBe(
+			"Someone made a link to choose a new password for this account",
+		);
+		expect(describeActivity(activity({ ...link, other: "Sam" }))).toBe(
+			"Made a link to choose a new password for Sam",
+		);
+		expect(describeActivity(activity({ ...link, other: null }))).toBe(
+			"Made a link to choose a new password for someone",
+		);
 	});
 
 	it("says what it does not know, as it is, from an event newer than this page", () => {

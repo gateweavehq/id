@@ -100,6 +100,8 @@ Sign-up closes behind the first account. Your account page then has a **This ser
   yourself. It works once, for 7 days.
 - **Open sign-up**, if the server is meant for anyone. Anyone who finds it can then make an account and a
   workspace. Closing it again stops new accounts, and leaves the ones already made.
+- **Help someone back in**, on a server [without email](#without-email), where nobody can reset a password for
+  themselves.
 
 While sign-up is closed, only the owner makes workspaces, because a workspace's invitation is a way in. Those
 the owner makes admins of a workspace can invite to it, and so let people in. A workspace you are not an admin
@@ -122,12 +124,18 @@ ID works without email, with less. Compared with a server that sends it:
 
 - **Nothing checks an address.** The owner's word stands in for it: whoever opens an invitation link gets an
   account with that address, so send links only to the person they are for.
-- **Nobody can reset a forgotten password.** Someone with no passkey and no GitHub to sign in with stays locked
-  out. All you can do is delete their account and invite them again, which loses what the account had. The
-  database refuses while they alone own a workspace:
+- **Nobody can reset a forgotten password for themselves.** You can help: **Help someone back in** on `/server`
+  makes a link for choosing a new password for their account. It works once, for 24 hours, and making another
+  replaces it. Whoever opens it can choose the password, so send it only to them. Using it signs them out
+  everywhere and leaves two-factor sign-in on, and their activity shows that you made it. The page asks for your
+  own password, and a sign-in from the last day. Nobody can make one for you, so if you are the one locked out,
+  write the same thing yourself, from the repository root:
 
   ```sh
-  pnpm wrangler d1 execute DB --remote --command "DELETE FROM user WHERE email = 'someone@example.com'"
+  TOKEN=$(openssl rand -hex 32)
+  pnpm wrangler d1 execute DB --remote --command \
+    "INSERT INTO verification (id, identifier, value, expires_at) SELECT '$TOKEN', 'reset-password:$TOKEN', owner_id, (unixepoch() + 3600) * 1000 FROM deployment"
+  echo "https://your-server/reset-password#$TOKEN"
   ```
 
 - **A workspace's invitations are not sent.** They wait for the person under Workspaces, once they have an

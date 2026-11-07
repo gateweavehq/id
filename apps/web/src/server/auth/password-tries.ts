@@ -8,6 +8,7 @@ import { type RecordEvent, whereFrom } from "./audit";
 const PASSWORD_FIELDS: Record<string, string> = {
 	"/account/delete": "password",
 	"/change-password": "currentPassword",
+	"/deployment/password-link": "password",
 	"/two-factor/disable": "password",
 	"/two-factor/enable": "password",
 	"/two-factor/generate-backup-codes": "password",

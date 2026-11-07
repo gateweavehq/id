@@ -16,6 +16,7 @@ export const AUDIT_EVENT_TYPES = [
 	"sessions_revoked",
 	"password_changed",
 	"password_refused",
+	"password_link_made",
 	"passkey_added",
 	"passkey_removed",
 	"two_factor_enabled",
@@ -171,9 +172,14 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			return detail === "everywhere" ? "Signed out everywhere" : "Signed out on another device";
 		case "password_changed":
 			if (detail === "first") return "Added a password";
+			if (detail === "link")
+				return "A new password was chosen with a link from this server's owner";
 			return detail === "removed" ? "Removed the password" : "Changed the password";
 		case "password_refused":
 			return "A wrong password was entered while signed in";
+		case "password_link_made":
+			if (byOther) return `${someone} made a link to choose a new password for this account`;
+			return `Made a link to choose a new password for ${other ?? "someone"}`;
 		case "passkey_added":
 			return "Added a passkey";
 		case "passkey_removed":
