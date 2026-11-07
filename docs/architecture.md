@@ -94,7 +94,9 @@ password also shares an allowance per person (`auth/password-tries.ts`): 10 at o
 30 that refill over a day. Those are changing or removing a password, turning two-factor on or off, replacing
 recovery codes and deleting the account. It counts only requests with a session for that account, so nobody can lock
 a person out with their address alone, and signing in is not part of it. Whoever holds the cookie can use it up, but
-signing out everywhere asks for no password and a reset asks for no session.
+signing out everywhere asks for no password and a reset asks for no session. When it runs out the person gets an
+email saying so and what to do, at most once a day and only at an address they have verified, because anyone can
+sign up with a stranger's. The refusal does not wait for it.
 
 Better Auth's `/verify-password` is closed. It would tell anyone with the cookie whether a password is right, with
 only the default limit and no audit row, and nothing here uses it. `/get-access-token`, `/refresh-token` and

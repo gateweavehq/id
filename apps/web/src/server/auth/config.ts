@@ -18,7 +18,7 @@ import { OIDC_CLOSED_PATHS, type OidcConfig, oidcPlugins } from "./oidc";
 import { PASSKEY_CLOSED_PATHS, passkeyPlugins } from "./passkeys";
 import { passwordChange } from "./password-change";
 import { passwordRemoval } from "./password-removal";
-import { passwordTries } from "./password-tries";
+import { passwordTries, tellOfSpentTries } from "./password-tries";
 import { CLOSED_PATHS, firstPassword, signUpCodes, signUpHooks } from "./sign-up";
 import { TWO_FACTOR_CLOSED_PATHS, twoFactorPlugins } from "./two-factor";
 import { workspaceAppsPlugin } from "./workspace-apps";
@@ -52,6 +52,8 @@ export interface AuthConfig {
 	allowInvitation?: ((inviterId: string, email: string) => Promise<boolean>) | undefined;
 	/** Whether someone signed in as this person may offer another password. Unlimited without it. */
 	allowPasswordTry?: ((userId: string) => Promise<boolean>) | undefined;
+	/** Whether this person may be emailed about those tries running out. Never without it. */
+	allowSpentTriesEmail?: ((userId: string) => Promise<boolean>) | undefined;
 	/** Puts Cloudflare Turnstile in front of the paths bots go for. Off without it. */
 	turnstileSecretKey?: string | undefined;
 	/** Refuses passwords known from breaches, by asking a service outside this deployment. */
@@ -223,7 +225,11 @@ export function createAuth(config: AuthConfig) {
 				: []),
 			...(mailer ? [signUpCodes(mailer)] : []),
 			// Before anything else looks at a password these paths were given, or asks anyone about it.
-			passwordTries({ record, allow: config.allowPasswordTry }),
+			passwordTries({
+				record,
+				allow: config.allowPasswordTry,
+				tell: (person) => tellOfSpentTries(person, mailer, config.allowSpentTriesEmail),
+			}),
 			...(config.checkBreachedPasswords ? [breachedPasswords()] : []),
 			firstPassword(),
 			passwordChange(mailer),
