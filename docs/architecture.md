@@ -467,6 +467,9 @@ Other rules:
 - **`/token`, the JWT plugin's own endpoint, is closed** for the same reason.
 - **The ID token carries `email`, `email_verified`, `name` and `picture`** through `customIdTokenClaims`
   when their scopes are granted. They are not there by default, and Cloudflare Access reads the ID token.
+- **`picture` is never an address someone typed.** It comes from GitHub or is absent: `/update-user` and a
+  sign-up code refuse an `image`. An app's pages have other people's browsers fetch it, so whoever chose the
+  address would learn who is looking and from where.
 - **`amr` and `auth_time` are the provider's own.** Reserved claims are stripped from custom claims,
   so `amr` cannot be added that way and `acr` is always `"0"`. Do not promise an app that it can tell
   how someone signed in until this is solved.

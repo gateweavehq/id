@@ -154,6 +154,17 @@ export function signUpHooks(
 				}
 			}
 
+			if (ctx.path === USE_CODE || ctx.path === UPDATE_USER) {
+				// It reaches apps as the `picture` claim, and their pages have other people's browsers
+				// fetch it, so whoever chooses its address learns who is looking and from where.
+				if (ctx.body?.image !== undefined) {
+					throw APIError.from("BAD_REQUEST", {
+						code: "PICTURE_NOT_TAKEN",
+						message: "A picture can't be set here.",
+					});
+				}
+			}
+
 			if (ctx.path === USE_CODE) {
 				assertValidName(ctx.body?.name);
 				// Fails closed whatever the code is. Someone with the mailbox must not get in past the
