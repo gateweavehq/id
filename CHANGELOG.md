@@ -7,6 +7,25 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.11.2] - 2026-11-07
+
+The account page can now end every session at once, this browser's too. There is no migration in this release, and no
+change of signing algorithm.
+
+### Security
+
+- **"Sign out everywhere" on the account page.** "Sign out everywhere else" keeps this browser's session, so a stolen
+  copy of this browser's cookie goes on working, and nobody can tell which of their sessions was copied. The new button
+  asks for no password and ends every session, then says so with the way back to sign-in. Apps you signed in to are
+  told, as they are for any other session that ends. The activity list says "Signed out everywhere".
+  ([#89](https://github.com/gateweavehq/id/pull/89))
+
+### If you run your own
+
+- **It takes the account back on a server without email.** Whoever holds the cookie can use up the tries at the
+  password, and without email there is no reset to go to. Signing out everywhere asks for no password, and signing in is
+  not limited by those tries.
+
 ## [0.11.1] - 2026-11-07
 
 Tries at a password are now held per person where a session asks for one, and each wrong one shows on the account page.
