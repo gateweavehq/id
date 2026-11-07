@@ -42,6 +42,8 @@ describe("describeActivity", () => {
 	});
 
 	it.each([
+		["sessions_revoked", null, "Signed out on another device"],
+		["sessions_revoked", "everywhere", "Signed out everywhere"],
 		["deployment_sign_up_changed", "open", "Opened sign-up on this server"],
 		["deployment_sign_up_changed", "closed", "Closed sign-up on this server"],
 		["deployment_invitation_created", null, "Invited someone to this server"],

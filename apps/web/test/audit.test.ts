@@ -290,6 +290,21 @@ describe("changing an account", () => {
 			ip: person.client,
 		});
 	});
+
+	it("records ending every session, this one's too", async () => {
+		const person = await newPerson();
+		const ended = await api(id, "/revoke-sessions", {
+			client: person.client,
+			cookie: person.cookie,
+			body: {},
+		});
+		expect(ended.status).toBe(200);
+		await id.auditEventRecorded(person.userId, {
+			type: "sessions_revoked",
+			detail: "everywhere",
+			ip: person.client,
+		});
+	});
 });
 
 describe("someone's own activity", () => {

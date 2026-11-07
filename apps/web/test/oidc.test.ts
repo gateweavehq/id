@@ -1078,6 +1078,30 @@ describe("signing out", () => {
 		]);
 	});
 
+	it("tells an app when someone ends every session", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const { claims } = await signInToApp(app, person);
+
+		const out = await api("/revoke-sessions", {
+			client: person.client,
+			cookie: person.cookie,
+			body: {},
+		});
+		expect(out.status).toBe(200);
+
+		const logoutUri = `https://${app.host}/logout`;
+		let delivered: { url: string; body: string } | undefined;
+		for (let attempt = 0; attempt < 100 && !delivered; attempt++) {
+			delivered = id.outboundBodies.find((request) => request.url === logoutUri);
+			if (!delivered) await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+		const token = new URLSearchParams(delivered?.body).get("logout_token") ?? "";
+		expect(await signatureHolds(token)).toBe(true);
+		const payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString());
+		expect(payload).toMatchObject({ iss: origin, aud: app.clientId, sub: claims.sub });
+	});
+
 	describe("to an app that does not take it the first time", () => {
 		/** Signs someone out of an app whose logout address answers these in turn. */
 		async function signOutWith(answers: (number | "no answer")[]) {

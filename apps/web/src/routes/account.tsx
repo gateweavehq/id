@@ -40,7 +40,24 @@ function AccountPage() {
 	const legal = useLegalLinks();
 	// In place, because a word on the sign-in page would be something anyone could put in a link.
 	const [deleted, setDeleted] = useState(false);
+	const [signedOut, setSignedOut] = useState(false);
 	useDocumentTitle("Account");
+
+	if (signedOut) {
+		return (
+			<main className="mx-auto max-w-lg space-y-4 p-6 pt-24">
+				<h1 className="text-xl font-semibold tracking-tight">You are signed out everywhere</h1>
+				<p role="status" className="text-sm text-muted-foreground">
+					Every session of this account has ended, here and anywhere else. Apps you signed in to
+					with it are told, and some may keep you signed in for a while.
+				</p>
+				<Button asChild variant="outline" size="sm">
+					<a href="/login">Go to sign-in</a>
+				</Button>
+				<LegalLinks links={legal} />
+			</main>
+		);
+	}
 
 	if (deleted) {
 		return (
@@ -111,7 +128,11 @@ function AccountPage() {
 			)}
 			{data.passkeys && <AccountPasskeys />}
 			{/* A changed password replaces this session, and with it what the list has to show. */}
-			<AccountSessions key={session.session.id} currentId={session.session.id} />
+			<AccountSessions
+				key={session.session.id}
+				currentId={session.session.id}
+				onSignedOut={() => setSignedOut(true)}
+			/>
 			{data.apps && <AccountApps />}
 
 			<AccountActivity />

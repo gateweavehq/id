@@ -315,6 +315,25 @@ describe("sessions", () => {
 		expect(await isSignedIn(person)).toBe(true);
 	});
 
+	it("ends every session at once, and a copy of this device's cookie with it", async () => {
+		const person = await newPerson();
+		const second = await signIn(person.email);
+		const copy = { client: newClient(), cookie: person.cookie };
+		expect(await isSignedIn(copy)).toBe(true);
+
+		const ended = await api("/revoke-sessions", {
+			client: person.client,
+			cookie: person.cookie,
+			body: {},
+		});
+		expect(ended.status).toBe(200);
+
+		expect(await isSignedIn(second)).toBe(false);
+		expect(await isSignedIn(copy)).toBe(false);
+		expect(await isSignedIn(person)).toBe(false);
+		expect((await signIn(person.email)).response.status).toBe(200);
+	});
+
 	it("cannot end someone else's", async () => {
 		const person = await newPerson();
 		const stranger = await newPerson();

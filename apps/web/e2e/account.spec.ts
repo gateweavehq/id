@@ -94,6 +94,37 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await signIn(elsewhere, email, NEW_PASSWORD);
 	});
 
+	await test.step("sign out everywhere, which ends a copy of this browser's cookie too", async () => {
+		// Whoever stole this browser's cookie has the same session as this browser.
+		const copyContext = await browser.newContext({
+			baseURL,
+			extraHTTPHeaders: { "cf-connecting-ip": "203.0.113.51" },
+		});
+		await copyContext.addCookies(await page.context().cookies());
+		const copy = await copyContext.newPage();
+		await copy.goto("/account", { waitUntil: "networkidle" });
+		await expect(copy.getByRole("heading", { name: "Your account" })).toBeVisible();
+
+		await sessions.getByRole("button", { name: "Sign out everywhere", exact: true }).click();
+		await expect(
+			page.getByRole("heading", { name: "You are signed out everywhere" }),
+		).toBeVisible();
+
+		for (const device of [copy, elsewhere]) {
+			await device.goto("/account");
+			await expect(device).toHaveURL(/\/login/);
+		}
+		await copyContext.close();
+
+		await page.getByRole("link", { name: "Go to sign-in" }).click();
+		await signIn(page, email, NEW_PASSWORD);
+		await page.goto("/account", { waitUntil: "networkidle" });
+		await expect(sessions.getByRole("listitem")).toHaveCount(1);
+		await expect(
+			page.getByRole("region", { name: "Recent activity" }).getByText("Signed out everywhere"),
+		).toBeVisible();
+	});
+
 	await elsewhereContext.close();
 	expect(problems).toEqual([]);
 });
