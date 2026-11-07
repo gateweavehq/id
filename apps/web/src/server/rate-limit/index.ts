@@ -43,6 +43,16 @@ export const INVITATIONS_PER_PERSON: Rule[] = [
  */
 export const INVITATIONS_PER_ADDRESS: Rule[] = [{ window: 24 * 60 * 60, max: 3 }];
 
+/**
+ * Passwords one person's sessions can offer, from however many addresses: 10 at once, refilling over an
+ * hour, within 30 that refill over a day. Someone who has forgotten theirs will have gone for a reset
+ * long before this.
+ */
+export const PASSWORD_TRIES_PER_PERSON: Rule[] = [
+	{ window: 60 * 60, max: 10 },
+	{ window: 24 * 60 * 60, max: 30 },
+];
+
 /** Longer than an authenticator's code stays good: its own 30 seconds and one step either side. */
 export const CODE_CLAIM: Rule[] = [{ window: 120, max: 1 }];
 
@@ -100,6 +110,12 @@ export async function allowInvitation(inviterId: string, email: string): Promise
 	if (!person.allowed) return false;
 	const address = await consumeDurably(`invited:${email}`, INVITATIONS_PER_ADDRESS);
 	return address.allowed;
+}
+
+/** Whether someone signed in as this person may offer another password, wherever from. */
+export async function allowPasswordTry(userId: string): Promise<boolean> {
+	const { allowed } = await consumeDurably(`password-try:${userId}`, PASSWORD_TRIES_PER_PERSON);
+	return allowed;
 }
 
 /** Whether this code has not been offered for this person since it became good. */
