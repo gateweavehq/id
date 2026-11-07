@@ -7,6 +7,24 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.11.0] - 2026-11-07
+
+Changing a password now tells the person and always ends every other session. No migration.
+
+### Security
+
+- **A password change told nobody, and the server ended other sessions only when the page asked.** It now emails the
+  person, which may be how they first hear that someone else has the password, and ends every other session whatever the
+  request asks. Apps signed in through those sessions hear of it by back-channel logout, as they did when the page
+  asked, so this browser signs in to them again too. ([#84](https://github.com/gateweavehq/id/pull/84))
+- **`/change-password` takes five tries a minute,** in place of Better Auth's three in ten seconds.
+  ([#84](https://github.com/gateweavehq/id/pull/84))
+
+### If you run your own
+
+- **A first password and a reset send no such email.** The first is the next step of signing up, and a reset's own email
+  started it. On a server without email, nothing is sent and the rest still happens.
+
 ## [0.10.6] - 2026-11-07
 
 Nobody can choose the address of their own picture any more. No migration.
