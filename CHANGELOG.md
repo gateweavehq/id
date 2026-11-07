@@ -7,6 +7,30 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.11.1] - 2026-11-07
+
+Tries at a password are now held per person where a session asks for one, and each wrong one shows on the account page.
+There is no migration in this release, and no change of signing algorithm.
+
+### Security
+
+- **A stolen cookie could guess at the password from as many addresses as it could be sent from.** Better Auth counts
+  per client address, at five tries a minute. The six paths where a session shows a password now also share an allowance
+  per person: 10 at once, refilling over an hour, within 30 that refill over a day. Over it, they answer 429 with the
+  code `TOO_MANY_PASSWORD_TRIES`. It is spent before the password is checked, so the right password counts too and is
+  refused once it has gone. ([#87](https://github.com/gateweavehq/id/pull/87))
+- **The account page now shows a wrong password entered while signed in.** Each one writes a `password_refused` row to
+  the audit log. ([#87](https://github.com/gateweavehq/id/pull/87))
+- **An upgrade can no longer open a route unnoticed.** A test lists every Better Auth route that answers, and a new one
+  fails until someone decides whether it stays open. ([#86](https://github.com/gateweavehq/id/pull/86))
+
+### If you run your own
+
+- **Nobody can lock a person out with their address alone.** Only a request with a session for that account spends the
+  allowance, and signing in is not part of it. Whoever holds the cookie can spend it, which keeps the person from
+  changing their password on the account page for a while. A password reset asks for no session, and the account page
+  can end the other sessions without one.
+
 ## [0.11.0] - 2026-11-07
 
 Changing a password now tells the person and always ends every other session. No migration.
