@@ -176,7 +176,11 @@ describe("What Better Auth serves", () => {
 			oidc: { issuer: "https://id.test", pairwiseSecret: "a-test-secret-for-each-apps-own-ids" },
 		});
 
-	/** The routes with a path, as the router sees them. One without is only ever called in-process. */
+	/**
+	 * Where a new route is found. Better Auth has no public list of its routes, so this reads what its
+	 * router is built from. Only the first test below takes its word for anything; the other two ask
+	 * the handler. A route without a path is only ever called in-process.
+	 */
 	function routes(auth: ReturnType<typeof everyFeature>) {
 		const closed = new Set<string>(auth.options.disabledPaths);
 		return Object.values(auth.api).flatMap((value) => {
@@ -192,7 +196,18 @@ describe("What Better Auth serves", () => {
 		});
 	}
 
-	it("answers on the routes listed here, and no others", () => {
+	/** What the handler says to someone with no cookie and an empty body. */
+	function ask(auth: ReturnType<typeof everyFeature>, method: string, path: string) {
+		return auth.handler(
+			new Request(`https://id.test/api/auth${path.replaceAll(/:\w+/g, "x")}`, {
+				method,
+				headers: { origin: "https://id.test", "content-type": "application/json" },
+				...(method === "GET" ? {} : { body: "{}" }),
+			}),
+		);
+	}
+
+	it("has the routes listed here, and no others", () => {
 		const served = routes(everyFeature())
 			.filter(({ open }) => open)
 			.map(({ path, methods }) => `${methods.join(",")} ${path}`);
@@ -206,6 +221,16 @@ describe("What Better Auth serves", () => {
 		).toEqual({ added: [], gone: [] });
 	});
 
+	it("answers on every route listed here", async () => {
+		const auth = everyFeature();
+		for (const route of SERVED) {
+			const [methods = "", path = ""] = route.split(" ");
+			for (const method of methods.split(",")) {
+				expect((await ask(auth, method, path)).status, route).not.toBe(404);
+			}
+		}
+	});
+
 	it("answers 404 on every route closed to HTTP", async () => {
 		const auth = everyFeature();
 		const unreachable = routes(auth).filter(({ open }) => !open);
@@ -216,15 +241,7 @@ describe("What Better Auth serves", () => {
 
 		for (const { path, methods } of unreachable) {
 			for (const method of methods) {
-				const address = `https://id.test/api/auth${path.replaceAll(/:\w+/g, "x")}`;
-				const response = await auth.handler(
-					new Request(address, {
-						method,
-						headers: { origin: "https://id.test", "content-type": "application/json" },
-						...(method === "GET" ? {} : { body: "{}" }),
-					}),
-				);
-				expect(response.status, `${method} ${path}`).toBe(404);
+				expect((await ask(auth, method, path)).status, `${method} ${path}`).toBe(404);
 			}
 		}
 	});
