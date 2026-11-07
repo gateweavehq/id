@@ -120,6 +120,9 @@ export function createAuth(config: AuthConfig) {
 			...(config.rateLimitStorage && { customStorage: config.rateLimitStorage }),
 		},
 		advanced: {
+			// Each query is a trip to the database's one primary from wherever the Worker runs, about
+			// 240 ms from Tokyo. This reads a session and its person in one.
+			database: { joins: true },
 			ipAddress: {
 				// Cloudflare sets this to the address it saw. Clients can add to X-Forwarded-For,
 				// and Better Auth puts every request whose address it cannot trust in one bucket.
