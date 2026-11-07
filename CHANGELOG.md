@@ -7,6 +7,27 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.12.0] - 2026-11-07
+
+The owner of a server with no email can now help someone back in. There is no migration in this release, and the signing
+algorithm doesn't change.
+
+### New
+
+- **Help someone back in.** A server with no email has no password reset, and its owner could only delete the account
+  and invite the person again. **Help someone back in** on `/server` now makes a link for choosing a new password, which
+  the owner passes on as they do an invitation. It works once, for 24 hours, and making another replaces it. Using it
+  signs the person out everywhere and leaves two-factor sign-in on, and their activity shows that the owner made it. It
+  asks for the owner's password and a sign-in from the last day. On a server that sends email, it isn't there, so
+  Gateweave Cloud has no such thing. ([#99](https://github.com/gateweavehq/id/pull/99))
+
+### If you run your own
+
+- **Nothing to do for this release.** Nothing changes on a server that sends email.
+- **If you are the owner and locked out,** the self-hosting guide gives one statement that makes the same link for you,
+  with no address to type. ([#99](https://github.com/gateweavehq/id/pull/99))
+- **`CONTRIBUTING.md` now says where a newcomer can start.** ([#98](https://github.com/gateweavehq/id/pull/98))
+
 ## [0.11.4] - 2026-11-07
 
 People now hear by email when the tries at their password run out. There is no migration in this release, and the
