@@ -36,8 +36,8 @@ export interface AuthConfig {
 	secureCookies?: boolean | undefined;
 	github?: { clientId: string; clientSecret: string } | undefined;
 	/**
-	 * Sends email. Without it there are no sign-up codes and no password reset, so the only way to
-	 * an account is GitHub.
+	 * Sends email. Without it there are no sign-up codes, an account comes from GitHub or a link from
+	 * the server's owner, and only that owner can make a link for choosing a new password.
 	 */
 	mailer?: Mailer | undefined;
 	/** Keeps work such as sending email going after the response, like `ctx.waitUntil`. */

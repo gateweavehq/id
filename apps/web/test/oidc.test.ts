@@ -1102,6 +1102,35 @@ describe("signing out", () => {
 		expect(payload).toMatchObject({ iss: origin, aud: app.clientId, sub: claims.sub });
 	});
 
+	it("tells an app when choosing a new password ends the session", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		const { claims } = await signInToApp(app, person);
+
+		// The row a reset email or a server owner's link leads to.
+		const token = crypto.randomUUID();
+		await id.db
+			.prepare("INSERT INTO verification (id, identifier, value, expires_at) VALUES (?, ?, ?, ?)")
+			.bind(crypto.randomUUID(), `reset-password:${token}`, person.userId, Date.now() + 60_000)
+			.run();
+		const reset = await api("/reset-password", {
+			client: person.client,
+			body: { token, newPassword: "another-long-password-for-tests" },
+		});
+		expect(reset.status).toBe(200);
+
+		const logoutUri = `https://${app.host}/logout`;
+		let delivered: { url: string; body: string } | undefined;
+		for (let attempt = 0; attempt < 100 && !delivered; attempt++) {
+			delivered = id.outboundBodies.find((request) => request.url === logoutUri);
+			if (!delivered) await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+		const logout = new URLSearchParams(delivered?.body).get("logout_token") ?? "";
+		expect(await signatureHolds(logout)).toBe(true);
+		const payload = JSON.parse(Buffer.from(logout.split(".")[1] ?? "", "base64url").toString());
+		expect(payload).toMatchObject({ iss: origin, aud: app.clientId, sub: claims.sub });
+	});
+
 	describe("to an app that does not take it the first time", () => {
 		/** Signs someone out of an app whose logout address answers these in turn. */
 		async function signOutWith(answers: (number | "no answer")[]) {
