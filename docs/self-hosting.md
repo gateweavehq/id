@@ -150,7 +150,10 @@ Turnstile was off.
 ### Your own domain
 
 Do this first. In the dashboard, open the Worker and add a custom domain under Settings › Domains & Routes. Or
-add `"routes": [{ "pattern": "id.example.com", "custom_domain": true }]` to `wrangler.jsonc`.
+add `"routes": [{ "pattern": "id.example.com", "custom_domain": true }]` to `wrangler.jsonc`. Sign-in needs
+HTTPS: session cookies are marked `Secure`, so a browser won't keep them over plain HTTP. Turn on
+[Always Use HTTPS](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/always-use-https/)
+for the domain so that nobody lands on the plain address.
 
 ### Turning on the provider
 
