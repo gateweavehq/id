@@ -10,9 +10,8 @@ export { RateLimiter } from "./server/rate-limit";
 const turnstile = Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY);
 
 /**
- * A branch's Preview gets none of the Worker's bindings or secrets. Nothing works without the
- * database. Without the secret, Better Auth signs with the default in its source, because with no
- * NODE_ENV on a Worker it does not know this is production. So such a deployment serves nothing else.
+ * A branch's Preview gets none of the Worker's bindings or secrets, and accounts can't be run safely
+ * without the database and the secret. So such a deployment serves nothing else.
  */
 function notSetUp() {
 	return new Response(
