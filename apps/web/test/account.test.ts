@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { startId } from "./id-worker";
 
 // The account page's promises, through the public routes of the built Worker.
@@ -161,6 +161,12 @@ describe("the page", () => {
 });
 
 describe("changing a password", () => {
+	const toldOfChange = async (email: string) =>
+		(await id.emails()).filter(
+			(message) =>
+				message.to === email && message.subject === "Your Gateweave ID password was changed",
+		);
+
 	it("signs out every other device and keeps this one, and only the new one works", async () => {
 		const person = await newPerson();
 		const elsewhere = await signIn(person.email);
@@ -191,6 +197,52 @@ describe("changing a password", () => {
 			body: { currentPassword: "not-the-password", newPassword: "another-long-password" },
 		});
 		expect(refused.status).toBe(400);
+		expect((await signIn(person.email)).response.status).toBe(200);
+		expect(await toldOfChange(person.email)).toEqual([]);
+	});
+
+	// Whoever knew the old password may be why it is changing, and may be the one asking.
+	it("signs out every other device even when the request asks to keep them", async () => {
+		const person = await newPerson();
+		const elsewhere = await signIn(person.email);
+		const changed = await api("/change-password", {
+			client: person.client,
+			cookie: person.cookie,
+			body: {
+				currentPassword: PASSWORD,
+				newPassword: "another-long-password",
+				revokeOtherSessions: false,
+			},
+		});
+		expect(changed.status).toBe(200);
+		expect(await isSignedIn(elsewhere)).toBe(false);
+		expect(await isSignedIn({ client: person.client, cookie: cookieOf(changed) })).toBe(true);
+	});
+
+	it("tells the person by email, without the password", async () => {
+		const person = await newPerson();
+		const changed = await api("/change-password", {
+			client: person.client,
+			cookie: person.cookie,
+			body: { currentPassword: PASSWORD, newPassword: "another-long-password" },
+		});
+		expect(changed.status).toBe(200);
+		await vi.waitFor(async () => expect(await toldOfChange(person.email)).toHaveLength(1));
+		const [mail] = await toldOfChange(person.email);
+		expect(JSON.stringify(mail)).not.toContain("another-long-password");
+	});
+
+	// Someone holding a stolen cookie would otherwise have a way to guess at the password.
+	it("stops counting guesses at five a minute", async () => {
+		const person = await newPerson();
+		const guess = () =>
+			api("/change-password", {
+				client: person.client,
+				cookie: person.cookie,
+				body: { currentPassword: "a-guess", newPassword: "another-long-password" },
+			});
+		for (let tries = 0; tries < 5; tries++) expect((await guess()).status).toBe(400);
+		expect((await guess()).status).toBe(429);
 		expect((await signIn(person.email)).response.status).toBe(200);
 	});
 });

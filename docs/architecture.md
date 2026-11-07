@@ -79,6 +79,11 @@ want, because signing in with only a mailbox would skip the password and two-fac
 The first password goes through `/account/first-password`, which needs a session from the last day.
 Setting a password outlasts a stolen cookie, so an old session cannot do it.
 
+Changing a password takes the current one, at five tries a minute from one client address
+(`auth/password-change.ts`). It ends every session whatever the request asks, since whoever knew the old
+password may be why it is changing and may be the one asking, and it emails the person, which may be how they
+first hear of it. Choosing a first password sends no such email, because it is the next step of signing up.
+
 Removing a password takes the password, as changing one does, though no page offers it yet. Better Auth's
 `/unlink-account` would take a recent session alone, and a password removed that way could be replaced through
 the path above. So `auth/password-removal.ts` asks for it there, with five tries a minute from one client address.
