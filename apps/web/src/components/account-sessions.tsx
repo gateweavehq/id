@@ -24,8 +24,18 @@ function inOrder(sessions: ActiveSession[], currentId: string): ActiveSession[] 
  * Everywhere the person is signed in, where they can end any of it. It loads in the browser, not
  * with the page: dates read in the person's own time zone and language, which a server cannot know,
  * and a page that was open a while still shows what is true.
+ *
+ * Signing out everywhere else keeps this session, so a stolen copy of this browser's cookie survives
+ * it, and nobody can tell which of their sessions was copied. Signing out everywhere ends that too. It
+ * asks for no password, since whoever holds the cookie can use up the tries at one.
  */
-export function AccountSessions({ currentId }: { currentId: string }) {
+export function AccountSessions({
+	currentId,
+	onSignedOut,
+}: {
+	currentId: string;
+	onSignedOut: () => void;
+}) {
 	const [sessions, setSessions] = useState<ActiveSession[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +57,16 @@ export function AccountSessions({ currentId }: { currentId: string }) {
 		const result = await action();
 		if (result.error) setError(result.error.message ?? "Something went wrong");
 		await load();
+	}
+
+	async function signOutEverywhere() {
+		setError(null);
+		const result = await authClient.revokeSessions();
+		if (result.error) {
+			setError(result.error.message ?? "Something went wrong");
+			return;
+		}
+		onSignedOut();
 	}
 
 	const others = sessions?.filter((session) => session.id !== currentId) ?? [];
@@ -105,6 +125,14 @@ export function AccountSessions({ currentId }: { currentId: string }) {
 					))}
 				</ul>
 			)}
+			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-4">
+				<p className="text-sm text-muted-foreground">
+					Ends every session, this one too, in case someone has a copy of it.
+				</p>
+				<Button variant="outline" size="sm" onClick={signOutEverywhere}>
+					Sign out everywhere
+				</Button>
+			</div>
 		</section>
 	);
 }

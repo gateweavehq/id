@@ -188,7 +188,7 @@ const ACCOUNT_EVENTS: Record<string, { type: AuditEventType; detail?: string }> 
 	"/account/remove-passkey": { type: "passkey_removed" },
 	"/two-factor/generate-backup-codes": { type: "recovery_codes_replaced" },
 	"/revoke-session": { type: "sessions_revoked" },
-	"/revoke-sessions": { type: "sessions_revoked" },
+	"/revoke-sessions": { type: "sessions_revoked", detail: "everywhere" },
 	"/revoke-other-sessions": { type: "sessions_revoked" },
 };
 

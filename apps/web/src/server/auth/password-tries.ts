@@ -35,7 +35,7 @@ export interface PasswordTriesSettings {
  *
  * Only someone with a session for that account can spend it, so nobody can lock a person out with their
  * address alone, which is why signing in is not part of it. Whoever holds the cookie can spend it, but
- * signing out other devices asks for no password and a reset asks for no session, so the way to take the
+ * signing out everywhere asks for no password and a reset asks for no session, so the way to take the
  * account back stays open.
  *
  * What it allows also bounds the rows a wrong password writes.

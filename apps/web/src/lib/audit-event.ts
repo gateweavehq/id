@@ -168,7 +168,7 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 		case "token_revoked":
 			return `Ended ${theApp}'s access`;
 		case "sessions_revoked":
-			return "Signed out on another device";
+			return detail === "everywhere" ? "Signed out everywhere" : "Signed out on another device";
 		case "password_changed":
 			if (detail === "first") return "Added a password";
 			return detail === "removed" ? "Removed the password" : "Changed the password";
