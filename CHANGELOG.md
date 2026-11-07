@@ -7,6 +7,24 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.11.3] - 2026-11-07
+
+Reading a session takes one trip to the database instead of two. There is no migration in this release, and no change of
+signing algorithm.
+
+### Performance
+
+- **One query fewer each time a session is read.** Better Auth read the session, then the person, as two queries, and
+  each is a trip to D1's primary from wherever the Worker runs: measured at about 19 ms from Frankfurt, 109 from
+  Virginia, 240 from Tokyo and 290 from Sydney with the primary in Eastern Europe.
+  ([#91](https://github.com/gateweavehq/id/pull/91))
+
+### If you run your own
+
+- **Where your database lives matters more than this does.** A D1 database stays where it was created, and every read
+  and write of a session goes there. Nothing to do for this release, but if your people are far from it, that is where
+  the time goes.
+
 ## [0.11.2] - 2026-11-07
 
 The account page can now end every session at once, this browser's too. There is no migration in this release, and no
