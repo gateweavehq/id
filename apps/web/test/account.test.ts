@@ -195,6 +195,22 @@ describe("changing a password", () => {
 	});
 });
 
+// A session cookie may be a stolen one. Better Auth offers any session these, and the app uses none.
+describe("what a session alone reaches", () => {
+	it.each([
+		["/verify-password", { password: PASSWORD }],
+		["/get-access-token", { accountId: "any" }],
+		["/refresh-token", { accountId: "any" }],
+		["/account-info?accountId=any", undefined],
+	])("not %s", async (path, body) => {
+		const person = await newPerson();
+		const response = await api(path, { client: person.client, cookie: person.cookie, body });
+		expect(response.status).toBe(404);
+		const session = await api("/get-session", { client: person.client, cookie: person.cookie });
+		expect(((await session.json()) as { user: { email: string } }).user.email).toBe(person.email);
+	});
+});
+
 describe("sessions", () => {
 	it("lists only the person's own", async () => {
 		const person = await newPerson();

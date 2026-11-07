@@ -84,6 +84,10 @@ Removing a password takes the password, as changing one does, though no page off
 the path above. So `auth/password-removal.ts` asks for it there, with five tries a minute from one client address.
 Disconnecting GitHub still takes only the recent session.
 
+Better Auth's `/verify-password` is closed. It would tell anyone with the cookie whether a password is right, with
+only the default limit and no audit row, and nothing here uses it. `/get-access-token`, `/refresh-token` and
+`/account-info` are closed too, since an account keeps none of a provider's tokens for them to give.
+
 ## Who owns a deployment
 
 **On a new server, the first account owns it and sign-up closes behind it.** Someone who deploys ID for

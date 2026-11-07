@@ -99,6 +99,13 @@ export function createAuth(config: AuthConfig) {
 			...OIDC_CLOSED_PATHS,
 			...PASSKEY_CLOSED_PATHS,
 			...TWO_FACTOR_CLOSED_PATHS,
+			// Says whether a password is right to anyone with the cookie, many times a second, and
+			// leaves no audit row. Nothing here uses it.
+			"/verify-password",
+			// An account keeps none of a provider's tokens, so these have nothing to give.
+			"/get-access-token",
+			"/refresh-token",
+			"/account-info",
 		],
 		// Better Auth only turns its limiter on by itself when NODE_ENV is "production", which a
 		// Worker never sets. Its built-in rules allow 3 sign-ins per 10 seconds per client. It
