@@ -7,6 +7,28 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.10.3] - 2026-11-07
+
+Someone signed out now hears why an app's request was refused, and there are guides for three real apps. No migration.
+
+### Fixed
+
+- **A request ID refused sent someone signed out to sign in, and then to their account page, with no word to anyone.**
+  The app got no answer either. Grafana, Gitea and Outline were tried for real, and Gitea, which sends no PKCE, showed
+  it. Now they see a page saying the request was refused and that nothing was shared. When the only thing against the
+  request is the app's own Require PKCE, the page names that setting. A quiet `prompt=none` still lets them sign in and
+  go on to the app. ([#74](https://github.com/gateweavehq/id/pull/74))
+
+### Added
+
+- **Guides for [Grafana](https://github.com/gateweavehq/id/blob/main/docs/recipes/grafana.md),
+  [Gitea](https://github.com/gateweavehq/id/blob/main/docs/recipes/gitea.md) and
+  [Outline](https://github.com/gateweavehq/id/blob/main/docs/recipes/outline.md).** Each was signed in to for real
+  against a deployed ID, with its role or admin group checked against a control, and each says what has not been tried.
+  `docs/connect-an-app.md` lists what each needs. ([#75](https://github.com/gateweavehq/id/pull/75))
+- **The README shows a real sign-in on its first screen,** in the reader's color scheme.
+  ([#76](https://github.com/gateweavehq/id/pull/76))
+
 ## [0.10.2] - 2026-11-06
 
 Branches now build on a copy made with the Deploy button, and a deployment without its secret no longer runs. No
