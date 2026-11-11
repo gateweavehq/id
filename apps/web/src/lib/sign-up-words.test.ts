@@ -9,6 +9,12 @@ describe("what the owner's page says about sign-up", () => {
 		expect(words.now).toContain("this server has neither");
 	});
 
+	it("says that the list lets people in while it is closed", () => {
+		const words = signUpWords({ signUp: "closed", email: true, github: false });
+		expect(words.now).toContain("on your list below");
+		expect(signUpWords({ signUp: "open", email: true, github: false }).now).not.toContain("list");
+	});
+
 	it("says who opening it lets in", () => {
 		expect(signUpWords({ signUp: "closed", email: true, github: false }).opening).toContain(
 			"Anyone who finds this server",

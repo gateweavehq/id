@@ -1,6 +1,7 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { z } from "zod";
+import { AskForAccess } from "#/components/ask-for-access";
 import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
 import { LegalLinks, useLegalLinks } from "#/components/legal-links";
@@ -12,7 +13,7 @@ import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, owesACode } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
-import { getAuthOptions, getSession } from "#/lib/session";
+import { getAccessRequestUrl, getAuthOptions, getSession } from "#/lib/session";
 import { requestRefusal, signInRefusal } from "#/lib/sign-in-refusal";
 import { useTurnstile } from "#/lib/turnstile";
 
@@ -37,7 +38,10 @@ export const Route = createFileRoute("/login")({
 		if (inFlow(search)) return;
 		if (await getSession()) throw redirect({ href: safeRedirect(search.redirect) ?? "/account" });
 	},
-	loader: () => getAuthOptions(),
+	loader: async () => {
+		const [options, accessUrl] = await Promise.all([getAuthOptions(), getAccessRequestUrl()]);
+		return { ...options, accessUrl };
+	},
 	component: SignInForm,
 });
 
@@ -168,6 +172,8 @@ function SignInForm() {
 						Create an account
 					</Link>
 				</p>
+
+				<AskForAccess url={options.accessUrl} />
 
 				<LegalLinks links={legal} agreeing />
 			</div>

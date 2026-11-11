@@ -39,5 +39,9 @@ BETTER_AUTH_SECRET=
 # PRIVACY_POLICY_URL=
 # TERMS_URL=
 
+# Optional: an https address where people can ask for an account while sign-up is closed. The sign-up
+# and sign-in pages then show "Ask for access" linking to it.
+# SIGN_UP_REQUEST_URL=
+
 # Optional. Seconds before a back-channel logout an app missed is first tried again (default 60).
 # LOGOUT_RETRY_SECONDS=

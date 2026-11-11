@@ -120,6 +120,20 @@
       "when": 1793962352104,
       "tag": "0016_server_keeps_its_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1794425580512,
+      "tag": "0017_sign_up_allow",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1794425581708,
+      "tag": "0018_sign_up_allow_way_in",
+      "breakpoints": true
     }
   ]
 }

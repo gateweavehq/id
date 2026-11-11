@@ -4,6 +4,7 @@ import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api
 import { setSessionCookie } from "better-auth/cookies";
 import { and, asc, eq, gt, like, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import { allowEntry, allowNote, isDomainEntry, MAX_ALLOW_ENTRIES } from "../../lib/allow-entry";
 import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
@@ -37,6 +38,19 @@ export const SERVER_OWNER_STAYS_A_MEMBER = {
 		"Sign-up is closed on this server, and making the person who runs it an admin here would let this workspace invite people again. Ask them to open sign-up first.",
 };
 
+const ALREADY_LISTED = {
+	code: "ALREADY_ON_THE_LIST",
+	message: "That is on the list already.",
+};
+
+const LIST_IS_FULL = {
+	code: "THE_LIST_IS_FULL",
+	message: `The list holds ${MAX_ALLOW_ENTRIES.toLocaleString("en")} entries. Remove some, or add a domain in place of its addresses.`,
+};
+
+/** Most rows the page is sent at once. The search finds the rest. */
+const ALLOW_PAGE = 100;
+
 const NO_INVITATION = {
 	code: "INVITATION_NOT_FOUND",
 	message:
@@ -65,6 +79,11 @@ export async function mayMakeAccount(db: Database, email: string): Promise<boole
 		SELECT (
 			COALESCE((SELECT sign_up FROM deployment WHERE id = 1), 'closed') = 'open'
 			OR NOT EXISTS (SELECT 1 FROM user)
+			OR EXISTS (
+				SELECT 1 FROM sign_up_allow
+				WHERE entry = ${address}
+					OR entry = '@' || substr(${address}, instr(${address}, '@') + 1)
+			)
 			OR EXISTS (SELECT 1 FROM deployment_invitation WHERE email = ${address} AND expires_at > ${now})
 			OR EXISTS (
 				SELECT 1 FROM invitation
@@ -290,6 +309,115 @@ export function deploymentPlugin({
 						...whereFrom(ctx.headers),
 					});
 					return { signUp };
+				},
+			),
+			getAllowList: createAuthEndpoint(
+				"/deployment/allow/list",
+				{ method: "GET", use: [sessionMiddleware] },
+				async (ctx) => {
+					noStore(ctx);
+					await requireOwner(db, ctx.context.session.user.id);
+					const { search } = parseBody(
+						z.strictObject({ search: z.string().trim().max(254).optional() }),
+						{ search: ctx.query?.search },
+					);
+					const escaped = (search ?? "").toLowerCase().replace(/[!%_]/g, "!$&");
+					const pattern = `%${escaped}%`;
+					const matches = sql`(${escaped} = '' OR entry LIKE ${pattern} ESCAPE '!' OR lower(COALESCE(note, '')) LIKE ${pattern} ESCAPE '!')`;
+					const [total, shown, rows] = await Promise.all([
+						db.get<{ n: number }>(sql`SELECT count(*) AS n FROM sign_up_allow`),
+						db.get<{ n: number }>(sql`SELECT count(*) AS n FROM sign_up_allow WHERE ${matches}`),
+						db.all<{
+							entry: string;
+							note: string | null;
+							addedAt: number;
+							hasAccount: number;
+						}>(sql`
+							SELECT entry, note, added_at AS addedAt,
+								EXISTS (
+									SELECT 1 FROM user
+									WHERE lower(user.email) = sign_up_allow.entry
+										OR '@' || substr(lower(user.email), instr(lower(user.email), '@') + 1) = sign_up_allow.entry
+								) AS hasAccount
+							FROM sign_up_allow
+							WHERE ${matches}
+							ORDER BY added_at DESC, entry
+							LIMIT ${ALLOW_PAGE}
+						`),
+					]);
+					return {
+						total: total?.n ?? 0,
+						matching: shown?.n ?? 0,
+						max: MAX_ALLOW_ENTRIES,
+						entries: rows.map((row) => ({
+							entry: row.entry,
+							note: row.note,
+							addedAt: row.addedAt,
+							hasAccount: row.hasAccount === 1,
+						})),
+					};
+				},
+			),
+			addToAllowList: createAuthEndpoint(
+				"/deployment/allow/add",
+				{ method: "POST", use: [sessionMiddleware] },
+				async (ctx) => {
+					noStore(ctx);
+					const { session } = ctx.context;
+					await requireOwner(db, session.user.id);
+					const body = parseBody(z.strictObject({ entry: allowEntry, note: allowNote }), ctx.body);
+					// This lets people in, and would outlast a stolen cookie.
+					requireFreshSession(session, ctx);
+					const { signUpAllow: list } = schema;
+					const held = await db.get<{ n: number }>(sql`SELECT count(*) AS n FROM sign_up_allow`);
+					if ((held?.n ?? 0) >= MAX_ALLOW_ENTRIES) throw APIError.from("BAD_REQUEST", LIST_IS_FULL);
+					const added = await db
+						.insert(list)
+						.values({
+							entry: body.entry,
+							note: body.note,
+							addedAt: new Date(),
+							addedBy: session.user.id,
+						})
+						.onConflictDoNothing()
+						.returning({ entry: list.entry })
+						.get();
+					if (!added) throw APIError.from("BAD_REQUEST", ALREADY_LISTED);
+					// The kind, and not the entry: it names someone who may have no account here, and the
+					// log holds no addresses.
+					record("deployment_allow_added", {
+						userId: session.user.id,
+						detail: isDomainEntry(body.entry) ? "domain" : "address",
+						...whereFrom(ctx.headers),
+					});
+					return { entry: body.entry };
+				},
+			),
+			removeFromAllowList: createAuthEndpoint(
+				"/deployment/allow/remove",
+				{ method: "POST", use: [sessionMiddleware] },
+				async (ctx) => {
+					noStore(ctx);
+					const { session } = ctx.context;
+					await requireOwner(db, session.user.id);
+					const { entry } = parseBody(z.strictObject({ entry: allowEntry }), ctx.body);
+					requireFreshSession(session, ctx);
+					const gone = await db
+						.delete(schema.signUpAllow)
+						.where(eq(schema.signUpAllow.entry, entry))
+						.returning({ entry: schema.signUpAllow.entry })
+						.get();
+					if (!gone)
+						throw APIError.from("NOT_FOUND", {
+							code: "NOT_ON_THE_LIST",
+							message: "That is not on the list.",
+						});
+					record("deployment_allow_removed", {
+						userId: session.user.id,
+						detail: isDomainEntry(entry) ? "domain" : "address",
+						...whereFrom(ctx.headers),
+					});
+					return { removed: true };
 				},
 			),
 			createDeploymentInvitation: createAuthEndpoint(

@@ -148,3 +148,23 @@ export const deploymentInvitation = sqliteTable("deployment_invitation", {
 	expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
 	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+/**
+ * "Who may make an account" in docs/architecture.md. The owner's list of people who may make an account
+ * while sign-up is closed: an address, lowercased, or a domain written with a leading `@`, which covers
+ * that domain and not its subdomains. It names people who may have no account here, so it holds no
+ * foreign keys and `added_by` is only the owner's id at the time. A trigger caps it at 5,000 entries.
+ */
+export const signUpAllow = sqliteTable(
+	"sign_up_allow",
+	{
+		entry: text("entry").primaryKey(),
+		note: text("note"),
+		addedAt: integer("added_at", { mode: "timestamp_ms" }).notNull(),
+		addedBy: text("added_by").notNull(),
+	},
+	(table) => [
+		check("sign_up_allow_lowercase", sql`${table.entry} = lower(${table.entry})`),
+		check("sign_up_allow_note", sql`length(${table.note}) <= 200`),
+	],
+);

@@ -112,11 +112,22 @@ their team should not find later that anyone could make an account there, and ap
 may trust whoever has one.
 
 One row in `deployment` says who the owner is and whether sign-up is open. `apps/web/src/server/auth/deployment.ts`
-asks it, and the triggers in `0014_deployment_hold.sql` and `0015_workspace_way_in.sql` hold it.
+asks it, and the triggers in `0014_deployment_hold.sql`, `0015_workspace_way_in.sql` and
+`0018_sign_up_allow_way_in.sql` hold it.
 
-- **Closed means an address needs a way in:** an invitation from the owner, or a pending one from a
-  workspace the owner runs, as its owner or an admin. Neither lasts past its expiry, and an owner's goes with
-  the account it made.
+- **Closed means an address needs a way in:** a place on the owner's list, an invitation from the owner, or a
+  pending one from a workspace the owner runs, as its owner or an admin. Neither invitation lasts past its
+  expiry, and an owner's goes with the account it made.
+- **The owner's list is a way in that does not run out.** `sign_up_allow` holds addresses, lowercased, and
+  domains written with a leading `@`. A domain covers addresses at exactly that domain: `@example.com` lets in
+  `ada@example.com`, and not `ada@mail.example.com` or `ada@notexample.com`. Unlike an invitation, an entry is
+  not used up by the account it let in, since the list is the owner's to change and nothing else reads it.
+  Taking an entry away stops the next account and leaves those already made. At most 5,000 entries, held by
+  the trigger `sign_up_allow_is_capped` as well as the endpoint, and a note of at most 200 characters, held by
+  a `CHECK`. It is a way in only while sign-up is closed, and only checked where an account is made, so it
+  adds nothing to the sign-in path. **It is personal data about people who may have no account:** the page
+  that shows it is the owner's alone, the audit log records that an entry was added or removed and of what
+  kind (`address` or `domain`), and never the entry, and the owner's note is their own words.
 - **The database refuses the rest, whatever makes the account.** The hook in `auth/config.ts` asks first so
   that the answer has words, including at the sign-in page for someone coming back from GitHub. A way of
   making accounts added later that forgets to ask still cannot make one. A missing row counts as closed.
@@ -141,7 +152,15 @@ be claimed as soon as it is up, as [self-hosting.md](self-hosting.md) says.
 
 **The owner has a page, `/server`, linked from their account,** and its paths under `/deployment/` answer
 everyone else with a 404, as if they were not there. Opening sign-up and making an invitation also want a
-recent sign-in, because each lets others in and would outlast a stolen cookie.
+recent sign-in, because each lets others in and would outlast a stolen cookie. So does adding or removing
+an entry on the list, whose paths are `/deployment/allow/list`, `/deployment/allow/add` and
+`/deployment/allow/remove`. The list shows, for each entry, whether an account with that address or at that
+domain exists, which only the owner can ask, and the page searches it in the database, not in the browser.
+
+**A closed server can say where to ask for an account.** `SIGN_UP_REQUEST_URL`, an https address, makes the
+sign-up and sign-in pages show "Ask for access" while sign-up is closed. Anything that is not https, or has a
+name and password in it, is left out, as the legal pages' addresses are. Gateweave Cloud sets it to
+`https://gateweave.com/waitlist`.
 
 **An invitation from the owner is a link, `/join#<token>`.** The token is 32 random bytes, of which only the
 SHA-256 is kept. In the part after the `#` a browser sends it to nobody, and the page reads it with a POST,
@@ -806,7 +825,10 @@ holds it, in D1.
   `invitation_canceled`, `invitation_accepted`, `invitation_declined`, `member_role_changed`,
   `member_removed`, `member_left`, `group_created`, `group_renamed`, `group_deleted`, `group_member_added`,
   `group_member_removed` and `app_groups_changed`.
-- **The deployment:** `app_added`, from `apps:add`. Who ran it is between them and Cloudflare.
+- **The deployment:** `app_added`, from `apps:add`. Who ran it is between them and Cloudflare. The owner's
+  changes to it are `deployment_sign_up_changed`, `deployment_invitation_created`,
+  `deployment_invitation_canceled`, `deployment_allow_added` and `deployment_allow_removed`; the last two
+  say `address` or `domain` and never which.
 
 Each row has the time, and where it applies the account, the app's own id, the IP address and a device
 name such as "Chrome on Windows". A workspace's rows also have its id, and its name and any role in

@@ -47,6 +47,8 @@ export const AUDIT_EVENT_TYPES = [
 	"deployment_sign_up_changed",
 	"deployment_invitation_created",
 	"deployment_invitation_canceled",
+	"deployment_allow_added",
+	"deployment_allow_removed",
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -274,6 +276,14 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			return "Invited someone to this server";
 		case "deployment_invitation_canceled":
 			return "Withdrew an invitation to this server";
+		case "deployment_allow_added":
+			return detail === "domain"
+				? "Added a domain to this server's sign-up list"
+				: "Added an address to this server's sign-up list";
+		case "deployment_allow_removed":
+			return detail === "domain"
+				? "Removed a domain from this server's sign-up list"
+				: "Removed an address from this server's sign-up list";
 		default:
 			return type;
 	}

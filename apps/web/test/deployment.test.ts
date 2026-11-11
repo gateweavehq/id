@@ -45,6 +45,7 @@ function startOver(db: typeof id.db) {
 			"DELETE FROM organization",
 			"DELETE FROM user",
 			"DELETE FROM deployment_invitation",
+			"DELETE FROM sign_up_allow",
 			"DELETE FROM verification",
 			`INSERT OR REPLACE INTO deployment (id, owner_id, sign_up, updated_at)
 				VALUES (1, NULL, 'closed', 0)`,
@@ -920,6 +921,9 @@ describe("the owner's paths", () => {
 		["POST", "/deployment/invitations/create", { email: "someone@example.com" }],
 		["POST", "/deployment/invitations/cancel", { id: "any" }],
 		["POST", "/deployment/password-link", { email: "someone@example.com", password: "any" }],
+		["GET", "/deployment/allow/list", undefined],
+		["POST", "/deployment/allow/add", { entry: "someone@example.com" }],
+		["POST", "/deployment/allow/remove", { entry: "someone@example.com" }],
 	];
 
 	function call(method: string, path: string, body: object | undefined, cookie?: string) {
@@ -2081,6 +2085,483 @@ describe("the pages", () => {
 	});
 });
 
+async function refusedWords(response: Response) {
+	expect(response.status).toBe(403);
+	return (await response.json()) as { code: string; message: string };
+}
+
+describe("the owner's list", () => {
+	const SIGN_UP_CLOSED = "SIGN_UP_CLOSED";
+
+	function addEntry(cookie: string, entry: string, note?: string) {
+		return post("/deployment/allow/add", { entry, ...(note !== undefined && { note }) }, cookie);
+	}
+
+	function removeEntry(cookie: string, entry: string) {
+		return post("/deployment/allow/remove", { entry }, cookie);
+	}
+
+	interface Page {
+		total: number;
+		matching: number;
+		entries: { entry: string; note: string | null; addedAt: number; hasAccount: boolean }[];
+	}
+
+	async function theList(cookie: string, search?: string): Promise<Page> {
+		const query = search === undefined ? "" : `?${new URLSearchParams({ search })}`;
+		const response = await id.fetch(`${origin}/api/auth/deployment/allow/list${query}`, {
+			headers: { "cf-connecting-ip": newClient(), cookie },
+		});
+		expect(response.status).toBe(200);
+		return (await response.json()) as Page;
+	}
+
+	/** A closed server with its owner, signed in. */
+	function ownerOnAClosedServer() {
+		return signUp(newAddress());
+	}
+
+	function makeStale(userId: string) {
+		return id.db
+			.prepare("UPDATE session SET created_at = ? WHERE user_id = ?")
+			.bind(Date.now() - 2 * DAY, userId)
+			.run();
+	}
+
+	it("lets an address on it make an account, however they write it", async () => {
+		const owner = await ownerOnAClosedServer();
+		const listed = newAddress();
+		expect((await addEntry(owner.cookie, listed)).status).toBe(200);
+
+		const typed = listed.toUpperCase();
+		expect((await requestCode(typed)).status).toBe(200);
+		const signedUp = await enterCode(typed, await codeFor(listed));
+		expect(signedUp.status).toBe(200);
+		expect(cookieOf(signedUp)).toContain("session_token");
+		expect(await accountsWith(listed)).toBe(1);
+		// The list is the owner's to change, so an account does not spend its entry.
+		expect((await theList(owner.cookie)).entries.map((row) => row.entry)).toEqual([listed]);
+	});
+
+	it("lets an address at a listed domain in, and not one at a subdomain or a lookalike", async () => {
+		const owner = await ownerOnAClosedServer();
+		const domain = `listed-${++addresses}.example`;
+		expect((await addEntry(owner.cookie, `@${domain}.com`)).status).toBe(200);
+
+		const inside = `ada@${domain}.com`;
+		expect((await requestCode(inside)).status).toBe(200);
+		expect((await enterCode(inside, await codeFor(inside))).status).toBe(200);
+		expect(await accountsWith(inside)).toBe(1);
+
+		for (const outside of [
+			`ada@mail.${domain}.com`,
+			`ada@not${domain}.com`,
+			`ada@${domain}.com.evil.example`,
+		]) {
+			expect((await requestCode(outside)).status).toBe(200);
+			expect(await codesStoredFor(outside)).toBe(0);
+			await expect(insertAccount(outside)).rejects.toThrow("sign-up is closed here");
+		}
+	});
+
+	it("refuses an address that is not on it, in the same words on every path", async () => {
+		const owner = await ownerOnAClosedServer();
+		await addEntry(owner.cookie, newAddress());
+		await addEntry(owner.cookie, "@listed.example.com");
+		const stranger = newAddress();
+		const removedLater = newAddress();
+		await addEntry(owner.cookie, removedLater);
+
+		// A code is never sent, and the answer is the one a listed address gets.
+		expect((await requestCode(stranger)).status).toBe(200);
+		expect(await codesStoredFor(stranger)).toBe(0);
+		expect((await id.emails()).filter((sent) => sent.to === stranger)).toEqual([]);
+
+		// A right code, sent while the address was on the list.
+		expect((await requestCode(removedLater)).status).toBe(200);
+		const code = await codeFor(removedLater);
+		expect((await removeEntry(owner.cookie, removedLater)).status).toBe(200);
+		const entered = await enterCode(removedLater, code);
+		expect(cookieOf(entered)).not.toContain("session_token");
+		expect(await refusedWords(entered)).toEqual({
+			code: SIGN_UP_CLOSED,
+			message: "This server takes new accounts by invitation. Ask whoever runs it to invite you.",
+		});
+		expect(await accountsWith(removedLater)).toBe(0);
+
+		// Email and password, which Better Auth's own route would take.
+		const direct = await post("/sign-up/email", {
+			email: stranger,
+			password: PASSWORD,
+			name: "A Person",
+		});
+		expect(direct.status).not.toBe(200);
+		expect(await accountsWith(stranger)).toBe(0);
+
+		// GitHub, back at the sign-in page with the same code.
+		const gitHub = await signInAs(person(stranger));
+		expect(gitHub.status).toBe(302);
+		expect(new URL(gitHub.headers.get("location") ?? "", origin).searchParams.get("error")).toBe(
+			SIGN_UP_CLOSED,
+		);
+		expect(cookieOf(gitHub)).not.toContain("session_token");
+		expect(await accountsWith(stranger)).toBe(0);
+
+		// The owner's link and the claim of an empty server are no way in for an address with neither.
+		const accepted = await post("/deployment/invitations/accept", {
+			token: "not-a-real-token",
+			name: "A Person",
+			newPassword: PASSWORD,
+		});
+		expect(accepted.status).toBe(404);
+		const claimed = await post("/deployment/claim", {
+			email: stranger,
+			name: "A Person",
+			newPassword: PASSWORD,
+		});
+		expect(claimed.status).toBe(404);
+
+		// And the database, whatever else makes an account.
+		await expect(insertAccount(stranger)).rejects.toThrow("sign-up is closed here");
+		expect(await accountsWith(stranger)).toBe(0);
+	});
+
+	it("lets a listed person in with GitHub, and one at a listed domain", async () => {
+		const owner = await ownerOnAClosedServer();
+		await addEntry(owner.cookie, "@gh-listed.example.com");
+		const listed = newAddress();
+		await addEntry(owner.cookie, listed);
+
+		expectIn(await signInAs(person(listed)));
+		expectIn(await signInAs(person("grace@gh-listed.example.com")));
+		expect(await accountsWith("grace@gh-listed.example.com")).toBe(1);
+	});
+
+	it("still lets the address of an invitation in, whatever is on the list", async () => {
+		const owner = await ownerOnAClosedServer();
+		await addEntry(owner.cookie, "someone-else@example.com");
+		const invited = newAddress();
+		await ownerInvites(invited);
+		expect((await signUp(invited)).cookie).toContain("session_token");
+
+		// And one from a workspace the owner runs.
+		const made = await makeWorkspace(owner.cookie, "list-and-invitations");
+		const { id: organizationId } = (await made.json()) as { id: string };
+		const byWorkspace = newAddress();
+		const sent = await post(
+			"/organization/invite-member",
+			{ organizationId, email: byWorkspace, role: "member" },
+			owner.cookie,
+		);
+		expect(sent.status).toBe(200);
+		expect((await signUp(byWorkspace)).cookie).toContain("session_token");
+	});
+
+	it("lets the first account on an empty server in, whatever a list says", async () => {
+		// Nobody can have written a list on a server with no owner, so this is put there as only SQL could.
+		await id.db
+			.prepare(
+				"INSERT INTO sign_up_allow (entry, note, added_at, added_by) VALUES ('someone-else@example.com', NULL, 0, 'nobody')",
+			)
+			.run();
+		const { userId } = await signUp(newAddress());
+		expect((await theDeployment())?.ownerId).toBe(userId);
+
+		const second = newAddress();
+		await requestCode(second);
+		expect(await codesStoredFor(second)).toBe(0);
+		await id.db.prepare("DELETE FROM sign_up_allow").run();
+	});
+
+	it("is not needed while sign-up is open, and counts again once it is closed", async () => {
+		const owner = await ownerOnAClosedServer();
+		await id.db.prepare("UPDATE deployment SET sign_up = 'open' WHERE id = 1").run();
+		expect((await signUp(newAddress())).cookie).toContain("session_token");
+
+		expect((await post("/deployment/sign-up", { signUp: "closed" }, owner.cookie)).status).toBe(
+			200,
+		);
+		const late = newAddress();
+		await expect(insertAccount(late)).rejects.toThrow("sign-up is closed here");
+		await addEntry(owner.cookie, late);
+		await insertAccount(late);
+		expect(await accountsWith(late)).toBe(1);
+	});
+
+	it("is for the owner alone, and for a recent sign-in", async () => {
+		const owner = await ownerOnAClosedServer();
+		const invited = newAddress();
+		await ownerInvites(invited);
+		const member = await signUp(invited);
+		const entry = newAddress();
+		await addEntry(owner.cookie, entry);
+
+		expect((await addEntry(member.cookie, newAddress())).status).toBe(404);
+		expect((await removeEntry(member.cookie, entry)).status).toBe(404);
+		expect((await addEntry("", newAddress())).status).toBe(401);
+		expect((await theList(owner.cookie)).total).toBe(1);
+
+		await makeStale(owner.userId);
+		await refused(await addEntry(owner.cookie, newAddress()), "SESSION_NOT_FRESH");
+		await refused(await removeEntry(owner.cookie, entry), "SESSION_NOT_FRESH");
+		expect((await theList(owner.cookie)).total).toBe(1);
+	});
+
+	it("adds and removes entries, and says so in the owner's activity", async () => {
+		const owner = await ownerOnAClosedServer();
+		const listed = newAddress();
+		const added = await addEntry(
+			owner.cookie,
+			`  ${listed.toUpperCase()} `,
+			"  from the waitlist ",
+		);
+		expect(added.status).toBe(200);
+		expect((await addEntry(owner.cookie, "@Example.org")).status).toBe(200);
+
+		const page = await theList(owner.cookie);
+		expect(page.total).toBe(2);
+		const byEntry = Object.fromEntries(page.entries.map((row) => [row.entry, row]));
+		expect(byEntry[listed]).toMatchObject({ note: "from the waitlist", hasAccount: false });
+		expect(byEntry["@example.org"]).toMatchObject({ note: null, hasAccount: false });
+		const stored = await id.db
+			.prepare("SELECT added_by AS by FROM sign_up_allow WHERE entry = ?")
+			.bind(listed)
+			.first<{ by: string }>();
+		expect(stored?.by).toBe(owner.userId);
+
+		expect((await removeEntry(owner.cookie, listed.toUpperCase())).status).toBe(200);
+		expect((await theList(owner.cookie)).entries.map((row) => row.entry)).toEqual(["@example.org"]);
+		await requestCode(listed);
+		expect(await codesStoredFor(listed)).toBe(0);
+		await refused(await removeEntry(owner.cookie, listed), "NOT_ON_THE_LIST", 404);
+
+		await id.auditEventRecorded(owner.userId, {
+			type: "deployment_allow_added",
+			detail: "address",
+		});
+		await id.auditEventRecorded(owner.userId, { type: "deployment_allow_added", detail: "domain" });
+		await id.auditEventRecorded(owner.userId, {
+			type: "deployment_allow_removed",
+			detail: "address",
+		});
+		// The log holds no addresses.
+		const logged = await id.db
+			.prepare("SELECT COUNT(*) AS n FROM audit_event WHERE detail LIKE '%@%'")
+			.first<{ n: number }>();
+		expect(logged?.n).toBe(0);
+	});
+
+	it.each([
+		["a word that is not an address", "everyone"],
+		["a domain with no dot", "@localhost"],
+		["a bare @", "@"],
+		["a wildcard", "*@example.com"],
+		["two at signs", "a@b@example.com"],
+		["an address with a space in it", "a b@example.com"],
+		["a subdomain wildcard", "@*.example.com"],
+		["an entry far too long", `${"a".repeat(260)}@example.com`],
+	])("refuses %s", async (_what, entry) => {
+		const owner = await ownerOnAClosedServer();
+		expect((await addEntry(owner.cookie, entry)).status).toBe(400);
+		expect((await theList(owner.cookie)).total).toBe(0);
+	});
+
+	it("refuses a note over 200 characters, and anything else in the request", async () => {
+		const owner = await ownerOnAClosedServer();
+		expect((await addEntry(owner.cookie, newAddress(), "x".repeat(201))).status).toBe(400);
+		expect((await addEntry(owner.cookie, newAddress(), "x".repeat(200))).status).toBe(200);
+		const extra = await post(
+			"/deployment/allow/add",
+			{ entry: newAddress(), addedBy: "someone" },
+			owner.cookie,
+		);
+		expect(extra.status).toBe(400);
+		expect((await theList(owner.cookie)).total).toBe(1);
+	});
+
+	it("takes an entry once", async () => {
+		const owner = await ownerOnAClosedServer();
+		const entry = newAddress();
+		expect((await addEntry(owner.cookie, entry, "first")).status).toBe(200);
+		await refused(await addEntry(owner.cookie, entry, "second"), "ALREADY_ON_THE_LIST", 400);
+		expect((await theList(owner.cookie)).entries).toMatchObject([{ entry, note: "first" }]);
+	});
+
+	it("holds 5,000 entries and no more, whatever adds one", async () => {
+		const owner = await ownerOnAClosedServer();
+		const batches = [];
+		for (let start = 0; start < 5000; start += 500) {
+			const rows = Array.from(
+				{ length: 500 },
+				(_, offset) => `('bulk-${start + offset}@example.com', NULL, ${start + offset}, 'x')`,
+			);
+			batches.push(
+				id.db.prepare(
+					`INSERT INTO sign_up_allow (entry, note, added_at, added_by) VALUES ${rows.join(",")}`,
+				),
+			);
+		}
+		await id.db.batch(batches);
+		expect((await theList(owner.cookie)).total).toBe(5000);
+
+		await refused(await addEntry(owner.cookie, newAddress()), "THE_LIST_IS_FULL", 400);
+		await expect(
+			id.db
+				.prepare(
+					"INSERT INTO sign_up_allow (entry, note, added_at, added_by) VALUES ('one-more@example.com', NULL, 0, 'x')",
+				)
+				.run(),
+		).rejects.toThrow("the sign-up list is full");
+
+		expect((await removeEntry(owner.cookie, "bulk-1@example.com")).status).toBe(200);
+		expect((await addEntry(owner.cookie, newAddress())).status).toBe(200);
+		await id.db.prepare("DELETE FROM sign_up_allow").run();
+	});
+
+	it("holds only lowercase entries and short notes, however a row is written", async () => {
+		await expect(
+			id.db
+				.prepare(
+					"INSERT INTO sign_up_allow (entry, note, added_at, added_by) VALUES ('Mixed@Example.com', NULL, 0, 'x')",
+				)
+				.run(),
+		).rejects.toThrow("sign_up_allow_lowercase");
+		await expect(
+			id.db
+				.prepare(
+					"INSERT INTO sign_up_allow (entry, note, added_at, added_by) VALUES ('a@example.com', ?, 0, 'x')",
+				)
+				.bind("x".repeat(201))
+				.run(),
+		).rejects.toThrow("sign_up_allow_note");
+	});
+
+	it("shows whether an account exists for an address and for a domain, and searches", async () => {
+		const owner = await ownerOnAClosedServer();
+		const has = newAddress();
+		const hasNot = newAddress();
+		await addEntry(owner.cookie, has, "Has an account");
+		await addEntry(owner.cookie, hasNot, "No account");
+		await addEntry(owner.cookie, "@used.example.com", "A company");
+		await addEntry(owner.cookie, "@unused.example.com", "Another");
+		await signUp(has);
+		await signUp("someone@used.example.com");
+
+		const all = await theList(owner.cookie);
+		const found = Object.fromEntries(all.entries.map((row) => [row.entry, row.hasAccount]));
+		expect(found).toEqual({
+			[has]: true,
+			[hasNot]: false,
+			"@used.example.com": true,
+			"@unused.example.com": false,
+		});
+
+		expect((await theList(owner.cookie, "COMPANY")).entries.map((row) => row.entry)).toEqual([
+			"@used.example.com",
+		]);
+		expect(await theList(owner.cookie, "unused")).toMatchObject({ total: 4, matching: 1 });
+		// A search is text: a percent sign or an underscore matches only itself.
+		expect((await theList(owner.cookie, "%")).matching).toBe(0);
+		expect((await theList(owner.cookie, "_")).matching).toBe(0);
+		expect((await theList(owner.cookie, "nothing like it")).entries).toEqual([]);
+	});
+
+	it("stays out of caches", async () => {
+		const owner = await ownerOnAClosedServer();
+		const entry = newAddress();
+		const added = await addEntry(owner.cookie, entry);
+		const listed = await id.fetch(`${origin}/api/auth/deployment/allow/list`, {
+			headers: { "cf-connecting-ip": newClient(), cookie: owner.cookie },
+		});
+		const removed = await removeEntry(owner.cookie, entry);
+		for (const response of [added, listed, removed]) {
+			expect(response.status).toBe(200);
+			expect(response.headers.get("cache-control")).toContain("no-store");
+		}
+	});
+});
+
+describe("asking for access", () => {
+	const ASK = "Ask for access";
+	const servers = {
+		asked: {
+			at: "https://ask.test",
+			settings: { SIGN_UP_REQUEST_URL: "https://gateweave.com/waitlist" },
+		},
+		plain: { at: "https://plain.test", settings: {} },
+		unsafe: {
+			at: "https://unsafe.test",
+			settings: { SIGN_UP_REQUEST_URL: "http://gateweave.com/waitlist" },
+		},
+	};
+	const running = {} as Record<keyof typeof servers, Awaited<ReturnType<typeof startId>>>;
+
+	beforeAll(async () => {
+		for (const [name, { at, settings }] of Object.entries(servers)) {
+			running[name as keyof typeof servers] = await startId(at, { newDeployment: true, settings });
+		}
+	});
+
+	afterAll(async () => {
+		await Promise.all(Object.values(running).map((server) => server?.dispose()));
+	});
+
+	async function pagesOf(name: keyof typeof servers) {
+		const { at } = servers[name];
+		const [signUpPage, signInPage] = await Promise.all([
+			running[name].fetch(`${at}/signup`).then((response) => response.text()),
+			running[name].fetch(`${at}/login`).then((response) => response.text()),
+		]);
+		return { signUpPage, signInPage };
+	}
+
+	function setUp(name: keyof typeof servers, state: "closed" | "open" | "unclaimed") {
+		const { db } = running[name];
+		const owner = `INSERT INTO user (id, name, email, email_verified, created_at, updated_at)
+			VALUES ('owner', 'Owner', 'owner@example.com', 1, 0, 0)`;
+		return db.batch(
+			[
+				"UPDATE deployment SET owner_id = NULL WHERE id = 1",
+				"DELETE FROM user",
+				...(state === "unclaimed" ? [] : [owner]),
+				`UPDATE deployment SET sign_up = '${state === "open" ? "open" : "closed"}' WHERE id = 1`,
+			].map((statement) => db.prepare(statement)),
+		);
+	}
+
+	it("links to the owner's address on both pages while sign-up is closed", async () => {
+		await setUp("asked", "closed");
+		const { signUpPage, signInPage } = await pagesOf("asked");
+		for (const page of [signUpPage, signInPage]) {
+			expect(page).toContain(ASK);
+			expect(page).toContain("https://gateweave.com/waitlist");
+		}
+	});
+
+	it("does not on an open server, or a new one nobody has claimed", async () => {
+		await setUp("asked", "open");
+		const open = await pagesOf("asked");
+		expect(open.signUpPage).not.toContain(ASK);
+		expect(open.signInPage).not.toContain(ASK);
+
+		await setUp("asked", "unclaimed");
+		const unclaimed = await pagesOf("asked");
+		expect(unclaimed.signUpPage).not.toContain(ASK);
+		expect(unclaimed.signInPage).not.toContain(ASK);
+	});
+
+	it("shows nothing where no address is set, or one that is not https", async () => {
+		for (const name of ["plain", "unsafe"] as const) {
+			await setUp(name, "closed");
+			const { signUpPage, signInPage } = await pagesOf(name);
+			expect(signUpPage).toContain("by invitation");
+			expect(signUpPage).not.toContain(ASK);
+			expect(signInPage).not.toContain(ASK);
+			expect(signUpPage).not.toContain("gateweave.com/waitlist");
+		}
+	});
+});
+
 describe("the migration", () => {
 	const migrations = join(import.meta.dirname, "..", "migrations");
 
@@ -2123,6 +2604,24 @@ describe("the migration", () => {
 
 		addAccount(db, "after", "after@example.com", 3000);
 		expect(row(db)).toEqual([{ ownerId: "z-oldest", signUp: "open" }]);
+		db.close();
+	});
+
+	it("lets the list in once the server is closed, and holds it to what it says", () => {
+		const db = upgraded(() => {});
+		addAccount(db, "first", "first@example.com", 1000);
+		const list = db.prepare(
+			"INSERT INTO sign_up_allow (entry, note, added_at, added_by) VALUES (?, NULL, 0, 'first')",
+		);
+		list.run("ada@example.com");
+		list.run("@example.org");
+
+		addAccount(db, "ada", "ADA@example.com", 2000);
+		addAccount(db, "grace", "grace@example.org", 3000);
+		expect(() => addAccount(db, "no", "ada@mail.example.org", 4000)).toThrow(
+			"sign-up is closed here",
+		);
+		expect(() => addAccount(db, "no", "bob@example.com", 4000)).toThrow("sign-up is closed here");
 		db.close();
 	});
 
