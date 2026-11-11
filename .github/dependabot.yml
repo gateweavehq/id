@@ -27,4 +27,10 @@ updates:
       dependencies:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # The passkey plugin brings its own copy, and the sign-in page cancels the browser's offer through
+      # that copy's abort service. A newer major of ours is a second copy whose cancel reaches nothing,
+      # so this moves when @better-auth/passkey's does.
+      - dependency-name: "@simplewebauthn/browser"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
