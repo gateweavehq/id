@@ -7,6 +7,36 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.13.0] - 2026-11-11
+
+A server that takes accounts by invitation can now also let in a list of addresses and domains its
+owner keeps. This release has two migrations, and the signing algorithm doesn't change.
+
+### New
+
+- **The owner's list.** While sign-up is closed, invitations used to be the only way in. On `/server`,
+  the owner can now keep a list of addresses (`ada@example.com`) and domains (`@example.com`). Anyone on
+  it can make an account without an invitation. A domain covers addresses at exactly that domain, not
+  its subdomains. Each entry can have a note, and the list shows whether an account with that address,
+  or at that domain, exists yet. It has a search and holds up to 5,000 entries. Adding and removing
+  entries asks for a recent sign-in, and the activity log records each change without the address.
+  Sign-up codes, GitHub, invitations and the database all follow the same rule, and an address that
+  isn't allowed gets the same refusal everywhere. ([#108](https://github.com/gateweavehq/id/pull/108))
+- **Ask for access.** If `SIGN_UP_REQUEST_URL` is set to an https address, the sign-in and sign-up
+  pages link to it as "Ask for access" while sign-up is closed. Gateweave Cloud points it at its
+  waitlist. ([#108](https://github.com/gateweavehq/id/pull/108))
+
+### If you run your own
+
+- **Nothing changes unless you change it.** The list does nothing while sign-up is open, and
+  `SIGN_UP_REQUEST_URL` is optional. Deploying applies migrations `0017` and `0018`.
+- **The list holds addresses of people who may not have an account yet.** The self-hosting guide says
+  so, for your own privacy notice. ([#108](https://github.com/gateweavehq/id/pull/108))
+- **Dependencies:** Better Auth 1.7.18 and twelve other updates.
+  ([#104](https://github.com/gateweavehq/id/pull/104), [#105](https://github.com/gateweavehq/id/pull/105),
+  [#107](https://github.com/gateweavehq/id/pull/107)) drizzle-kit's copy of esbuild moved off a flagged
+  version; it never reached a deployed Worker. ([#101](https://github.com/gateweavehq/id/pull/101))
+
 ## [0.12.0] - 2026-11-07
 
 The owner of a server with no email can now help someone back in. There is no migration in this release, and the signing
