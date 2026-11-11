@@ -33,12 +33,12 @@ export function signUpWords({
 	}
 	if (!proves) {
 		return {
-			now: "Only people you invite can make an account here. Only you can make workspaces. Opening sign-up takes email or GitHub, to prove an address with, and this server has neither.",
+			now: "Only people you invite can make an account here. Only you can make workspaces. Opening sign-up takes email or GitHub, to prove an address with, and this server has neither. The list below has no effect until one of them is set up.",
 			opening: null,
 		};
 	}
 	return {
-		now: "Only people invited, by you or by a workspace, can make an account here. Only you can make workspaces.",
+		now: "Only people invited by you or by a workspace, or on your list below, can make an account here. Only you can make workspaces.",
 		opening: email
 			? "Anyone who finds this server could then make an account and a workspace."
 			: "Anyone with a GitHub account could then make an account and a workspace.",

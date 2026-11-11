@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-route
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { LiveButton } from "#/components/live-button";
+import { SignUpList } from "#/components/sign-up-list";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -86,6 +87,7 @@ function ServerPage() {
 						github={options.github}
 						reload={load}
 					/>
+					<SignUpList signUp={settings.signUp} />
 					<Invite settings={settings} reload={load} />
 					{!settings.sendsEmail && <HelpBackIn hasPassword={options.hasPassword} />}
 				</>

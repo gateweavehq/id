@@ -48,6 +48,10 @@ describe("describeActivity", () => {
 		["deployment_sign_up_changed", "closed", "Closed sign-up on this server"],
 		["deployment_invitation_created", null, "Invited someone to this server"],
 		["deployment_invitation_canceled", null, "Withdrew an invitation to this server"],
+		["deployment_allow_added", "address", "Added an address to this server's sign-up list"],
+		["deployment_allow_added", "domain", "Added a domain to this server's sign-up list"],
+		["deployment_allow_removed", "address", "Removed an address from this server's sign-up list"],
+		["deployment_allow_removed", "domain", "Removed a domain from this server's sign-up list"],
 	])("says what %s with %s was", (type, detail, words) => {
 		expect(describeActivity(activity({ type, detail }))).toBe(words);
 	});

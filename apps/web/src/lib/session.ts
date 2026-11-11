@@ -32,6 +32,20 @@ export const getSignUpState = createServerFn({ method: "GET" }).handler(async ()
 	return signUpState(db);
 });
 
+/**
+ * Where to ask for an account, while sign-up is closed and the server's owner has set an address for it
+ * (`SIGN_UP_REQUEST_URL`). Null otherwise, so an open server links nowhere.
+ */
+export const getAccessRequestUrl = createServerFn({ method: "GET" }).handler(async () => {
+	const { env } = await import("cloudflare:workers");
+	const { signUpRequestUrl } = await import("#/lib/sign-up-request");
+	const url = signUpRequestUrl(env.SIGN_UP_REQUEST_URL);
+	if (!url) return null;
+	const { db } = await import("#/server/auth");
+	const { signUpState } = await import("#/server/auth/deployment");
+	return (await signUpState(db)) === "by-invitation" ? url : null;
+});
+
 /** Whether the signed-in person is the one who runs this server. */
 export const ownsThisServer = createServerFn({ method: "GET" }).handler(async () => {
 	const { db, getAuth } = await import("#/server/auth");

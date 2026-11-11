@@ -96,6 +96,12 @@ so is the owner.
 Sign-up closes behind the first account. Your account page then has a **This server** section, which opens
 `/server`, a page only the owner can find:
 
+- **Who is on the list.** Addresses, or domains written with an @ such as `@example.com`, that can make an
+  account while sign-up is closed, with no invitation. A domain covers addresses at exactly that domain, not
+  its subdomains. Each entry can have a note, and the page shows when it was added and whether an account
+  with that address, or at that domain, exists yet. The list holds at most 5,000 entries. It names people who
+  may have no account here, so it is personal data, and it stays until you remove an entry. The page asks for a
+  recent sign-in before it changes anything.
 - **Invite someone to this server.** With email on, they get an email. Without it, you get a link to pass on
   yourself. It works once, for 7 days.
 - **Open sign-up**, if the server is meant for anyone. Anyone who finds it can then make an account and a
@@ -171,6 +177,7 @@ Turnstile was off.
 | `LEGAL_NOTICE_URL`         | The address of your legal notice. See below.                             |
 | `PRIVACY_POLICY_URL`       | The address of your privacy policy.                                      |
 | `TERMS_URL`                | The address of your terms.                                               |
+| `SIGN_UP_REQUEST_URL`      | An https address where people can ask for an account. See below.         |
 
 ### Your own domain
 
@@ -256,6 +263,12 @@ first person to sign in with a verified address there owns it.
 
 With `CHECK_BREACHED_PASSWORDS` set to `1`, ID refuses passwords known from breaches. It sends the first five
 characters of a password's SHA-1 to Have I Been Pwned, so it is yours to choose.
+
+### Where to ask for an account
+
+While sign-up is closed, the sign-up and sign-in pages can point people at a way to ask for one. Set
+`SIGN_UP_REQUEST_URL` to an https address, such as the page of your waiting list, and they show "Ask for
+access" linking to it. It is left out while sign-up is open, and when the value is not an https address.
 
 ### Your legal pages
 

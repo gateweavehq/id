@@ -1,6 +1,7 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { z } from "zod";
+import { AskForAccess } from "#/components/ask-for-access";
 import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { GitHubSignIn } from "#/components/github-sign-in";
@@ -13,7 +14,7 @@ import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, type Search } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
-import { getAuthOptions, getSession, getSignUpState } from "#/lib/session";
+import { getAccessRequestUrl, getAuthOptions, getSession, getSignUpState } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 import { useTurnstile } from "#/lib/turnstile";
 
@@ -33,8 +34,12 @@ export const Route = createFileRoute("/signup")({
 		if (await getSession()) throw redirect({ href: safeRedirect(search.redirect) ?? "/account" });
 	},
 	loader: async () => {
-		const [options, signUp] = await Promise.all([getAuthOptions(), getSignUpState()]);
-		return { ...options, signUp };
+		const [options, signUp, accessUrl] = await Promise.all([
+			getAuthOptions(),
+			getSignUpState(),
+			getAccessRequestUrl(),
+		]);
+		return { ...options, signUp, accessUrl };
 	},
 	component: SignUpPage,
 });
@@ -164,6 +169,7 @@ function SignUpPage() {
 						<SignInDivider />
 					</>
 				)}
+				<AskForAccess url={options.accessUrl} />
 				<BackToSignIn search={search} />
 			</AuthPage>
 		);
@@ -294,6 +300,8 @@ function SignUpPage() {
 						Send me a code
 					</LiveButton>
 				</form>
+
+				<AskForAccess url={options.accessUrl} />
 
 				<BackToSignIn search={search} />
 

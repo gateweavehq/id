@@ -40,6 +40,11 @@ declare namespace Cloudflare {
 		LEGAL_NOTICE_URL?: string;
 		PRIVACY_POLICY_URL?: string;
 		TERMS_URL?: string;
+		/**
+		 * An https address where someone can ask for an account while sign-up is closed. The sign-up and
+		 * sign-in pages then show "Ask for access", linking to it. Left out when unset or not https.
+		 */
+		SIGN_UP_REQUEST_URL?: string;
 		/** Least time in ms to answer about a sign-up code. 1000 unless set (tests). */
 		ANSWER_FLOOR_MS?: string;
 		/** Seconds before a missed back-channel logout is first tried again. 60 unless set (tests). */

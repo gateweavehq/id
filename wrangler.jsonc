@@ -43,7 +43,7 @@
 	},
 	// Optional: BETTER_AUTH_URL with OIDC_PAIRWISE_SECRET for the OIDC provider, EMAIL_FROM,
 	// GITHUB_CLIENT_ID with GITHUB_CLIENT_SECRET, TURNSTILE_SITE_KEY with TURNSTILE_SECRET_KEY, and
-	// CHECK_BREACHED_PASSWORDS, LEGAL_NOTICE_URL, PRIVACY_POLICY_URL and TERMS_URL (see
+	// CHECK_BREACHED_PASSWORDS, LEGAL_NOTICE_URL, PRIVACY_POLICY_URL, TERMS_URL and SIGN_UP_REQUEST_URL (see
 	// apps/web/src/server/env.d.ts).
 	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
 	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:

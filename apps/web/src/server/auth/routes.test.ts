@@ -64,7 +64,10 @@ const SERVED = [
 	"POST /two-factor/verify-totp",
 
 	// The server itself: claiming it, and who may have an account on it.
+	"GET /deployment/allow/list",
 	"GET /deployment/get",
+	"POST /deployment/allow/add",
+	"POST /deployment/allow/remove",
 	"POST /deployment/claim",
 	"POST /deployment/invitations/accept",
 	"POST /deployment/invitations/cancel",

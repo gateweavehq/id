@@ -64,7 +64,7 @@ that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq
   with no server of your own to run. There are guides for [Grafana](docs/recipes/grafana.md),
   [Gitea](docs/recipes/gitea.md) and [Outline](docs/recipes/outline.md), each signed in to for real.
 - **Your own server.** The first account owns it. Sign-up stays closed until you open it, and while it
-  is closed only people who are invited get in. It also runs without email, with less.
+  is closed only people who are invited, or on your list of addresses and domains, get in. It also runs without email, with less.
 
 ## Tech stack
 
