@@ -53,7 +53,10 @@
 		"cloud": {
 			"name": "gateweave-id",
 			"routes": [{ "pattern": "id.gateweave.com", "custom_domain": true }],
-			"vars": { "CHECK_BREACHED_PASSWORDS": "1" },
+			"vars": {
+				"CHECK_BREACHED_PASSWORDS": "1",
+				"SIGN_UP_REQUEST_URL": "https://gateweave.com/waitlist"
+			},
 			"d1_databases": [
 				{
 					"binding": "DB",
