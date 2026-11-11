@@ -1,0 +1,144 @@
+{
+	"repo_notes": [
+		{
+			"content": "Gateweave ID is an open-source OpenID Connect provider that runs entirely on Cloudflare, with no server to run: one Worker, one D1 database, a Durable Object for rate limits, a Queue for logouts an app missed, and a cron trigger. People hold one account, and any app that supports OIDC signs them in with it. It is early and not certified; docs/conformance.md says what the OpenID conformance suite's Basic OP and Config OP plans show. AGENTS.md is the source of truth for how the project is built, and docs/architecture.md explains every design decision: follow them, cite them, and prefer their wording over guesses. There is no sync engine and no per-workspace Durable Object, because identity data is relational, read at sign-in and written rarely.",
+			"author": "Maintainers"
+		},
+		{
+			"content": "The invariants in AGENTS.md are load-bearing and should appear wherever they apply: the check for who may sign in fails closed and its tests always include someone who is refused; no account exists with an unverified address (the address is proven before the account exists, and the password comes after); the permanent values (issuer, RS256 signing, pairwise subjects and their secret, token prefixes, the passkey rpID) change only by a documented decision; a deployed Worker cannot fetch its own hostname; server code never reaches the browser bundle; migrations are append-only; secrets stay local; admin rights come from `can` in apps/web/src/lib/workspace.ts, never from comparing a role with `member`; the organization plugin is reached only through the gate in apps/web/src/server/auth/workspaces.ts; and a caller decides nothing about an app but its name, redirect URIs, groups and what its library needs.",
+			"author": "Maintainers"
+		},
+		{
+			"content": "Layout: apps/web is the Worker (TanStack Start UI in src/routes and src/components, Better Auth and ID's own rules in src/server/auth, email in src/server/email, rate limiting in src/server/rate-limit, the logout Queue in src/server/logouts.ts, security headers, D1 schema and migrations). docs/ holds the architecture, self-hosting, connect-an-app, Cloudflare Access, conformance notes and per-app recipes (Gitea, Grafana, Outline). scripts/ holds repository tooling (doctor, update-copy). patches/ holds one fix to @better-auth/oauth-provider. wrangler.jsonc is at the root because the Deploy button reads it there; its environments are staging and cloud. Generated files (routeTree.gen.ts, worker-configuration.d.ts, auth-schema.ts, apps/web/migrations/) should be referenced, not documented line by line. ID shares copied code (auth, rate limiting, email, UI primitives) with Gateweave Agents and Gateweave Track, and owns its copy.",
+			"author": "Maintainers"
+		}
+	],
+	"pages": [
+		{
+			"title": "Overview",
+			"purpose": "What Gateweave ID is, what runs where (one Worker, D1, a Durable Object for rate limits, a Queue and a cron), its status, how to run it locally (pnpm dev on port 4730) and how to deploy your own (docs/self-hosting.md)."
+		},
+		{
+			"title": "Repository Layout",
+			"purpose": "The Worker in apps/web, docs, scripts and patches, how the pieces fit, and the commands in AGENTS.md (check, typecheck, test, test:e2e, test:conformance, verify, deploy).",
+			"parent": "Overview"
+		},
+		{
+			"title": "Invariants",
+			"purpose": "Each invariant from AGENTS.md, why it exists, where the code enforces it, and what breaks if it is violated.",
+			"parent": "Overview"
+		},
+		{
+			"title": "Architecture",
+			"purpose": "The shape of a deployment, what D1, the RateLimiter and the cron each hold, and the model of accounts, workspaces, apps and first-party apps, from docs/architecture.md."
+		},
+		{
+			"title": "Accounts and Sign-up",
+			"purpose": "Why the address is proven before the account exists, the three sign-up steps (emailed code, account, password at /welcome), and why a sign-up code never opens an existing account.",
+			"parent": "Architecture"
+		},
+		{
+			"title": "Who Owns a Deployment",
+			"purpose": "The first account owning a new server and sign-up closing behind it, the deployment row, invitations, the owner's list of allowed addresses and domains, and how it is held by database triggers.",
+			"parent": "Architecture"
+		},
+		{
+			"title": "Sign-in Methods",
+			"purpose": "Password, emailed code, GitHub, passkeys and two-factor sign-in (TOTP and recovery codes), the rule that a person cannot remove their last way in, and the two-factor:remove operator command.",
+			"parent": "Architecture"
+		},
+		{
+			"title": "Workspaces and Groups",
+			"purpose": "Workspaces as Better Auth organizations behind ID's own gate, members, invitations, roles and `can`, groups, and why every path under /organization/ needs a rule or answers 404.",
+			"parent": "Architecture"
+		},
+		{
+			"title": "Deleting an Account",
+			"purpose": "What deleting an account removes, what it needs first, and how it interacts with workspaces and apps.",
+			"parent": "Architecture"
+		},
+		{
+			"title": "Database and Migrations",
+			"purpose": "The D1 schema (Better Auth tables and ID's own), generated auth-schema.ts, Drizzle Kit, append-only migrations and the schema-change skill.",
+			"parent": "Architecture"
+		},
+		{
+			"title": "OpenID Connect Provider",
+			"purpose": "ID as an OIDC provider: discovery at the bare-origin issuer, the authorization code flow, consent, the rule that a deployment is a provider only when BETTER_AUTH_URL and OIDC_PAIRWISE_SECRET are set, and signing in to an app."
+		},
+		{
+			"title": "Who May Sign In",
+			"purpose": "The three rules in order (verified address, the person belongs, the app's rule passes), the check in postLogin.shouldRedirect and at refresh, why it fails closed, and the tests that must include a refused person.",
+			"parent": "OpenID Connect Provider"
+		},
+		{
+			"title": "Tokens and Permanent Values",
+			"purpose": "The table of permanent values: issuer, RS256 signing, pairwise subjects and pairwiseSecret, token prefixes gwid_at_, gwid_rt_ and gwid_cs_, plus the passkey rpID, and what changing each one would break.",
+			"parent": "OpenID Connect Provider"
+		},
+		{
+			"title": "Apps: First-party and Workspace Apps",
+			"purpose": "Registering a first-party app with apps:add, the apps a workspace adds through ID's own endpoints, what a caller may set, groups limiting an app, taking an app back, and workspaceAppRow.",
+			"parent": "OpenID Connect Provider"
+		},
+		{
+			"title": "Logouts and the Queue",
+			"purpose": "Back-channel logout, the patched @better-auth/oauth-provider (retries and redirect handling), the LOGOUTS Cloudflare Queue for logouts an app missed, its backoff, and what happens when it gives up.",
+			"parent": "OpenID Connect Provider"
+		},
+		{
+			"title": "Products as Clients",
+			"purpose": "How Gateweave Track and Gateweave Agents sign in with ID through generic-oauth, account linking rules (never add ID to trustedProviders), and signing out everywhere.",
+			"parent": "OpenID Connect Provider"
+		},
+		{
+			"title": "Security Baseline",
+			"purpose": "Cookies and rpID on ID's own host, Content Security Policy with a nonce, HSTS, Turnstile, durable rate limits, breached-password checks, session handling after a password change, and the single-isolate Better Auth instance (getAuth())."
+		},
+		{
+			"title": "Audit Log",
+			"purpose": "The audit_event table in D1, which sign-ins, refusals, consents, account, workspace and deployment changes are recorded, and the cron that prunes old events.",
+			"parent": "Security Baseline"
+		},
+		{
+			"title": "Rate Limiting",
+			"purpose": "The RateLimiter Durable Object, GCRA counters for sign-in and code attempts, keys by cf-connecting-ip, and how tests avoid tripping the limits.",
+			"parent": "Security Baseline"
+		},
+		{
+			"title": "Email",
+			"purpose": "Sending sign-up codes, invitations and reset mail, the mailer and templates, and running without email as docs/self-hosting.md describes."
+		},
+		{
+			"title": "Web App",
+			"purpose": "apps/web: TanStack Start routes (login, signup, consent, account, workspaces and more), server functions that import server modules dynamically, shared UI primitives, and legal page links."
+		},
+		{
+			"title": "Connecting an App",
+			"purpose": "Adding an app to a workspace, configuring its library (client secret method, PKCE), the claims an app receives, what people see, and the tested apps."
+		},
+		{
+			"title": "Recipes: Gitea, Grafana and Outline",
+			"purpose": "The step-by-step recipes in docs/recipes for connecting each app, and how a group becomes a role.",
+			"parent": "Connecting an App"
+		},
+		{
+			"title": "Cloudflare Access",
+			"purpose": "Putting Cloudflare Access in front of an internal app with ID as its provider: rules on groups, what the app gets, who gets in, signing out, and what has not been tried (docs/cloudflare-access.md).",
+			"parent": "Connecting an App"
+		},
+		{
+			"title": "Testing",
+			"purpose": "The test suites and where they run: unit tests, Worker tests through Miniflare with every outbound request failing, Playwright e2e against the production build with a Content Security Policy check, and the OpenID conformance suite."
+		},
+		{
+			"title": "OpenID Conformance",
+			"purpose": "Running the OpenID Foundation's conformance suite against ID (needs Docker), what it says, what differs from expected.ts and why, and its CI workflow.",
+			"parent": "Testing"
+		},
+		{
+			"title": "Deployment and Self-Hosting",
+			"purpose": "The Deploy button, wrangler.jsonc at the root, claiming your server, settings and secrets, your own domain, turning on the provider, backups, updating, locked-out recovery, and the staging and cloud environments and releases."
+		}
+	]
+}
