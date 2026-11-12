@@ -28,7 +28,11 @@ app. A mistake in those places signs the wrong person in to someone else's app.
 | `wrangler.jsonc`  | The Worker's config, at the root because the Deploy button reads it there  |
 
 There is no sync engine and no per-workspace Durable Object: identity data is relational, read at
-sign-in and written rarely, so it lives in D1. The Durable Object only counts rate limits.
+sign-in and written rarely, so it lives in D1. The Durable Object only counts rate limits. Beside
+`fetch`, the Worker has two handlers: a daily cron that deletes expired sessions, verifications and
+tokens (`apps/web/src/server/db/prune.ts`), and the consumer of the `LOGOUTS` queue, which tries
+again the back-channel logouts an app missed (`apps/web/src/server/logouts.ts`, "Logouts an app
+missed" in [docs/architecture.md](docs/architecture.md)).
 
 Wrangler commands that use the build output (`deploy`, `versions upload`, `preview`) must run
 from the repository root, where the build leaves its pointer next to `wrangler.jsonc`. Use
