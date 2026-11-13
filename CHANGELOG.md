@@ -7,6 +7,24 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.14.1] - 2026-11-13
+
+Gateweave Cloud's Worker runs near its databases in the EU. There is no migration in this release, and
+the signing algorithm doesn't change.
+
+### Gateweave Cloud
+
+- **The Worker runs near its databases.** They are in the EU and answer from Frankfurt, and a sign-in
+  from far away made its queries across an ocean, one after another. id.gateweave.com and staging now
+  run near Frankfurt; static files still come from the nearest data center. Track did the same in its
+  0.35.3, where opening its demo from the US took 14 seconds instead of 23.
+  ([#117](https://github.com/gateweavehq/id/pull/117))
+
+### If you run your own
+
+- **Nothing to do.** If the people who sign in are far from your database, the self-hosting guide
+  ("Keeping data in one jurisdiction") now says how to run the Worker near it.
+
 ## [0.14.0] - 2026-11-13
 
 A server can now keep its rate limits in one of Cloudflare's jurisdictions, and Gateweave Cloud keeps
