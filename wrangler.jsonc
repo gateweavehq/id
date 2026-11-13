@@ -49,13 +49,15 @@
 	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
 	// `cloud` is https://id.gateweave.com, the Worker the top level names, and `staging` a separate
 	// Worker. Both keep their data in the EU: their databases and queues were created with the `eu`
-	// jurisdiction. Bindings are not inherited, so each environment repeats them.
+	// jurisdiction, and DURABLE_OBJECT_JURISDICTION keeps the rate limits' Durable Objects there.
+	// Bindings are not inherited, so each environment repeats them.
 	"env": {
 		"cloud": {
 			"name": "gateweave-id",
 			"routes": [{ "pattern": "id.gateweave.com", "custom_domain": true }],
 			"vars": {
 				"CHECK_BREACHED_PASSWORDS": "1",
+				"DURABLE_OBJECT_JURISDICTION": "eu",
 				"SIGN_UP_REQUEST_URL": "https://gateweave.com/waitlist"
 			},
 			"d1_databases": [
@@ -79,7 +81,7 @@
 		"staging": {
 			"name": "gateweave-id-staging",
 			"routes": [{ "pattern": "id-staging.gateweave.com", "custom_domain": true }],
-			"vars": { "CHECK_BREACHED_PASSWORDS": "1" },
+			"vars": { "CHECK_BREACHED_PASSWORDS": "1", "DURABLE_OBJECT_JURISDICTION": "eu" },
 			// Created with the `eu` jurisdiction, as its queue was, so the data stays in the EU.
 			"d1_databases": [
 				{
