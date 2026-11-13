@@ -78,11 +78,12 @@
 			"name": "gateweave-id-staging",
 			"routes": [{ "pattern": "id-staging.gateweave.com", "custom_domain": true }],
 			"vars": { "CHECK_BREACHED_PASSWORDS": "1" },
+			// Created with the `eu` jurisdiction, as its queue was, so the data stays in the EU.
 			"d1_databases": [
 				{
 					"binding": "DB",
-					"database_name": "gateweave-id-staging",
-					"database_id": "fa746fc4-3ab5-4a91-9e1e-8ed4625ddb6e",
+					"database_name": "gateweave-id-staging-eu",
+					"database_id": "d6dd17a6-c2b0-4b6a-811a-f38e573a4633",
 					"migrations_dir": "apps/web/migrations"
 				}
 			],
@@ -91,8 +92,8 @@
 			},
 			"send_email": [{ "name": "EMAIL" }],
 			"queues": {
-				"producers": [{ "binding": "LOGOUTS", "queue": "gateweave-id-logouts-staging" }],
-				"consumers": [{ "queue": "gateweave-id-logouts-staging", "max_retries": 20 }]
+				"producers": [{ "binding": "LOGOUTS", "queue": "gateweave-id-logouts-staging-eu" }],
+				"consumers": [{ "queue": "gateweave-id-logouts-staging-eu", "max_retries": 20 }]
 			},
 			"secrets": { "required": ["BETTER_AUTH_SECRET"] }
 		}
