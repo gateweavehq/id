@@ -51,10 +51,14 @@
 	// Worker. Both keep their data in the EU: their databases and queues were created with the `eu`
 	// jurisdiction, and DURABLE_OBJECT_JURISDICTION keeps the rate limits' Durable Objects there.
 	// Bindings are not inherited, so each environment repeats them.
+	// Each runs its Worker near Frankfurt, where their EU databases answer (`served_by_colo` was FRA
+	// for both on 2026-11-13). Otherwise a request from far away makes every query across an ocean,
+	// one after another. Static files are still served from the nearest place.
 	"env": {
 		"cloud": {
 			"name": "gateweave-id",
 			"routes": [{ "pattern": "id.gateweave.com", "custom_domain": true }],
+			"placement": { "region": "aws:eu-central-1" },
 			"vars": {
 				"CHECK_BREACHED_PASSWORDS": "1",
 				"DURABLE_OBJECT_JURISDICTION": "eu",
@@ -81,6 +85,7 @@
 		"staging": {
 			"name": "gateweave-id-staging",
 			"routes": [{ "pattern": "id-staging.gateweave.com", "custom_domain": true }],
+			"placement": { "region": "aws:eu-central-1" },
 			"vars": { "CHECK_BREACHED_PASSWORDS": "1", "DURABLE_OBJECT_JURISDICTION": "eu" },
 			// Created with the `eu` jurisdiction, as its queue was, so the data stays in the EU.
 			"d1_databases": [
