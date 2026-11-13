@@ -18,6 +18,10 @@ BETTER_AUTH_SECRET=
 # password's SHA-1 to Have I Been Pwned, which never learns the password.
 # CHECK_BREACHED_PASSWORDS=
 
+# Optional: keeps the rate limits' Durable Objects in a jurisdiction, such as eu. Local dev has
+# no jurisdictions, so leave it out here.
+# DURABLE_OBJECT_JURISDICTION=
+
 # Optional: pins the app's URL. Leave it out to accept any host, for example from your phone. The
 # OIDC provider needs it, because its origin is the issuer, and so do passkeys. Each passkey is bound
 # to this host for good: move to another and everyone's stop working.

@@ -45,6 +45,12 @@ declare namespace Cloudflare {
 		 * sign-in pages then show "Ask for access", linking to it. Left out when unset or not https.
 		 */
 		SIGN_UP_REQUEST_URL?: string;
+		/**
+		 * The jurisdiction the rate limits' Durable Objects are kept in, such as `eu`. Outside any
+		 * when unset. A value Cloudflare doesn't know is an error, logged on each count, and each
+		 * isolate then counts alone.
+		 */
+		DURABLE_OBJECT_JURISDICTION?: string;
 		/** Least time in ms to answer about a sign-up code. 1000 unless set (tests). */
 		ANSWER_FLOOR_MS?: string;
 		/** Seconds before a missed back-channel logout is first tried again. 60 unless set (tests). */

@@ -80,6 +80,16 @@ pnpm wrangler d1 create gateweave-id --location apac
 
 Then pick it instead of **Create new** on the button's form, or put its id in `wrangler.jsonc` as `database_id`.
 
+### Keeping data in one jurisdiction
+
+Cloudflare can keep data inside the EU, the US or FedRAMP data centers. Each part of ID is set on its own:
+
+- **The database**: `pnpm wrangler d1 create gateweave-id --jurisdiction eu`, before the first deploy, then use it as
+  above. A database's jurisdiction can't change once it exists.
+- **The logout queue**: `pnpm wrangler queues create gateweave-id-logouts --jurisdiction eu`, before the first deploy.
+- **Rate limits**: set `DURABLE_OBJECT_JURISDICTION` to `eu`. Their counts, kept under hashed addresses, start again
+  there.
+
 ## Claim your server
 
 **Until a server has an account, whoever reaches it first owns it.** So open it as soon as it is up, and go to
@@ -163,21 +173,22 @@ Text variables and secrets both stay through a deploy, because `wrangler.jsonc` 
 v0.10.1 lost its text variables on every deploy, so look through them after updating. A site key missing there means
 Turnstile was off.
 
-| Name                       | What it does                                                             |
-| -------------------------- | ------------------------------------------------------------------------ |
-| `BETTER_AUTH_SECRET`       | Signs sessions. Required.                                                |
-| `BETTER_AUTH_URL`          | The address people use, such as `https://id.example.com`. See below.     |
-| `OIDC_PAIRWISE_SECRET`     | With `BETTER_AUTH_URL`, turns on the OpenID Connect provider. See below. |
-| `EMAIL_FROM`               | Turns on email, such as `Gateweave ID <id@example.com>`.                 |
-| `GITHUB_CLIENT_ID`         | Turns on "Continue with GitHub", with `GITHUB_CLIENT_SECRET`.            |
-| `GITHUB_CLIENT_SECRET`     | The client secret of the same GitHub OAuth App.                          |
-| `TURNSTILE_SITE_KEY`       | Turns on Turnstile, with `TURNSTILE_SECRET_KEY`.                         |
-| `TURNSTILE_SECRET_KEY`     | The secret key of the same widget.                                       |
-| `CHECK_BREACHED_PASSWORDS` | `1` refuses passwords known from breaches.                               |
-| `LEGAL_NOTICE_URL`         | The address of your legal notice. See below.                             |
-| `PRIVACY_POLICY_URL`       | The address of your privacy policy.                                      |
-| `TERMS_URL`                | The address of your terms.                                               |
-| `SIGN_UP_REQUEST_URL`      | An https address where people can ask for an account. See below.         |
+| Name                          | What it does                                                             |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `BETTER_AUTH_SECRET`          | Signs sessions. Required.                                                |
+| `BETTER_AUTH_URL`             | The address people use, such as `https://id.example.com`. See below.     |
+| `OIDC_PAIRWISE_SECRET`        | With `BETTER_AUTH_URL`, turns on the OpenID Connect provider. See below. |
+| `EMAIL_FROM`                  | Turns on email, such as `Gateweave ID <id@example.com>`.                 |
+| `GITHUB_CLIENT_ID`            | Turns on "Continue with GitHub", with `GITHUB_CLIENT_SECRET`.            |
+| `GITHUB_CLIENT_SECRET`        | The client secret of the same GitHub OAuth App.                          |
+| `TURNSTILE_SITE_KEY`          | Turns on Turnstile, with `TURNSTILE_SECRET_KEY`.                         |
+| `TURNSTILE_SECRET_KEY`        | The secret key of the same widget.                                       |
+| `CHECK_BREACHED_PASSWORDS`    | `1` refuses passwords known from breaches.                               |
+| `DURABLE_OBJECT_JURISDICTION` | Keeps the rate limits in a jurisdiction, such as `eu`. See above.        |
+| `LEGAL_NOTICE_URL`            | The address of your legal notice. See below.                             |
+| `PRIVACY_POLICY_URL`          | The address of your privacy policy.                                      |
+| `TERMS_URL`                   | The address of your terms.                                               |
+| `SIGN_UP_REQUEST_URL`         | An https address where people can ask for an account. See below.         |
 
 ### Your own domain
 
