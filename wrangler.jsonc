@@ -47,8 +47,9 @@
 	// apps/web/src/server/env.d.ts).
 	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
 	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
-	// `cloud` is https://id.gateweave.com, the same Worker and database the top level names, and
-	// `staging` a separate Worker with its own. Bindings are not inherited, so each repeats them.
+	// `cloud` is https://id.gateweave.com, the Worker the top level names, and `staging` a separate
+	// Worker. Both keep their data in the EU: their databases and queues were created with the `eu`
+	// jurisdiction. Bindings are not inherited, so each environment repeats them.
 	"env": {
 		"cloud": {
 			"name": "gateweave-id",
@@ -60,7 +61,8 @@
 			"d1_databases": [
 				{
 					"binding": "DB",
-					"database_name": "gateweave-id",
+					"database_name": "gateweave-id-eu",
+					"database_id": "63428cb2-0195-4a16-9a78-bff66bd560c7",
 					"migrations_dir": "apps/web/migrations"
 				}
 			],
@@ -69,8 +71,8 @@
 			},
 			"send_email": [{ "name": "EMAIL" }],
 			"queues": {
-				"producers": [{ "binding": "LOGOUTS", "queue": "gateweave-id-logouts" }],
-				"consumers": [{ "queue": "gateweave-id-logouts", "max_retries": 20 }]
+				"producers": [{ "binding": "LOGOUTS", "queue": "gateweave-id-logouts-eu" }],
+				"consumers": [{ "queue": "gateweave-id-logouts-eu", "max_retries": 20 }]
 			},
 			"secrets": { "required": ["BETTER_AUTH_SECRET"] }
 		},
