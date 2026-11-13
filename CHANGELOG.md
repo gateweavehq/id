@@ -7,6 +7,30 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.14.0] - 2026-11-13
+
+A server can now keep its rate limits in one of Cloudflare's jurisdictions, and Gateweave Cloud keeps
+them in the EU. There is no migration in this release, and the signing algorithm doesn't change.
+
+### New
+
+- **Rate limits in a jurisdiction.** Set `DURABLE_OBJECT_JURISDICTION` (such as `eu`) and the
+  Durable Objects that count tries at sign-in, sign-up codes and emails are kept in that
+  jurisdiction. They are named by hashes of addresses, which are still personal data. Counts start
+  again there once. The self-hosting guide now says how to keep each part of ID, the database, the
+  logout queue and the rate limits, in one jurisdiction.
+  ([#115](https://github.com/gateweavehq/id/pull/115))
+
+### Gateweave Cloud
+
+- **Rate limits in the EU.** id.gateweave.com sets `DURABLE_OBJECT_JURISDICTION` to `eu`, like its
+  database and queue since 0.13.1. Staging does too.
+
+### If you run your own
+
+- **Nothing to do** unless you want a jurisdiction. Without the setting, the rate limits stay where
+  they are.
+
 ## [0.13.1] - 2026-11-13
 
 Gateweave Cloud's ID now keeps its data in the EU. Nothing changes for a server you run yourself:
