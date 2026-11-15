@@ -7,6 +7,50 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.15.0] - 2026-11-15
+
+A workspace can require two-factor sign-in for its apps, and a second factor can no longer be added
+to or taken from an account by someone who showed only one. This release has one D1 migration, and the
+signing algorithm doesn't change.
+
+### Added
+
+- **A workspace can require two-factor sign-in.** An owner or admin turns it on in the workspace's
+  settings, and its apps then admit only people who signed in to ID with a passkey, or with a
+  password and a code from their authenticator or a recovery code. ID checks this itself on the way
+  to an app and whenever the app refreshes its tokens, so an app needs no change. Someone it turns
+  away sees a page that says their workspace asks for this and leads to their account. Signing in
+  with GitHub alone does not count, since ID cannot see whether GitHub asked for a second factor.
+  The rule is off unless a workspace turns it on. ([#119](https://github.com/gateweavehq/id/pull/119))
+- **`pnpm passkeys:remove`**, for whoever runs the server, removes the passkeys of someone who has
+  lost theirs, as `two-factor:remove` does for an authenticator.
+  ([#119](https://github.com/gateweavehq/id/pull/119))
+
+### Changed
+
+- **Adding or removing a second factor now takes a sign-in with one.** Once an account has a
+  passkey or an authenticator, adding another passkey, turning on the authenticator, removing a
+  passkey, turning two-factor off and making new recovery codes all need a session that signed in
+  with a second factor. Before, a recent sign-in with the password or GitHub was enough, so
+  whoever held only that could swap the second factor for their own. Someone with no second
+  factor yet still adds their first from an ordinary sign-in. The account page says what to do
+  where it now refuses. ([#119](https://github.com/gateweavehq/id/pull/119))
+- **Every session remembers how it was made.** Sessions from before this release count as one
+  factor.
+
+### If you run your own
+
+- **`pnpm run deploy` applies the migration** (`0019_require_two_factor`) before the new code goes
+  live. It adds two columns and changes no data.
+- **Before you turn the rule on for a workspace, sign in again with your second factor:** the
+  setting asks that of whoever changes it, and a session from before the update does not count.
+- **Someone who loses their only second factor now needs you**: they can no longer remove it
+  from a password's session. A recovery code still lets them in and lets them turn two-factor off
+  themselves; otherwise run `two-factor:remove` or `passkeys:remove` for them, once you are sure
+  who is asking. `docs/self-hosting.md` has both.
+- **Where the rule is on, an app's refresh token works only while the person's session in ID
+  lasts.** Signing out of ID, or the session running out, ends it for that workspace's apps.
+
 ## [0.14.1] - 2026-11-13
 
 Gateweave Cloud's Worker runs near its databases in the EU. There is no migration in this release, and
