@@ -309,7 +309,10 @@ passkey takes a session that showed two factors, and they have none to show. `pa
 same arguments and removes every passkey they have, since whoever runs it cannot tell one from another.
 Their activity says so in one line, their sessions stay, and with no second factor left they add a new
 passkey from an ordinary sign-in. It asks the same care: this is what stands between a stolen password and
-the account.
+the account. "An ordinary sign-in" means they still have another way in: a password, GitHub or a code
+by email. The script makes none. Someone whose passkey was their only way in has to get one first, which
+is not this script's work: whoever runs the server checks which ways of signing in it offers them before
+removing the passkeys, and leaves the passkeys alone if there is none.
 
 ```sh
 pnpm --filter @gateweave/id-web passkeys:remove --env cloud --email someone@example.com
