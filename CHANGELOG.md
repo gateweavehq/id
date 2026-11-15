@@ -22,8 +22,9 @@ signing algorithm doesn't change.
   away sees a page that says their workspace asks for this and leads to their account. Signing in
   with GitHub alone does not count, since ID cannot see whether GitHub asked for a second factor.
   The rule is off unless a workspace turns it on. ([#119](https://github.com/gateweavehq/id/pull/119))
-- **`pnpm passkeys:remove`**, for whoever runs the server, removes the passkeys of someone who has
-  lost theirs, as `two-factor:remove` does for an authenticator.
+- **`pnpm --filter @gateweave/id-web passkeys:remove --email …`**, for whoever runs the server,
+  removes the passkeys of someone who has lost theirs, as `two-factor:remove` does for an
+  authenticator.
   ([#119](https://github.com/gateweavehq/id/pull/119))
 
 ### Changed
