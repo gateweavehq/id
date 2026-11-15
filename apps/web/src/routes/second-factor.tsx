@@ -29,7 +29,8 @@ export const Route = createFileRoute("/second-factor")({
 	loaderDeps: ({ search }) => ({ clientId: search.client_id }),
 	loader: async ({ deps, location }) => {
 		const asked = deps.clientId ? await getSecondFactorAsked({ data: deps.clientId }) : null;
-		// Not someone this app would admit, so the page that names no app is the one for them.
+		// Not someone this app would admit, or a workspace that asks for nothing: the page that names
+		// no app is the one for them, and it is the same page, so neither can be told from the other.
 		if (!asked) throw redirect({ to: "/no-access", search: flowSearch(location.search) });
 		return asked;
 	},

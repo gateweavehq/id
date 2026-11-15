@@ -1,6 +1,6 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { isTwoFactor } from "../../lib/sign-in-method";
 import { can } from "../../lib/workspace";
@@ -59,22 +59,26 @@ export function workspaceTwoFactorPlugin({ db, record }: TwoFactorRuleConfig) {
 					// one to take the rule away.
 					if (!showedTwoFactors(session)) throw APIError.from("FORBIDDEN", SECOND_FACTOR_FIRST);
 					const was = await db
-						.select({
-							name: schema.organization.name,
-							required: schema.organization.requireTwoFactor,
-						})
+						.select({ name: schema.organization.name })
 						.from(schema.organization)
 						.where(eq(schema.organization.id, organizationId))
 						.get();
 					// Gone since the member was read. To whoever asked, it is as if it had never been.
 					if (!was) throw APIError.from("NOT_FOUND", NO_WORKSPACE);
-					// Saying again what it already says changes nothing, and is nothing to write down.
-					if ((was.required === true) === required) return { required };
-					await db
+					// One statement says whether this changed anything, so that two requests saying the
+					// same thing at once cannot both find it unsaid.
+					const [changed] = await db
 						.update(schema.organization)
 						.set({ requireTwoFactor: required })
-						.where(eq(schema.organization.id, organizationId))
-						.run();
+						.where(
+							and(
+								eq(schema.organization.id, organizationId),
+								ne(schema.organization.requireTwoFactor, required),
+							),
+						)
+						.returning({ id: schema.organization.id });
+					// Saying again what it already says changes nothing, and is nothing to write down.
+					if (!changed) return { required };
 					record("workspace_two_factor_changed", {
 						userId: session.user.id,
 						actorId: session.user.id,

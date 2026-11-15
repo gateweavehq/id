@@ -119,8 +119,9 @@ export async function signedInAsAsked(
 		.where(eq(workspace.id, app.workspace))
 		.get();
 	if (!found) return false;
-	// Only a plain "no" is one. A workspace made before the column has it too, from its default.
-	if (found.asks === false || found.asks === null) return true;
+	// Only a plain "no" is one, which a workspace made before the column has from its default. The
+	// column is never empty, and anything else read from it asks.
+	if (found.asks === false) return true;
 	return isTwoFactor(found.method);
 }
 

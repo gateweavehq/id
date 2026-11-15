@@ -305,6 +305,10 @@ and their account:
 pnpm --filter @gateweave/id-web two-factor:remove --email someone@example.com
 ```
 
+In a workspace that requires two-factor sign-in, this is also the way back for an owner or admin who has lost
+theirs: their password signs them in again, and they turn two-factor on once more to reach the workspace's
+apps and its setting.
+
 ## Backups
 
 D1 keeps [Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) for you, always on, for 30 days

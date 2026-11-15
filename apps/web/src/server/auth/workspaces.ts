@@ -516,13 +516,14 @@ export function workspacePlugins(config: WorkspacesConfig) {
 				},
 			}),
 			// Only `/workspaces/require-two-factor` writes this: it takes no input from a request, and
-			// the gate's bodies are strict besides.
+			// the gate's bodies are strict besides. It is never empty, so that every workspace says
+			// yes or no and the check has nothing to guess at.
 			schema: {
 				organization: {
 					additionalFields: {
 						requireTwoFactor: {
 							type: "boolean",
-							required: false,
+							required: true,
 							defaultValue: false,
 							input: false,
 						},

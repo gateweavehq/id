@@ -249,7 +249,7 @@ export function createAuth(config: AuthConfig) {
 					})
 				: []),
 			// Before the provider, which must not see a session that a code is still owed for.
-			...twoFactorPlugins({ record, firstUseOfCode: config.firstUseOfCode }),
+			...twoFactorPlugins({ db: config.db, record, firstUseOfCode: config.firstUseOfCode }),
 			auditLog(config.db, record),
 			deleteAccountPlugin({ db: config.db, mailer, record }),
 			deploymentPlugin({

@@ -144,13 +144,28 @@ Your app cannot ask for this itself, since no token says how someone signed in. 
   says how to sign in again or where to set a second factor up. With `prompt=none`, your app gets
   `interaction_required`.
 - A refresh is refused with `invalid_grant` when the sign-in behind it was not one with a second factor. That
-  includes every refresh token from before the rule was turned on, the next time it is used. Access tokens
-  from before it last out their hour.
+  goes for refresh tokens from before the rule was turned on too, the next time each is used: one from a
+  sign-in with a password alone or with GitHub is refused, and so is one from a sign-in older than the release
+  that added the rule, which does not say how it was made. One from a sign-in that did use a second factor
+  goes on working. Access tokens from before the rule last out their hour.
 - **A refresh token works only while the person's sign-in at ID lasts.** Once they sign out of ID, or their
   session there runs out, the next refresh fails and your app has to send them to sign in again. Without the
   rule, a refresh token outlives the session.
 
 So treat a failed refresh as you would for someone who left: end your session and send them through sign-in.
+
+**What the rule does not promise.** It means that everyone your app gets signed in with two factors. It does
+not mean that one stolen factor is never enough. Someone who has no second factor yet sets their first one up
+from an ordinary sign-in, since they have nothing else to show, so whoever holds that person's password or
+GitHub account could set up their own. Once someone has a second factor, adding another takes a sign-in that
+used one. Ask the workspace's members to set theirs up before you rely on the rule.
+
+**If an owner or admin loses their second factor,** they can still sign in to ID, but not to the workspace's
+apps, and they cannot change the rule until they are signed in with two factors again. A recovery code after
+the password counts, and so does a passkey on another device. Someone who lost a passkey and can still sign
+in with a password or GitHub removes it on their account page and adds a new one. Someone who lost their
+authenticator and their recovery codes, and has no passkey, has to ask whoever runs the server to turn their
+two-factor sign-in off (`two-factor:remove` in [self-hosting](self-hosting.md)), and then turns it on again.
 
 ## When someone leaves or takes your app back
 

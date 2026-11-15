@@ -9,8 +9,10 @@ import {
 import { and, eq, exists, inArray, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { describeDevice } from "../../lib/device";
+import { TWO_FACTORS_TO_ADD_A_PASSKEY } from "../../lib/sign-in-method";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { factorsBehindOneFactor } from "./another-factor";
 
 const AUTHENTICATE_OPTIONS = "/passkey/generate-authenticate-options";
 const VERIFY_AUTHENTICATION = "/passkey/verify-authentication";
@@ -171,6 +173,20 @@ function passkeyRules(db: Database, githubSignIn: boolean) {
 		},
 		hooks: {
 			before: [
+				{
+					// Both steps, so that a ceremony begun by a session that showed two factors cannot be
+					// finished by one that did not.
+					matcher: (ctx) => ctx.path === REGISTER_OPTIONS || ctx.path === VERIFY_REGISTRATION,
+					handler: createAuthMiddleware(async (ctx) => {
+						// A passkey passes a workspace's rule on two-factor sign-in by itself. Someone who
+						// holds one of a person's factors, such as their GitHub account, could otherwise add
+						// their own and be both. A first one is taken on trust: see `another-factor.ts`.
+						const has = await factorsBehindOneFactor(db, ctx);
+						if (has?.authenticator || has?.passkey) {
+							throw APIError.from("FORBIDDEN", TWO_FACTORS_TO_ADD_A_PASSKEY);
+						}
+					}),
+				},
 				{
 					matcher: (ctx) => ctx.path === RENAME || ctx.path === VERIFY_REGISTRATION,
 					handler: createAuthMiddleware(async (ctx) => {

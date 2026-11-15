@@ -41,7 +41,9 @@ export const getAppToAllow = createServerFn({ method: "GET" })
 /**
  * What to tell a member about their workspace's rule on two-factor sign-in, on the way to one of its
  * apps. Null for anyone the app would not admit anyway, and for an app with no workspace, so asking
- * tells nobody whether a workspace they are not in has the rule, or that it exists.
+ * tells nobody whether a workspace they are not in has the rule, or that it exists. Null as well
+ * where the workspace asks for nothing, since there is then no rule to tell a member about, and the
+ * page would otherwise say that it asks.
  */
 export const getSecondFactorAsked = createServerFn({ method: "GET" })
 	.validator(z.string().max(200))
@@ -65,7 +67,7 @@ export const getSecondFactorAsked = createServerFn({ method: "GET" })
 		if (!(await maySignIn(db, { user, app }))) return null;
 		const [workspace, owed, passkey, password] = await Promise.all([
 			db
-				.select({ name: schema.organization.name })
+				.select({ name: schema.organization.name, asks: schema.organization.requireTwoFactor })
 				.from(schema.organization)
 				.where(eq(schema.organization.id, app.workspace))
 				.get(),
@@ -77,7 +79,8 @@ export const getSecondFactorAsked = createServerFn({ method: "GET" })
 				.where(and(eq(schema.account.userId, user.id), eq(schema.account.providerId, "credential")))
 				.get(),
 		]);
-		if (!workspace) return null;
+		// Only a plain "no" is one, as in the check.
+		if (!workspace || workspace.asks === false) return null;
 		const twoFactorOn = (user as { twoFactorEnabled?: boolean | null }).twoFactorEnabled === true;
 		return {
 			app: client.name,

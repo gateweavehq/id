@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { appRow, insertStatement } from "../src/server/auth/app-row";
 import { type Ceremony, FakeAuthenticator } from "./fake-authenticator";
 import { type GitHubPerson, gitHubCode, startId } from "./id-worker";
@@ -118,6 +118,8 @@ async function askToRegister(person: Person) {
 	return {
 		options: (await response.clone().json()) as RegistrationOptions,
 		cookie: withCookie(person.cookie, response),
+		/** The cookie that holds the ceremony, by itself. */
+		challenge: cookieOf(response),
 	};
 }
 
@@ -189,6 +191,17 @@ async function tryToSignIn(authenticator: FakeAuthenticator, ceremony: Ceremony 
 	return { response, client };
 }
 
+/**
+ * This person in a new session, made with a passkey they have. Someone who already has a passkey can
+ * only add another from a session that showed two factors: "Adding a second factor" in
+ * docs/architecture.md, which test/require-two-factor.test.ts holds.
+ */
+async function signedInWith(person: Person, authenticator: FakeAuthenticator): Promise<Person> {
+	const { response, client } = await tryToSignIn(authenticator);
+	expect(response.status).toBe(200);
+	return { ...person, client, cookie: cookieOf(response) };
+}
+
 async function sessionOf(client: string, response: Response) {
 	const reply = await api("/get-session", { client, cookie: cookieOf(response) });
 	return (await reply.json()) as { user: { id: string } } | null;
@@ -253,7 +266,7 @@ describe("adding a passkey", () => {
 	it("does not offer a device its own passkey again", async () => {
 		const person = await newPersonWithAPassword();
 		const { authenticator } = await withPasskey(person);
-		const { options } = await askToRegister(person);
+		const { options } = await askToRegister(await signedInWith(person, authenticator));
 		expect(options.excludeCredentials.map((credential) => credential.id)).toEqual([
 			authenticator.credentialId,
 		]);
@@ -297,7 +310,7 @@ describe("adding a passkey", () => {
 
 	it("uses a challenge once", async () => {
 		const person = await newPersonWithAPassword();
-		const { options, cookie } = await askToRegister(person);
+		const { options, cookie, challenge } = await askToRegister(person);
 		const authenticator = new FakeAuthenticator(origin);
 		const body = { response: authenticator.register(options) };
 		const first = await api("/passkey/verify-registration", {
@@ -307,9 +320,12 @@ describe("adding a passkey", () => {
 		});
 		expect(first.status).toBe(200);
 
+		// Signed in with the passkey, so that what refuses this is the challenge having been used, and
+		// not how they signed in.
+		const signedIn = await signedInWith(person, authenticator);
 		const again = await api("/passkey/verify-registration", {
-			client: person.client,
-			cookie,
+			client: signedIn.client,
+			cookie: `${signedIn.cookie}; ${challenge}`,
 			body,
 		});
 
@@ -458,10 +474,11 @@ describe("signing in with a passkey", () => {
 	it("does not take a challenge meant for adding a passkey", async () => {
 		const person = await newPersonWithAPassword();
 		const { authenticator } = await withPasskey(person);
-		const { options, cookie } = await askToRegister(person);
+		const signedIn = await signedInWith(person, authenticator);
+		const { options, cookie } = await askToRegister(signedIn);
 
 		const response = await api("/passkey/verify-authentication", {
-			client: person.client,
+			client: signedIn.client,
 			cookie,
 			body: { response: authenticator.signIn(options) },
 		});
@@ -683,8 +700,8 @@ describe("removing a passkey", () => {
 
 	it("removes it when another passkey is left", async () => {
 		const person = await newPersonWithOnlyACode();
-		const { passkeyId } = await withPasskey(person);
-		const { passkeyId: other } = await withPasskey(person);
+		const { authenticator, passkeyId } = await withPasskey(person);
+		const { passkeyId: other } = await withPasskey(await signedInWith(person, authenticator));
 
 		expect((await remove(person, passkeyId)).status).toBe(200);
 		expect((await passkeysOf(person)).map((passkey) => passkey.id)).toEqual([other]);
@@ -705,8 +722,8 @@ describe("removing a passkey", () => {
 
 	it("does not let two removals at once take the last two", async () => {
 		const person = await newPersonWithOnlyACode();
-		const { passkeyId: first } = await withPasskey(person);
-		const { passkeyId: second } = await withPasskey(person);
+		const { authenticator, passkeyId: first } = await withPasskey(person);
+		const { passkeyId: second } = await withPasskey(await signedInWith(person, authenticator));
 
 		const answers = await Promise.all([remove(person, first), remove(person, second)]);
 
@@ -853,7 +870,7 @@ describe("the audit log", () => {
 
 	it("records no removal that was refused", async () => {
 		const person = await newPersonWithOnlyACode();
-		const { passkeyId } = await withPasskey(person);
+		const { authenticator: first, passkeyId } = await withPasskey(person);
 		const refused = await api("/account/remove-passkey", { ...person, body: { id: passkeyId } });
 		expect(refused.status).toBe(400);
 		// Something later, by the same path.
@@ -861,10 +878,19 @@ describe("the audit log", () => {
 			...person,
 			body: { currentPassword: "none", newPassword: "another-long-password" },
 		});
-		const { authenticator } = await withPasskey(person);
+		const { authenticator } = await withPasskey(await signedInWith(person, first));
 		await tryToSignIn(authenticator);
-		await id.auditEventRecorded(person.userId, { type: "sign_in", detail: "passkey" });
-		const events = await id.auditEvents(person.userId);
+		// The second of two sign-ins with a passkey is the last thing here to be written.
+		const events = await vi.waitFor(
+			async () => {
+				const written = await id.auditEvents(person.userId);
+				expect(
+					written.filter(({ type, detail }) => type === "sign_in" && detail === "passkey"),
+				).toHaveLength(2);
+				return written;
+			},
+			{ timeout: 5_000 },
+		);
 		expect(events.filter(({ type }) => type === "passkey_removed")).toEqual([]);
 	});
 });

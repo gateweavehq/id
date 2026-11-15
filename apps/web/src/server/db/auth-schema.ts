@@ -134,7 +134,7 @@ export const organization = sqliteTable("organization", {
 	logo: text("logo"),
 	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 	metadata: text("metadata"),
-	requireTwoFactor: integer("require_two_factor", { mode: "boolean" }).default(false),
+	requireTwoFactor: integer("require_two_factor", { mode: "boolean" }).default(false).notNull(),
 });
 
 export const member = sqliteTable(

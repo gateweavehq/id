@@ -16,6 +16,21 @@ const TWO_FACTOR_METHODS: readonly string[] = ["passkey", "totp", "recovery_code
 export const SECOND_FACTOR_MISSING = "+two_factor";
 
 /**
+ * What someone who already has a second factor is told when they ask for another from a session that
+ * showed only one factor: "Adding a second factor" in docs/architecture.md. The account page says the
+ * first of these before anyone presses anything. The second covers someone whose authenticator is
+ * already on as well, who has nothing to turn on, and is refused before their password is looked at.
+ */
+export const TWO_FACTORS_TO_ADD_A_PASSKEY = {
+	code: "TWO_FACTORS_TO_ADD_A_PASSKEY",
+	message: "Sign in with your passkey or your authenticator code first, then add another passkey.",
+};
+export const TWO_FACTORS_TO_ADD_AN_AUTHENTICATOR = {
+	code: "TWO_FACTORS_TO_ADD_AN_AUTHENTICATOR",
+	message: "Sign in with your passkey first, then turn on two-factor sign-in.",
+};
+
+/**
  * Whether a session made this way showed two factors. One that does not say how it was made did not:
  * it is older than the column, or came from a path nobody has decided about, and asking that person to
  * sign in again costs little where letting them through would undo the rule.

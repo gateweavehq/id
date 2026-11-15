@@ -240,7 +240,8 @@ to everything else a person uses, so ID differs in these places:
   sign in. ID's is one conditional `DELETE`, so that removing two passkeys at once cannot get past the
   rule. Another passkey counts, a password counts, and so does GitHub on a deployment that still has it.
 - **Adding and removing need a recent sign-in,** so that someone at an unlocked computer cannot make
-  themselves a way back in or take away the owner's.
+  themselves a way back in or take away the owner's. Adding one to an account that already has a second
+  factor also needs a session that showed two: see "Adding a second factor".
 - **Names have a limit, and each step has a rate limit of its own.** The plugin has neither.
 
 A passkey is a way to sign in like any other: someone whose only one is a passkey is not sent to choose a
@@ -455,7 +456,8 @@ to do about it, where someone who does not belong is told nothing.
   refusing it would let someone who lost their phone into their account and keep them out of their apps.
 - **GitHub does not count by itself.** GitHub has its own second factor, and ID cannot see whether the person
   turned it on or was asked. Someone who came in through GitHub passes once they sign in here with a passkey,
-  or with a password and a code. The pages say so.
+  or with a password and a code. The pages say so. A provider is recorded by its own name, and one named
+  like a way of signing in that counts as two is recorded as nothing, so that it could never pass for it.
 - **Nothing counts as one factor.** A session made before the column has no method, and neither does one
   from a path nobody has decided about. Those are refused, so the person signs in again. Letting them through
   would undo the rule for as long as a session can be kept alive.
@@ -474,13 +476,18 @@ to do about it, where someone who does not belong is told nothing.
   app sends the person back to sign in. Off, a refresh token outlives the session as before. Keeping the
   method on the token itself would lift this, and is not done.
 - **What is already held is not taken away.** Turning the rule on deletes nothing: an access token from
-  before it runs out within the hour, and a refresh token is refused the next time it is used.
+  before it runs out within the hour, and a refresh token from a sign-in with one factor, or from a session
+  that does not say how it was made, is refused the next time it is used. One from a sign-in with two
+  factors goes on working while that session lasts, since it already meets the rule.
+- **The workspace always says yes or no.** `organization.require_two_factor` is `NOT NULL` and defaults to
+  false, and the check takes anything but a plain false as asking.
 - **The page.** The provider knows one page for a refusal, `/no-access`. That page sends a member who lacks
   only the second factor on to `/second-factor`, which names the workspace and the app, says what counts
   and that GitHub alone does not, and leads to the account page to add a passkey or turn two-factor on.
   Someone who already has one is offered "Sign in again", which asks the provider for the app's request
   with `prompt=login`, so nobody is signed out to do it. Someone outside the workspace still sees
-  `/no-access`, and asking `/second-factor` about an app they cannot use gets them the same.
+  `/no-access`, and asking `/second-factor` about an app they cannot use gets them the same. So does a
+  member asking about a workspace that has not turned the rule on, or the page would say that it asks.
 - **Turning it on or off** is `/workspaces/require-two-factor` (`workspace-two-factor.ts`), the only thing
   that writes `organization.require_two_factor`: the column takes no input, and the gate's bodies are strict.
   It wants a recent sign-in, since on it can end everyone's access and off lets a password alone back in.
@@ -489,6 +496,48 @@ to do about it, where someone who does not belong is told nothing.
   take the rule away. The workspace's page says so before anyone presses anything.
 - **Apps with no workspace are not asked about.** Nobody could ask on their behalf, and the products check
   their own membership.
+
+### Adding a second factor
+
+The rule goes by how a session was made, so whoever can add a passkey or an authenticator to an account can
+pass it. What may be added, and from where, is decided in `another-factor.ts` and held to in hooks on the
+plugins' own endpoints, not only on the account page.
+
+- **Someone who already has a second factor adds another only from a session that showed two.** Once
+  two-factor sign-in is on, or the account has a passkey, a session that is not `passkey`, `totp` or
+  `recovery_code` is refused with 403 at both steps of adding a passkey
+  (`/passkey/generate-register-options`, `/passkey/verify-registration`), at `/two-factor/enable`, and at
+  confirming an authenticator (`/two-factor/verify-totp` with a session, while two-factor is still off).
+  Without this, one factor would be enough to make the other: whoever held only a member's GitHub account
+  could sign in with it, add a passkey of their own and sign in with that, and whoever held only the
+  password of someone whose second factor is a passkey could turn two-factor on with it. Both steps of a
+  passkey are checked so that what a session with two factors began, one without cannot finish. The account
+  page says so in place of the button.
+- **A first second factor is taken on trust.** Someone with neither adds one from a session with one factor:
+  there is nothing else they could show, and nobody could otherwise ever meet the rule. So **the rule does
+  not mean that one stolen factor is never enough.** It means that every sign-in an app gets used two. For an
+  account that has no second factor yet, whoever holds its password or its GitHub account can enrol their
+  own and pass. A workspace that needs more has to see its members enrolled before it relies on the rule.
+- **Taking one away is not held to this, which leaves a gap.** Removing a passkey takes a recent sign-in and
+  another way in, and turning two-factor off takes the password, from a session with one factor as much as
+  two. So where someone's only second factor is a passkey, whoever holds their password or their GitHub
+  account can remove it, and is then adding a first one. Asking two factors for that too would leave a
+  person who lost their only passkey unable to replace it without whoever runs the deployment, who has no
+  tool for it. That trade has not been decided, and nothing is done about it here.
+
+**Someone who has lost their second factor** can still sign in to ID with what is left. What they lose is
+the workspace's apps and, as an owner or admin, changing the rule, since both want a session with two
+factors. Nobody can turn the rule off to let themselves in, and that is the point of asking the admin's own
+session. The ways back, in the order to try them:
+
+- **A recovery code,** after the password. That is a session with two factors: it reaches the apps, may
+  change the rule, and may add a passkey. To move to a new authenticator, turn two-factor off and on again.
+- **Another second factor they still have,** such as a passkey on another device.
+- **A lost passkey, with a password or GitHub still to sign in with:** remove it on the account page. With
+  no second factor left, the next one is a first again and is added from that session.
+- **A lost authenticator with no recovery codes and no passkey:** whoever runs the deployment runs
+  `two-factor:remove` for them ("Two-factor sign-in" above). Their password then signs them in, and they
+  turn it on again.
 
 ## Signing in to an app
 
@@ -1027,8 +1076,10 @@ was through Cloudflare's API, not its dashboard.
 `apps/web/test/require-two-factor.test.ts` holds a workspace that requires two-factor sign-in: what each way of
 signing in leaves on the session, a password alone refused at authorization and on refresh and admitted after
 a code, a passkey and a recovery code admitted and GitHub alone refused, a session with no method refused, and
-an admin who could not pass the rule unable to turn it on or off. It reads the pages over HTTP. No browser has
-driven them, and none of it has run on a deployed Worker.
+an admin who could not pass the rule unable to turn it on or off. It also holds "Adding a second factor":
+someone with an authenticator and only a GitHub sign-in refused a passkey, someone with a passkey and only a
+password refused another and an authenticator, and a first one taken from someone who has none. It reads the
+pages over HTTP. No browser has driven them, and none of it has run on a deployed Worker.
 
 Still unproven:
 

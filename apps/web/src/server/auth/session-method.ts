@@ -37,7 +37,12 @@ function replacedSession(context: GenericEndpointContext, userId: string): strin
 function methodOf(context: GenericEndpointContext | null, userId: string): string | null {
 	if (!context) return null;
 	const { path } = context;
-	if (path === PROVIDER_CALLBACK) return context.params?.id ?? null;
+	if (path === PROVIDER_CALLBACK) {
+		const provider = context.params?.id;
+		// A provider is one factor whatever it is called, so one named like a way of signing in that
+		// counts as two says nothing rather than pass for it.
+		return typeof provider === "string" && !isTwoFactor(provider) ? provider : null;
+	}
 	const signsIn = SIGN_IN_METHODS[path];
 	if (signsIn) return signsIn;
 	if (path === CHANGE_PASSWORD) return replacedSession(context, userId);

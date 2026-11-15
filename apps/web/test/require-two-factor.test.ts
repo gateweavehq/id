@@ -110,16 +110,26 @@ async function newPerson(): Promise<Person> {
 	return person;
 }
 
-/** How the session behind a cookie says it was made, as the database holds it. */
-async function methodOf(cookie: string): Promise<string | null | undefined> {
-	const reply = await api("/get-session", { cookie });
+/** How the session behind a cookie says it was made, as that server's database holds it. */
+async function methodIn(
+	worker: typeof id,
+	at: string,
+	cookie: string,
+): Promise<string | null | undefined> {
+	const reply = await worker.fetch(`${at}/api/auth/get-session`, {
+		headers: { "cf-connecting-ip": newClient(), cookie },
+	});
 	const signedIn = (await reply.json()) as { session: { id: string } } | null;
 	if (!signedIn) return undefined;
-	const row = await id.db
+	const row = await worker.db
 		.prepare("SELECT sign_in_method FROM session WHERE id = ?")
 		.bind(signedIn.session.id)
 		.first<{ sign_in_method: string | null }>();
 	return row?.sign_in_method;
+}
+
+function methodOf(cookie: string) {
+	return methodIn(id, origin, cookie);
 }
 
 /** A new sign-in with the password alone, which is all it takes while two-factor is off. */
@@ -187,17 +197,27 @@ async function signInWithRecoveryCode(person: Person, code: string) {
 	person.cookie = cookieOf(response);
 }
 
-/** Adds a passkey, then signs in with it from a new device. */
-async function signInWithPasskey(person: Person) {
-	const authenticator = new FakeAuthenticator(origin);
-	const asked = await api("/passkey/generate-register-options", { cookie: person.cookie });
-	expect(asked.status).toBe(200);
-	const added = await api("/passkey/verify-registration", {
-		cookie: `${person.cookie}; ${cookieOf(asked)}`,
+/** The second step of adding a passkey, for the session in `cookie` and the options `asked` gave. */
+async function finishAddingPasskey(
+	cookie: string,
+	asked: Response,
+	authenticator: FakeAuthenticator,
+) {
+	return api("/passkey/verify-registration", {
+		cookie: `${cookie}; ${cookieOf(asked)}`,
 		body: { response: authenticator.register(await asked.clone().json()) },
 	});
-	expect(added.status).toBe(200);
+}
 
+/** Tries to add a passkey. What comes back is the answer of the step that got furthest. */
+async function tryToAddPasskey(person: Person, authenticator = new FakeAuthenticator(origin)) {
+	const asked = await api("/passkey/generate-register-options", { cookie: person.cookie });
+	if (asked.status !== 200) return asked;
+	return finishAddingPasskey(person.cookie, asked, authenticator);
+}
+
+/** A new sign-in with a passkey this person has. */
+async function signInWithTheirPasskey(person: Person, authenticator: FakeAuthenticator) {
 	const challenge = await api("/passkey/generate-authenticate-options");
 	expect(challenge.status).toBe(200);
 	const response = await api("/passkey/verify-authentication", {
@@ -208,12 +228,52 @@ async function signInWithPasskey(person: Person) {
 	person.cookie = cookieOf(response);
 }
 
+/** Adds a passkey, then signs in with it from a new device. */
+async function signInWithPasskey(person: Person) {
+	const authenticator = new FakeAuthenticator(origin);
+	expect((await tryToAddPasskey(person, authenticator)).status).toBe(200);
+	await signInWithTheirPasskey(person, authenticator);
+	return authenticator;
+}
+
+async function passkeysOf(person: Person) {
+	const row = await id.db
+		.prepare("SELECT COUNT(*) AS passkeys FROM passkey WHERE user_id = ?")
+		.bind(person.userId)
+		.first<{ passkeys: number }>();
+	return row?.passkeys;
+}
+
+async function twoFactorIsOn(person: Person) {
+	const row = await id.db
+		.prepare("SELECT two_factor_enabled AS enabled FROM user WHERE id = ?")
+		.bind(person.userId)
+		.first<{ enabled: number | null }>();
+	return row?.enabled === 1;
+}
+
+async function expectRefusal(response: Response, code: string, message: string) {
+	expect(response.status).toBe(403);
+	expect(await response.json()).toMatchObject({ code, message });
+}
+
+const ANOTHER_PASSKEY = [
+	"TWO_FACTORS_TO_ADD_A_PASSKEY",
+	"Sign in with your passkey or your authenticator code first, then add another passkey.",
+] as const;
+const ANOTHER_AUTHENTICATOR = [
+	"TWO_FACTORS_TO_ADD_AN_AUTHENTICATOR",
+	"Sign in with your passkey first, then turn on two-factor sign-in.",
+] as const;
+
 let gitHubIds = 5000;
 
-/** Someone whose account GitHub made, signed in by GitHub and nothing else. */
-async function newPersonFromGitHub(): Promise<Person> {
+/**
+ * A sign-in with GitHub, by whoever GitHub says has this address. An account here with the same
+ * address is theirs, and gets the GitHub account linked to it. What comes back is the new session.
+ */
+async function signInWithGitHub(email: string): Promise<string> {
 	const number = ++gitHubIds;
-	const email = `github-rule-${number}@example.com`;
 	const someone: GitHubPerson = {
 		id: number,
 		login: `octo-${number}`,
@@ -229,7 +289,13 @@ async function newPersonFromGitHub(): Promise<Person> {
 		`${origin}/api/auth/callback/github?${new URLSearchParams({ code: gitHubCode(someone), state })}`,
 		{ headers: { "cf-connecting-ip": newClient(), cookie: cookieOf(started) } },
 	);
-	const cookie = cookieOf(back);
+	return cookieOf(back);
+}
+
+/** Someone whose account GitHub made, signed in by GitHub and nothing else. */
+async function newPersonFromGitHub(): Promise<Person> {
+	const email = `github-rule-${gitHubIds + 1}@example.com`;
+	const cookie = await signInWithGitHub(email);
 	const reply = await api("/get-session", { cookie });
 	const { user } = (await reply.json()) as { user: { id: string } };
 	return { email, cookie, userId: user.id };
@@ -466,7 +532,7 @@ describe("how a session was made", () => {
 		await signInWithPasskey(person);
 		expect(await methodOf(person.cookie)).toBe("passkey");
 
-		await signInWithPassword(person);
+		// From the passkey's session: with a passkey, a password alone may not add an authenticator.
 		const { key, recoveryCodes } = await enrol(person);
 		// The password and a code were both just shown, as a sign-in with both would.
 		expect(await methodOf(person.cookie)).toBe("totp");
@@ -513,6 +579,211 @@ describe("how a session was made", () => {
 		person.cookie = cookieOf(turnedOff);
 		expect(await methodOf(person.cookie)).toBe("password");
 	});
+
+	it("stays a passkey's when two-factor goes, since the passkey is still there", async () => {
+		const person = await newPerson();
+		await signInWithPassword(person);
+		await enrol(person);
+		await signInWithPasskey(person);
+		expect(await methodOf(person.cookie)).toBe("passkey");
+
+		const turnedOff = await api("/two-factor/disable", {
+			cookie: person.cookie,
+			body: { password: PASSWORD },
+		});
+		expect(turnedOff.status).toBe(200);
+		person.cookie = cookieOf(turnedOff);
+		expect(await twoFactorIsOn(person)).toBe(false);
+		expect(await methodOf(person.cookie)).toBe("passkey");
+	});
+
+	it("stays GitHub's when two-factor goes, and never becomes more than it was", async () => {
+		const person = await newPerson();
+		await signInWithPassword(person);
+		await enrol(person);
+		person.cookie = await signInWithGitHub(person.email);
+		expect(await methodOf(person.cookie)).toBe("github");
+
+		// It takes the password, which GitHub's session never showed. The session that follows is
+		// still only what GitHub vouched for.
+		const turnedOff = await api("/two-factor/disable", {
+			cookie: person.cookie,
+			body: { password: PASSWORD },
+		});
+		expect(turnedOff.status).toBe(200);
+		person.cookie = cookieOf(turnedOff);
+		expect(await twoFactorIsOn(person)).toBe(false);
+		expect(await methodOf(person.cookie)).toBe("github");
+	});
+
+	describe("on a server that sends no email", () => {
+		const bareOrigin = "https://bare-rule.test";
+		let bare: Awaited<ReturnType<typeof startId>>;
+
+		beforeAll(async () => {
+			bare = await startId(bareOrigin, { email: false, newDeployment: true });
+		});
+
+		afterAll(async () => {
+			await bare?.dispose();
+		});
+
+		function barePost(path: string, body: object, cookie?: string) {
+			return bare.fetch(`${bareOrigin}/api/auth${path}`, {
+				method: "POST",
+				headers: {
+					origin: bareOrigin,
+					"cf-connecting-ip": newClient(),
+					"content-type": "application/json",
+					...(cookie && { cookie }),
+				},
+				body: JSON.stringify(body),
+			});
+		}
+
+		it("is kept for claiming the server and for a link from its owner, as one factor each", async () => {
+			const claimed = await barePost("/deployment/claim", {
+				email: "owner-rule@example.com",
+				name: "The Owner",
+				newPassword: PASSWORD,
+			});
+			expect(claimed.status).toBe(200);
+			const owner = cookieOf(claimed);
+			expect(await methodIn(bare, bareOrigin, owner)).toBe("claim");
+
+			const asked = await barePost(
+				"/deployment/invitations/create",
+				{ email: "invited-rule@example.com" },
+				owner,
+			);
+			expect(asked.status).toBe(200);
+			const { link } = (await asked.json()) as { link: string };
+			const accepted = await barePost("/deployment/invitations/accept", {
+				token: new URL(link).hash.slice(1),
+				name: "Someone",
+				newPassword: PASSWORD,
+			});
+			expect(accepted.status).toBe(200);
+			expect(await methodIn(bare, bareOrigin, cookieOf(accepted))).toBe("invitation");
+
+			// Neither is two factors: the owner, fresh from claiming, cannot turn the rule on.
+			const made = await barePost("/organization/create", { name: "Solo", slug: "solo" }, owner);
+			expect(made.status).toBe(200);
+			const { id: organizationId } = (await made.json()) as { id: string };
+			const turned = await barePost(
+				"/workspaces/require-two-factor",
+				{ organizationId, required: true },
+				owner,
+			);
+			expect(turned.status).toBe(403);
+			expect(await errorCode(turned)).toBe("SECOND_FACTOR_FIRST");
+		});
+	});
+});
+
+describe("adding a second factor", () => {
+	// Whoever can add a passkey or an authenticator can pass a workspace's rule with it. So once a
+	// person has either, another comes only from a sign-in that showed two factors.
+
+	it("refuses a passkey to someone with an authenticator who signed in with GitHub alone", async () => {
+		const { owner, workspace, app, member } = await workspaceWithAMember();
+		const { key } = await enrol(member);
+		await requireTwoFactor(owner, workspace);
+
+		// Whoever holds their GitHub account, and nothing else of theirs.
+		member.cookie = await signInWithGitHub(member.email);
+		expect(await methodOf(member.cookie)).toBe("github");
+		expectRefused(await authorize(app, member), app);
+
+		await expectRefusal(await tryToAddPasskey(member), ...ANOTHER_PASSKEY);
+		expect(await passkeysOf(member)).toBe(0);
+		// Nor a second authenticator, even with the password this session never showed.
+		await expectRefusal(
+			await api("/two-factor/enable", { cookie: member.cookie, body: { password: PASSWORD } }),
+			...ANOTHER_AUTHENTICATOR,
+		);
+		expectRefused(await authorize(app, member), app);
+
+		// The person themselves, with their password and a code, adds one and uses it.
+		await signInWithCode(member, key);
+		await signInWithPasskey(member);
+		expect(await passkeysOf(member)).toBe(1);
+		expect((await signInToApp(app, member)).access_token).toBeTruthy();
+	});
+
+	it("refuses another passkey, and an authenticator, to someone with a passkey who signed in with a password", async () => {
+		const { owner, workspace, app, member } = await workspaceWithAMember();
+		await requireTwoFactor(owner, workspace);
+		const theirs = await signInWithPasskey(member);
+		// Asked for while signed in with the passkey, to be finished by someone else below.
+		const begun = await api("/passkey/generate-register-options", { cookie: member.cookie });
+		expect(begun.status).toBe(200);
+
+		// Whoever holds their password, and nothing else of theirs.
+		await signInWithPassword(member);
+		expectRefused(await authorize(app, member), app);
+
+		await expectRefusal(await tryToAddPasskey(member), ...ANOTHER_PASSKEY);
+		// What a session with two factors began, one without cannot finish.
+		await expectRefusal(
+			await finishAddingPasskey(member.cookie, begun, new FakeAuthenticator(origin)),
+			...ANOTHER_PASSKEY,
+		);
+		expect(await passkeysOf(member)).toBe(1);
+		await expectRefusal(
+			await api("/two-factor/enable", { cookie: member.cookie, body: { password: PASSWORD } }),
+			...ANOTHER_AUTHENTICATOR,
+		);
+		expect(await twoFactorIsOn(member)).toBe(false);
+		expectRefused(await authorize(app, member), app);
+
+		// Signed in with the passkey, they add another and turn two-factor on.
+		await signInWithTheirPasskey(member, theirs);
+		expect((await tryToAddPasskey(member)).status).toBe(200);
+		expect(await passkeysOf(member)).toBe(2);
+		await enrol(member);
+		expect(await twoFactorIsOn(member)).toBe(true);
+	});
+
+	it("does not let an authenticator asked for earlier be confirmed once there is a passkey", async () => {
+		const person = await newPerson();
+		await signInWithPassword(person);
+		// A key handed out while there was nothing else, and never confirmed.
+		const asked = await api("/two-factor/enable", {
+			cookie: person.cookie,
+			body: { password: PASSWORD },
+		});
+		expect(asked.status).toBe(200);
+		const { totpURI } = (await asked.json()) as { totpURI: string };
+		const key = new URL(totpURI).searchParams.get("secret") ?? "";
+		expect((await tryToAddPasskey(person)).status).toBe(200);
+
+		await expectRefusal(
+			await api("/two-factor/verify-totp", { cookie: person.cookie, body: { code: totp(key) } }),
+			...ANOTHER_AUTHENTICATOR,
+		);
+		expect(await twoFactorIsOn(person)).toBe(false);
+		expect(await methodOf(person.cookie)).toBe("password");
+	});
+
+	it("takes a first one on trust, from someone who has none and showed one factor", async () => {
+		const { owner, workspace, app, member } = await workspaceWithAMember();
+		const fromGitHub = await newPersonFromGitHub();
+		await join(fromGitHub, workspace, owner);
+		await requireTwoFactor(owner, workspace);
+
+		// A passkey, from GitHub's session.
+		expect(await methodOf(fromGitHub.cookie)).toBe("github");
+		expectRefused(await authorize(app, fromGitHub), app);
+		await signInWithPasskey(fromGitHub);
+		expect((await signInToApp(app, fromGitHub)).access_token).toBeTruthy();
+
+		// An authenticator, from a password's.
+		expect(await methodOf(member.cookie)).toBe("password");
+		expectRefused(await authorize(app, member), app);
+		await enrol(member);
+		expect((await signInToApp(app, member)).access_token).toBeTruthy();
+	});
 });
 
 describe("a workspace that requires two-factor sign-in", () => {
@@ -522,6 +793,12 @@ describe("a workspace that requires two-factor sign-in", () => {
 
 		const tokens = await signInToApp(app, member);
 		expect((await refresh(app, tokens.refresh_token)).access_token).toBeTruthy();
+
+		// The page about the rule has nothing to say here, even to someone who types its address. They
+		// get the page a stranger gets, and not one that says this workspace asks.
+		const direct = await open(`/second-factor?client_id=${app.clientId}`, member);
+		expect(direct.redirect?.pathname).toBe("/no-access");
+		expect(direct.html).not.toContain("asks");
 	});
 
 	it("refuses a password alone at authorization and on refresh, then admits a second factor", async () => {
@@ -639,7 +916,9 @@ describe("a workspace that requires two-factor sign-in", () => {
 		await signInWithPasskey(withPasskey);
 		expect((await signInToApp(app, withPasskey)).access_token).toBeTruthy();
 
-		// The same person from GitHub, once they have shown a second factor here.
+		// The person from GitHub has no second factor at all, so their first is taken on trust, and
+		// signing in with it admits them. Someone who has one already is refused: see "adding a second
+		// factor" below.
 		await signInWithPasskey(fromGitHub);
 		expect((await signInToApp(app, fromGitHub)).access_token).toBeTruthy();
 
@@ -681,6 +960,42 @@ describe("a workspace that requires two-factor sign-in", () => {
 		});
 		// A workspace that has not asked goes on as it always has.
 		expect((await refresh(unasked, free.refresh_token)).access_token).toBeTruthy();
+	});
+
+	it("refuses a refresh once the session behind it has run out, though its row is still there", async () => {
+		const { owner, workspace, app } = await workspaceWithAMember();
+		const elsewhere = await newWorkspace(owner, "Elsewhere");
+		const unasked = await newApp(owner, elsewhere);
+		await requireTwoFactor(owner, workspace);
+		const asked = await signInToApp(app, owner);
+		const free = await signInToApp(unasked, owner);
+		expect((await refresh(app, asked.refresh_token)).access_token).toBeTruthy();
+		const again = await signInToApp(app, owner);
+
+		// As a session is between running out and the daily cron that deletes it: it still says
+		// "totp", and is nobody's sign-in any more.
+		await id.db
+			.prepare("UPDATE session SET expires_at = ? WHERE user_id = ?")
+			.bind(Date.now() - 1000, owner.userId)
+			.run();
+
+		await expect(refresh(app, again.refresh_token)).rejects.toMatchObject({
+			error: "invalid_grant",
+			error_description: "This app's workspace asks for two-factor sign-in",
+		});
+		expect((await refresh(unasked, free.refresh_token)).access_token).toBeTruthy();
+	});
+
+	it("keeps a workspace's answer from ever being empty", async () => {
+		const { workspace } = await workspaceWithAMember();
+		// The check takes anything but a plain "no" as asking, and the column leaves it nothing else.
+		await expect(
+			id.db
+				.prepare("UPDATE organization SET require_two_factor = NULL WHERE id = ?")
+				.bind(workspace.id)
+				.run(),
+		).rejects.toThrow(/NOT NULL/);
+		expect(await ruleOf(workspace)).toBe(0);
 	});
 
 	it("tells someone outside the workspace nothing, and leaves an app with no workspace alone", async () => {
@@ -829,5 +1144,25 @@ describe("turning the rule on and off", () => {
 		const activity = await api("/account/activity", { cookie: owner.cookie });
 		const { events } = (await activity.json()) as { events: { type: string; detail: string }[] };
 		expect(events.filter(({ type }) => type === "workspace_two_factor_changed")).toHaveLength(2);
+
+		// Said several times at once, it is still one change.
+		const together = await Promise.all(
+			Array.from({ length: 6 }, () => setRule(owner, workspace, true)),
+		);
+		expect(together.map(({ status }) => status)).toEqual(Array(6).fill(200));
+		await id.auditEventRecorded(owner.userId, {
+			type: "workspace_two_factor_changed",
+			detail: JSON.stringify({ workspace: workspace.name, required: true }),
+		});
+		expect((await setRule(owner, workspace, false)).status).toBe(200);
+		await vi.waitFor(async () => {
+			const all = (await id.auditEvents(owner.userId)).filter(
+				({ type }) => type === "workspace_two_factor_changed",
+			);
+			// On, off, on once and off: a fifth would be the same change written twice.
+			expect(
+				all.map(({ detail }) => (JSON.parse(detail ?? "{}") as { required: boolean }).required),
+			).toEqual([true, false, true, false]);
+		});
 	});
 });

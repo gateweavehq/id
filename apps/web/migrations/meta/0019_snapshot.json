@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5c3bba21-3dd3-4206-9837-5a3dd3212bdc",
+  "id": "e325a8b1-4c49-4fe7-96e9-6839eb048e8b",
   "prevId": "48ba8298-d2ba-430e-aa0c-adfc41799334",
   "tables": {
     "audit_event": {
@@ -2079,7 +2079,7 @@
           "name": "require_two_factor",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false,
           "default": false
         }
