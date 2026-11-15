@@ -9,7 +9,10 @@ import {
 import { and, eq, exists, inArray, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { describeDevice } from "../../lib/device";
-import { TWO_FACTORS_TO_ADD_A_PASSKEY } from "../../lib/sign-in-method";
+import {
+	TWO_FACTORS_TO_ADD_A_PASSKEY,
+	TWO_FACTORS_TO_REMOVE_A_PASSKEY,
+} from "../../lib/sign-in-method";
 import type { Database } from "../db";
 import { schema } from "../db";
 import { factorsBehindOneFactor } from "./another-factor";
@@ -129,7 +132,8 @@ function passkeyRules(db: Database, githubSignIn: boolean) {
 					method: "POST",
 					body: z.object({ id: z.string() }),
 					// As recent a sign-in as adding one takes: a stolen cookie should not be able to take
-					// away what the person would use to get back in.
+					// away what the person would use to get back in. A hook below also asks that the
+					// sign-in showed two factors.
 					use: [freshSessionMiddleware],
 				},
 				async (ctx) => {
@@ -185,6 +189,17 @@ function passkeyRules(db: Database, githubSignIn: boolean) {
 						if (has?.authenticator || has?.passkey) {
 							throw APIError.from("FORBIDDEN", TWO_FACTORS_TO_ADD_A_PASSKEY);
 						}
+					}),
+				},
+				{
+					matcher: (ctx) => ctx.path === REMOVE,
+					handler: createAuthMiddleware(async (ctx) => {
+						// Whoever holds only a person's password or GitHub account could otherwise remove
+						// their passkey, be left with an account that has no second factor, and enrol their
+						// own on trust. Any passkey, not only the last: a session with one factor takes no
+						// second factor away. Renaming one takes nothing away, and is not held to this.
+						const has = await factorsBehindOneFactor(db, ctx);
+						if (has?.passkey) throw APIError.from("FORBIDDEN", TWO_FACTORS_TO_REMOVE_A_PASSKEY);
 					}),
 				},
 				{

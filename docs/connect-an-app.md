@@ -158,14 +158,18 @@ So treat a failed refresh as you would for someone who left: end your session an
 not mean that one stolen factor is never enough. Someone who has no second factor yet sets their first one up
 from an ordinary sign-in, since they have nothing else to show, so whoever holds that person's password or
 GitHub account could set up their own. Once someone has a second factor, adding another takes a sign-in that
-used one. Ask the workspace's members to set theirs up before you rely on the rule.
+used one, and so does taking one away: nobody removes a passkey, turns two-factor off or gets new recovery
+codes with a password or GitHub alone. Ask the workspace's members to set theirs up before you rely on the
+rule.
 
 **If an owner or admin loses their second factor,** they can still sign in to ID, but not to the workspace's
 apps, and they cannot change the rule until they are signed in with two factors again. A recovery code after
-the password counts, and so does a passkey on another device. Someone who lost a passkey and can still sign
-in with a password or GitHub removes it on their account page and adds a new one. Someone who lost their
-authenticator and their recovery codes, and has no passkey, has to ask whoever runs the server to turn their
-two-factor sign-in off (`two-factor:remove` in [self-hosting](self-hosting.md)), and then turns it on again.
+the password counts, and so does a passkey on another device. Signed in that way, they remove what they lost
+and set up its replacement on their account page. Someone with nothing left but a password or GitHub has to
+ask whoever runs the server, since those alone remove nothing: `two-factor:remove` turns two-factor sign-in
+off for someone who lost their authenticator and their recovery codes, and `passkeys:remove` removes the
+passkeys of someone who lost their only one (both in [self-hosting](self-hosting.md)). They then set one up
+again.
 
 ## When someone leaves or takes your app back
 

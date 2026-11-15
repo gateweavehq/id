@@ -18,6 +18,7 @@
 		"test:conformance": "node conformance/run.mjs",
 		"apps:add": "node scripts/add-app.ts",
 		"two-factor:remove": "node scripts/remove-two-factor.ts",
+		"passkeys:remove": "node scripts/remove-passkeys.ts",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to .wrangler/state",
 		"db:migrate:remote": "wrangler d1 migrations apply DB --remote",

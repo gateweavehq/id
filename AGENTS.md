@@ -65,7 +65,8 @@ deploys from a published release (`.github/workflows/deploy.yml`).
 
 A deployment registers its first-party apps with `pnpm --filter @gateweave/id-web apps:add`; see
 "Registering an app" in [docs/architecture.md](docs/architecture.md). `two-factor:remove` turns two-factor
-sign-in off for someone who has lost every other way in; see "Two-factor sign-in" there.
+sign-in off for someone who has lost every other way in, and `passkeys:remove` removes the passkeys of
+someone who lost their only one; see "Two-factor sign-in" there.
 
 Scope a command to one package with `pnpm --filter <name> <script>`, for example
 `pnpm --filter @gateweave/id-web test`. Run `pnpm verify` before you consider a change done.

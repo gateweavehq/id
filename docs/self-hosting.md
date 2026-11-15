@@ -297,17 +297,29 @@ means agreeing to them.
 
 ## Someone who is locked out
 
-Someone who has lost their authenticator and their recovery codes, and has no passkey or GitHub to get in with, can
-have two-factor sign-in turned off. Be sure who is asking first, since this is what stands between a stolen password
+Someone who has lost their authenticator and their recovery codes, and has no passkey to get in with, can have
+two-factor sign-in turned off. Be sure who is asking first, since this is what stands between a stolen password
 and their account:
 
 ```sh
 pnpm --filter @gateweave/id-web two-factor:remove --email someone@example.com
 ```
 
-In a workspace that requires two-factor sign-in, this is also the way back for an owner or admin who has lost
-theirs: their password signs them in again, and they turn two-factor on once more to reach the workspace's
-apps and its setting.
+Someone who has lost their only passkey, and has no authenticator, can have their passkeys removed. Removing a
+passkey takes a sign-in that used a second factor, so their password or GitHub alone cannot do it, which is what
+keeps anyone else who holds one of those from doing it. All of that person's passkeys go, and their activity says
+it was done for them. Be as sure who is asking:
+
+```sh
+pnpm --filter @gateweave/id-web passkeys:remove --email someone@example.com
+```
+
+Both take `--env` for an environment in `wrangler.jsonc` and `--local` for the local database, refuse an address
+nobody has, and leave the person's sessions alone. Afterwards the person signs in with what they have left and
+sets up a second factor again on their account page.
+
+In a workspace that requires two-factor sign-in, these are also the way back for an owner or admin who has lost
+theirs: once they have set one up again, they reach the workspace's apps and its setting.
 
 ## Backups
 

@@ -198,7 +198,9 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 		case "passkey_added":
 			return "Added a passkey";
 		case "passkey_removed":
-			return "Removed a passkey";
+			return detail === "operator"
+				? "Your passkeys were removed for you, at your request"
+				: "Removed a passkey";
 		case "two_factor_enabled":
 			return "Turned on two-factor sign-in";
 		case "two_factor_disabled":

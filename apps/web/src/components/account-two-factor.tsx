@@ -6,6 +6,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
+import { TWO_FACTORS_TO_CHANGE_TWO_FACTOR } from "#/lib/sign-in-method";
 
 /** What this section is doing, along with what only exists for as long as it is on the screen. */
 type Step =
@@ -31,8 +32,20 @@ const PASSWORD_ACTIONS = {
  * Asks for a code from an authenticator app when someone signs in with their password. A passkey has
  * two factors of its own and GitHub has its own sign-in, so neither asks, which is why only someone
  * with a password sees this. See "Two-factor sign-in" in docs/architecture.md.
+ *
+ * Turning it off and replacing the recovery codes take a sign-in that used a second factor. The
+ * server refuses any other, and this says so in place of the buttons.
  */
-export function AccountTwoFactor({ enabled, email }: { enabled: boolean; email: string }) {
+export function AccountTwoFactor({
+	enabled,
+	email,
+	signedInWithTwoFactors,
+}: {
+	enabled: boolean;
+	email: string;
+	/** Whether this session was made with a passkey, or a password and a code. */
+	signedInWithTwoFactors: boolean;
+}) {
 	const router = useRouter();
 	const [step, setStep] = useState<Step>({ name: "resting" });
 	const [error, setError] = useState<string | null>(null);
@@ -114,6 +127,7 @@ export function AccountTwoFactor({ enabled, email }: { enabled: boolean; email: 
 			{step.name === "resting" && (
 				<Resting
 					enabled={enabled}
+					mayChange={signedInWithTwoFactors}
 					onChoose={(action) => goTo({ name: "asking-password", action })}
 				/>
 			)}
@@ -237,9 +251,11 @@ export function AccountTwoFactor({ enabled, email }: { enabled: boolean; email: 
 
 function Resting({
 	enabled,
+	mayChange,
 	onChoose,
 }: {
 	enabled: boolean;
+	mayChange: boolean;
 	onChoose: (action: "turn-on" | "new-codes" | "turn-off") => void;
 }) {
 	if (!enabled) {
@@ -262,14 +278,18 @@ function Resting({
 				Signing in with your password asks for a code from your authenticator app. Passkeys and
 				GitHub do not ask.
 			</p>
-			<div className="flex flex-wrap gap-2">
-				<Button variant="outline" size="sm" onClick={() => onChoose("new-codes")}>
-					New recovery codes
-				</Button>
-				<Button variant="ghost" size="sm" onClick={() => onChoose("turn-off")}>
-					Turn off
-				</Button>
-			</div>
+			{mayChange ? (
+				<div className="flex flex-wrap gap-2">
+					<Button variant="outline" size="sm" onClick={() => onChoose("new-codes")}>
+						New recovery codes
+					</Button>
+					<Button variant="ghost" size="sm" onClick={() => onChoose("turn-off")}>
+						Turn off
+					</Button>
+				</div>
+			) : (
+				<p className="text-sm text-muted-foreground">{TWO_FACTORS_TO_CHANGE_TWO_FACTOR.message}</p>
+			)}
 		</div>
 	);
 }

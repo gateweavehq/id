@@ -144,6 +144,18 @@ test("someone cannot remove their last way to sign in, until they add another", 
 	const passkeys = await addPasskey(page);
 	const row = passkeys.getByRole("listitem");
 
+	// Removing a passkey takes a sign-in that used a second factor, and so far there is only the
+	// sign-up code's. The page says so where the button would be.
+	await expect(row.getByRole("button", { name: "Rename" })).toBeVisible();
+	await expect(row.getByRole("button", { name: "Remove" })).toHaveCount(0);
+	await expect(passkeys.getByText("then add or remove a passkey")).toBeVisible();
+	// The authenticator answers the offer in the email field, which signs them back in.
+	const signedIn = passkeySignIn(page);
+	await pressSignOut(page);
+	await signedIn;
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	await expect(row).toHaveCount(1);
+
 	await row.getByRole("button", { name: "Remove" }).click();
 	await row.getByRole("button", { name: "Keep" }).click();
 	await expect(row).toHaveCount(1);

@@ -240,8 +240,9 @@ to everything else a person uses, so ID differs in these places:
   sign in. ID's is one conditional `DELETE`, so that removing two passkeys at once cannot get past the
   rule. Another passkey counts, a password counts, and so does GitHub on a deployment that still has it.
 - **Adding and removing need a recent sign-in,** so that someone at an unlocked computer cannot make
-  themselves a way back in or take away the owner's. Adding one to an account that already has a second
-  factor also needs a session that showed two: see "Adding a second factor".
+  themselves a way back in or take away the owner's. Removing one, and adding one to an account that
+  already has a second factor, also need a session that showed two: see "Adding a second factor" and
+  "Taking a second factor away". Renaming one needs neither.
 - **Names have a limit, and each step has a rate limit of its own.** The plugin has neither.
 
 A passkey is a way to sign in like any other: someone whose only one is a passkey is not sent to choose a
@@ -272,6 +273,8 @@ Better Auth's two-factor plugin does the TOTP. ID differs from what it does by d
   For the same reason a reset by email leaves two-factor on, and the next sign-in asks.
 - **The key is shown once.** The plugin's `get-totp-uri` would show it again to anyone with the password
   and a session, and that is a second authenticator the person never hears of.
+- **Turning it off and replacing the recovery codes take a session that showed two factors,** on top of the
+  password the plugin asks for: see "Taking a second factor away".
 
 Recovery codes are encrypted, not hashed as you might expect. The plugin compares them after decrypting,
 and the authenticator key beside them has to be readable and guards the same thing, so hashing them would
@@ -290,7 +293,9 @@ session get a back-channel logout, and the page says they will ask the person to
 recovery codes does not.
 
 **Someone who has lost their authenticator** has a recovery code, then a passkey or GitHub if they added
-one. Someone with none of those needs whoever runs the deployment, on purpose:
+one. A recovery code or a passkey also lets them turn two-factor off and set it up again. GitHub signs them
+in to ID and no more than that: its session showed one factor, and does not turn two-factor off. Someone
+with no recovery code and no passkey needs whoever runs the deployment, on purpose:
 
 ```sh
 pnpm --filter @gateweave/id-web two-factor:remove --env cloud --email someone@example.com
@@ -298,6 +303,17 @@ pnpm --filter @gateweave/id-web two-factor:remove --env cloud --email someone@ex
 
 Whoever runs it has to be sure who is asking, which ID cannot help with, and the person's activity says it
 was done for them. Their sessions stay, since they lost a device and nobody said someone else has it.
+
+**Someone who has lost their only passkey,** and has no authenticator, is in the same place: removing a
+passkey takes a session that showed two factors, and they have none to show. `passkeys:remove` takes the
+same arguments and removes every passkey they have, since whoever runs it cannot tell one from another.
+Their activity says so in one line, their sessions stay, and with no second factor left they add a new
+passkey from an ordinary sign-in. It asks the same care: this is what stands between a stolen password and
+the account.
+
+```sh
+pnpm --filter @gateweave/id-web passkeys:remove --env cloud --email someone@example.com
+```
 
 **Apps cannot be told how someone signed in.** The provider strips `amr` from custom claims and always sends
 `acr: "0"`, so no app can require a second factor through its tokens. A rule that does lives in ID's own
@@ -518,12 +534,29 @@ plugins' own endpoints, not only on the account page.
   not mean that one stolen factor is never enough.** It means that every sign-in an app gets used two. For an
   account that has no second factor yet, whoever holds its password or its GitHub account can enrol their
   own and pass. A workspace that needs more has to see its members enrolled before it relies on the rule.
-- **Taking one away is not held to this, which leaves a gap.** Removing a passkey takes a recent sign-in and
-  another way in, and turning two-factor off takes the password, from a session with one factor as much as
-  two. So where someone's only second factor is a passkey, whoever holds their password or their GitHub
-  account can remove it, and is then adding a first one. Asking two factors for that too would leave a
-  person who lost their only passkey unable to replace it without whoever runs the deployment, who has no
-  tool for it. That trade has not been decided, and nothing is done about it here.
+
+### Taking a second factor away
+
+An account with no second factor takes its next one on trust, so whoever can remove a person's second factor
+can then enrol their own. Taking one away is therefore held to the same rule as adding one, in the same
+hooks.
+
+- **A session that showed one factor takes no second factor away.** Removing a passkey
+  (`/account/remove-passkey`), turning two-factor off (`/two-factor/disable`) and replacing the recovery
+  codes (`/two-factor/generate-backup-codes`) are refused with 403 unless the session is `passkey`, `totp`
+  or `recovery_code`. This is on top of what each already asks: a recent sign-in and another way in for a
+  passkey, the password for the other two. Without it, whoever held only the password or the GitHub account
+  of someone whose second factor is a passkey could remove the passkey and add their own. And a device
+  signed in with the password before two-factor was turned on, or GitHub's session with the password
+  typed in, could turn it off or hand itself new recovery codes.
+- **Any passkey, not only the last.** A person with two passkeys is not asked less. Renaming one takes
+  nothing away, and needs no more than a session.
+- **Only what is there.** Someone with two-factor off who asks to turn it off gets the plugin's own answer,
+  and someone with no passkey who names one gets the 404 a missing passkey gets.
+- **Nothing else removes one.** The passkey plugin's own `/passkey/delete-passkey` and the two-factor
+  plugin's `/two-factor/get-totp-uri` are closed. A password reset signs nobody in, leaves two-factor on
+  and touches no passkey. Deleting the account takes them with it, and leaves nothing to sign in to.
+- **The account page says so in place of each control,** as it does for adding.
 
 **Someone who has lost their second factor** can still sign in to ID with what is left. What they lose is
 the workspace's apps and, as an owner or admin, changing the rule, since both want a session with two
@@ -531,13 +564,17 @@ factors. Nobody can turn the rule off to let themselves in, and that is the poin
 session. The ways back, in the order to try them:
 
 - **A recovery code,** after the password. That is a session with two factors: it reaches the apps, may
-  change the rule, and may add a passkey. To move to a new authenticator, turn two-factor off and on again.
-- **Another second factor they still have,** such as a passkey on another device.
-- **A lost passkey, with a password or GitHub still to sign in with:** remove it on the account page. With
-  no second factor left, the next one is a first again and is added from that session.
-- **A lost authenticator with no recovery codes and no passkey:** whoever runs the deployment runs
-  `two-factor:remove` for them ("Two-factor sign-in" above). Their password then signs them in, and they
-  turn it on again.
+  change the rule, may add or remove a passkey, and may turn two-factor off. To move to a new
+  authenticator, turn it off and on again: with no second factor left, the new one is a first.
+- **Another second factor they still have,** such as a passkey on another device, or the authenticator
+  for someone who lost a passkey. From that session they remove what they lost and add its replacement.
+- **Nothing left but a password or GitHub:** whoever runs the deployment, who has to be sure who is asking.
+  `two-factor:remove` turns two-factor off for someone with no authenticator and no recovery codes, and
+  `passkeys:remove` removes the passkeys of someone who lost the only one ("Two-factor sign-in" above).
+  What is left then signs them in, and they set up a second factor again, as a first one.
+
+So losing one's only second factor costs a request to the operator, where it used to cost nothing. That is
+the price of the rule meaning anything once a person has enrolled.
 
 ## Signing in to an app
 
@@ -927,8 +964,8 @@ holds it, in D1.
 - **A wrong password from a session:** `password_refused`, since the person would want to know that someone with
   their session is guessing. The allowance per person bounds how many of these there can be.
 - **Changes to an account:** `password_changed` (`first`, `changed`, `reset` or `removed`), `passkey_added`,
-  `passkey_removed`, `two_factor_enabled`, `two_factor_disabled` (`operator` when `two-factor:remove` did
-  it), `recovery_codes_replaced`, `provider_linked`, `provider_unlinked`, and `sessions_revoked` for
+  `passkey_removed` (`operator`, once, when `passkeys:remove` did it), `two_factor_enabled`,
+  `two_factor_disabled` (`operator` when `two-factor:remove` did it), `recovery_codes_replaced`, `provider_linked`, `provider_unlinked`, and `sessions_revoked` for
   someone ending a session elsewhere.
 - **Workspaces:** `workspace_created`, `workspace_renamed`, `workspace_deleted`, `member_invited`,
   `invitation_canceled`, `invitation_accepted`, `invitation_declined`, `member_role_changed`,

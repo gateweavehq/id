@@ -244,6 +244,29 @@ async function passkeysOf(person: Person) {
 	return row?.passkeys;
 }
 
+async function passkeyIdsOf(person: Person) {
+	const { results } = await id.db
+		.prepare("SELECT id FROM passkey WHERE user_id = ? ORDER BY created_at, rowid")
+		.bind(person.userId)
+		.all();
+	return (results as { id: string }[]).map((row) => row.id);
+}
+
+function removePasskey(person: Person, passkeyId: string | undefined) {
+	return api("/account/remove-passkey", { cookie: person.cookie, body: { id: passkeyId } });
+}
+
+function turnTwoFactorOff(person: Person) {
+	return api("/two-factor/disable", { cookie: person.cookie, body: { password: PASSWORD } });
+}
+
+function replaceRecoveryCodes(person: Person) {
+	return api("/two-factor/generate-backup-codes", {
+		cookie: person.cookie,
+		body: { password: PASSWORD },
+	});
+}
+
 async function twoFactorIsOn(person: Person) {
 	const row = await id.db
 		.prepare("SELECT two_factor_enabled AS enabled FROM user WHERE id = ?")
@@ -264,6 +287,14 @@ const ANOTHER_PASSKEY = [
 const ANOTHER_AUTHENTICATOR = [
 	"TWO_FACTORS_TO_ADD_AN_AUTHENTICATOR",
 	"Sign in with your passkey first, then turn on two-factor sign-in.",
+] as const;
+const NO_PASSKEY_REMOVED = [
+	"TWO_FACTORS_TO_REMOVE_A_PASSKEY",
+	"Sign in with your passkey or your authenticator code first, then remove a passkey.",
+] as const;
+const TWO_FACTOR_KEPT = [
+	"TWO_FACTORS_TO_CHANGE_TWO_FACTOR",
+	"Sign in with your authenticator code, a recovery code or your passkey first, then turn off two-factor sign-in or replace your recovery codes.",
 ] as const;
 
 let gitHubIds = 5000;
@@ -597,22 +628,19 @@ describe("how a session was made", () => {
 		expect(await methodOf(person.cookie)).toBe("passkey");
 	});
 
-	it("stays GitHub's when two-factor goes, and never becomes more than it was", async () => {
+	it("stays GitHub's, which cannot make two-factor go, and never becomes more than it was", async () => {
 		const person = await newPerson();
 		await signInWithPassword(person);
 		await enrol(person);
 		person.cookie = await signInWithGitHub(person.email);
 		expect(await methodOf(person.cookie)).toBe("github");
 
-		// It takes the password, which GitHub's session never showed. The session that follows is
-		// still only what GitHub vouched for.
-		const turnedOff = await api("/two-factor/disable", {
-			cookie: person.cookie,
-			body: { password: PASSWORD },
-		});
-		expect(turnedOff.status).toBe(200);
-		person.cookie = cookieOf(turnedOff);
-		expect(await twoFactorIsOn(person)).toBe(false);
+		// Even with the password, which GitHub's session never showed: one factor does not take the
+		// other away. Nothing replaces the session, which is still only what GitHub vouched for.
+		const turnedOff = await turnTwoFactorOff(person);
+		expect(cookieOf(turnedOff)).not.toContain("session_token");
+		await expectRefusal(turnedOff, ...TWO_FACTOR_KEPT);
+		expect(await twoFactorIsOn(person)).toBe(true);
 		expect(await methodOf(person.cookie)).toBe("github");
 	});
 
@@ -782,6 +810,119 @@ describe("adding a second factor", () => {
 		expect(await methodOf(member.cookie)).toBe("password");
 		expectRefused(await authorize(app, member), app);
 		await enrol(member);
+		expect((await signInToApp(app, member)).access_token).toBeTruthy();
+	});
+});
+
+describe("taking a second factor away", () => {
+	// An account with no second factor takes its next one on trust. So whoever holds one of a person's
+	// factors must not be able to remove the other: they would enrol their own in its place.
+
+	it("refuses removing a passkey from a password's session and from GitHub's, and takes it from the passkey's", async () => {
+		const person = await newPerson();
+		const theirs = await signInWithPasskey(person);
+		expect((await tryToAddPasskey(person)).status).toBe(200);
+		const [first, second] = await passkeyIdsOf(person);
+		expect(second).toBeTruthy();
+
+		// Either of them, and not only the last: one factor takes no second factor away.
+		await signInWithPassword(person);
+		expect(await methodOf(person.cookie)).toBe("password");
+		await expectRefusal(await removePasskey(person, first), ...NO_PASSKEY_REMOVED);
+		await expectRefusal(await removePasskey(person, second), ...NO_PASSKEY_REMOVED);
+
+		person.cookie = await signInWithGitHub(person.email);
+		expect(await methodOf(person.cookie)).toBe("github");
+		await expectRefusal(await removePasskey(person, first), ...NO_PASSKEY_REMOVED);
+		expect(await passkeyIdsOf(person)).toEqual([first, second]);
+
+		await signInWithTheirPasskey(person, theirs);
+		expect((await removePasskey(person, second)).status).toBe(200);
+		expect(await passkeyIdsOf(person)).toEqual([first]);
+	});
+
+	it("leaves whoever holds only the password of someone with a passkey outside, whatever they try", async () => {
+		const { owner, workspace, app, member } = await workspaceWithAMember();
+		await requireTwoFactor(owner, workspace);
+		const theirs = await signInWithPasskey(member);
+		const [passkeyId] = await passkeyIdsOf(member);
+		expect((await signInToApp(app, member)).access_token).toBeTruthy();
+
+		// Whoever holds their password, and nothing else of theirs.
+		await signInWithPassword(member);
+		expectRefused(await authorize(app, member), app);
+
+		// Removing the passkey would leave an account whose next second factor is taken on trust.
+		await expectRefusal(await removePasskey(member, passkeyId), ...NO_PASSKEY_REMOVED);
+		await expectRefusal(await tryToAddPasskey(member), ...ANOTHER_PASSKEY);
+		await expectRefusal(
+			await api("/two-factor/enable", { cookie: member.cookie, body: { password: PASSWORD } }),
+			...ANOTHER_AUTHENTICATOR,
+		);
+		expect(await passkeyIdsOf(member)).toEqual([passkeyId]);
+		expect(await twoFactorIsOn(member)).toBe(false);
+		expectRefused(await authorize(app, member), app);
+		// Nothing was written down as removed.
+		expect(await id.auditEvents(member.userId)).not.toContainEqual(
+			expect.objectContaining({ type: "passkey_removed" }),
+		);
+
+		// The person themselves is where they were.
+		await signInWithTheirPasskey(member, theirs);
+		expect((await signInToApp(app, member)).access_token).toBeTruthy();
+	});
+
+	it("refuses turning two-factor off and new recovery codes to a session that showed one factor", async () => {
+		const person = await newPerson();
+		// Another device, signed in with the password before two-factor was on.
+		await signInWithPassword(person);
+		const earlier = { ...person };
+		await signInWithPassword(person);
+		const { key, recoveryCodes } = await enrol(person);
+		expect(await methodOf(earlier.cookie)).toBe("password");
+
+		await expectRefusal(await turnTwoFactorOff(earlier), ...TWO_FACTOR_KEPT);
+		await expectRefusal(await replaceRecoveryCodes(earlier), ...TWO_FACTOR_KEPT);
+		const fromGitHub = { ...person, cookie: await signInWithGitHub(person.email) };
+		await expectRefusal(await turnTwoFactorOff(fromGitHub), ...TWO_FACTOR_KEPT);
+		await expectRefusal(await replaceRecoveryCodes(fromGitHub), ...TWO_FACTOR_KEPT);
+		expect(await twoFactorIsOn(person)).toBe(true);
+
+		// The codes handed out at the start are still the ones that work: none were replaced.
+		await signInWithRecoveryCode(person, recoveryCodes[0] ?? "");
+		expect(await methodOf(person.cookie)).toBe("recovery_code");
+		const fromRecoveryCode = await replaceRecoveryCodes(person);
+		expect(fromRecoveryCode.status).toBe(200);
+
+		await signInWithCode(person, key);
+		expect(await methodOf(person.cookie)).toBe("totp");
+		expect((await replaceRecoveryCodes(person)).status).toBe(200);
+		expect((await turnTwoFactorOff(person)).status).toBe(200);
+		expect(await twoFactorIsOn(person)).toBe(false);
+	});
+
+	it("lets someone who lost their authenticator turn it off with a recovery code, and on again", async () => {
+		const { owner, workspace, app, member } = await workspaceWithAMember();
+		const { recoveryCodes } = await enrol(member);
+		await requireTwoFactor(owner, workspace);
+
+		await signInWithRecoveryCode(member, recoveryCodes[0] ?? "");
+		expect((await signInToApp(app, member)).access_token).toBeTruthy();
+
+		const turnedOff = await turnTwoFactorOff(member);
+		expect(turnedOff.status).toBe(200);
+		member.cookie = cookieOf(turnedOff);
+		expect(await twoFactorIsOn(member)).toBe(false);
+		// The code is gone, so what is left is the password, which the apps refuse.
+		expect(await methodOf(member.cookie)).toBe("password");
+		expectRefused(await authorize(app, member), app);
+
+		// With no second factor left, a new authenticator is a first one again.
+		const { key } = await enrol(member);
+		expect(await twoFactorIsOn(member)).toBe(true);
+		expect(await methodOf(member.cookie)).toBe("totp");
+		expect((await signInToApp(app, member)).access_token).toBeTruthy();
+		await signInWithCode(member, key);
 		expect((await signInToApp(app, member)).access_token).toBeTruthy();
 	});
 });

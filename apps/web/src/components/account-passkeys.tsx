@@ -9,6 +9,13 @@ import { authClient } from "#/lib/auth-client";
 import { nothingHappened, passkeyFailure } from "#/lib/passkey-errors";
 import { TWO_FACTORS_TO_ADD_A_PASSKEY } from "#/lib/sign-in-method";
 
+/**
+ * For someone with a passkey who signed in without one, who may neither add nor remove. The server
+ * has a sentence for each, and two that differ by a word would read as a mistake.
+ */
+const TWO_FACTORS_TO_ADD_OR_REMOVE =
+	"Sign in with your passkey or your authenticator code first, then add or remove a passkey.";
+
 interface ListedPasskey {
 	id: string;
 	name?: string | null | undefined;
@@ -20,8 +27,9 @@ interface ListedPasskey {
  * The passkeys that can sign this person in, where they can add, name and remove them. It loads in
  * the browser, as the sessions below it do, so that dates read in the person's own time zone.
  *
- * Someone who already has a second factor can only add a passkey from a sign-in that used one. The
- * server refuses any other, and this says so first, where a button that only failed would not.
+ * Someone who already has a second factor can only add a passkey from a sign-in that used one, and
+ * only such a sign-in removes one. The server refuses any other, and this says so first, in place of
+ * the buttons, where one that only failed would not.
  */
 export function AccountPasskeys({
 	twoFactorOn,
@@ -63,8 +71,8 @@ export function AccountPasskeys({
 	}
 
 	const canUsePasskeys = !hydrated || browserSupportsWebAuthn();
-	const signInFirst =
-		!signedInWithTwoFactors && (twoFactorOn || (passkeys !== null && passkeys.length > 0));
+	const hasPasskeys = passkeys !== null && passkeys.length > 0;
+	const signInFirst = !signedInWithTwoFactors && (twoFactorOn || hasPasskeys);
 
 	return (
 		<section aria-labelledby="passkeys-heading" className="space-y-4">
@@ -84,7 +92,9 @@ export function AccountPasskeys({
 				</p>
 			)}
 			{canUsePasskeys && signInFirst && (
-				<p className="text-sm text-muted-foreground">{TWO_FACTORS_TO_ADD_A_PASSKEY.message}</p>
+				<p className="text-sm text-muted-foreground">
+					{hasPasskeys ? TWO_FACTORS_TO_ADD_OR_REMOVE : TWO_FACTORS_TO_ADD_A_PASSKEY.message}
+				</p>
 			)}
 			{passkeys === null ? (
 				!error && <p className="text-sm text-muted-foreground">Loading…</p>
@@ -96,7 +106,13 @@ export function AccountPasskeys({
 			) : (
 				<ul className="divide-y rounded-lg border text-sm">
 					{passkeys.map((passkey) => (
-						<PasskeyRow key={passkey.id} passkey={passkey} onChange={load} onError={setError} />
+						<PasskeyRow
+							key={passkey.id}
+							passkey={passkey}
+							mayRemove={signedInWithTwoFactors}
+							onChange={load}
+							onError={setError}
+						/>
 					))}
 				</ul>
 			)}
@@ -106,10 +122,13 @@ export function AccountPasskeys({
 
 function PasskeyRow({
 	passkey,
+	mayRemove,
 	onChange,
 	onError,
 }: {
 	passkey: ListedPasskey;
+	/** Whether this session showed two factors. One that did not is told why above the list. */
+	mayRemove: boolean;
 	onChange: () => Promise<void>;
 	onError: (message: string | null) => void;
 }) {
@@ -209,9 +228,11 @@ function PasskeyRow({
 					<Button variant="ghost" size="sm" onClick={() => setMode("renaming")}>
 						Rename
 					</Button>
-					<Button variant="ghost" size="sm" onClick={() => setMode("removing")}>
-						Remove
-					</Button>
+					{mayRemove && (
+						<Button variant="ghost" size="sm" onClick={() => setMode("removing")}>
+							Remove
+						</Button>
+					)}
 				</div>
 			)}
 		</li>

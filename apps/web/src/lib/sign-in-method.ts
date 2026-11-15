@@ -31,6 +31,22 @@ export const TWO_FACTORS_TO_ADD_AN_AUTHENTICATOR = {
 };
 
 /**
+ * What a session that showed one factor is told when it asks to take a second factor away: "Taking a
+ * second factor away" in docs/architecture.md. Whoever holds one of a person's factors could otherwise
+ * remove the other and enrol their own in its place. The account page says these in place of the
+ * controls.
+ */
+export const TWO_FACTORS_TO_REMOVE_A_PASSKEY = {
+	code: "TWO_FACTORS_TO_REMOVE_A_PASSKEY",
+	message: "Sign in with your passkey or your authenticator code first, then remove a passkey.",
+};
+export const TWO_FACTORS_TO_CHANGE_TWO_FACTOR = {
+	code: "TWO_FACTORS_TO_CHANGE_TWO_FACTOR",
+	message:
+		"Sign in with your authenticator code, a recovery code or your passkey first, then turn off two-factor sign-in or replace your recovery codes.",
+};
+
+/**
  * Whether a session made this way showed two factors. One that does not say how it was made did not:
  * it is older than the column, or came from a path nobody has decided about, and asking that person to
  * sign in again costs little where letting them through would undo the rule.

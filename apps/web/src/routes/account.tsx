@@ -125,6 +125,7 @@ function AccountPage() {
 				<AccountTwoFactor
 					enabled={session.user.twoFactorEnabled === true}
 					email={session.user.email}
+					signedInWithTwoFactors={isTwoFactor(session.session.signInMethod)}
 				/>
 			)}
 			{data.passkeys && (

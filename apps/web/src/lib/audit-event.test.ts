@@ -194,6 +194,8 @@ describe("describeActivity", () => {
 		expect(words("sign_in_failed", "totp")).toBe("A sign-in with an authenticator app failed");
 		expect(words("two_factor_disabled")).toBe("Turned off two-factor sign-in");
 		expect(words("two_factor_disabled", "operator")).toContain("for you");
+		expect(words("passkey_removed")).toBe("Removed a passkey");
+		expect(words("passkey_removed", "operator")).toContain("for you");
 	});
 
 	it("tells a wrong password given while signed in from a failed sign-in", () => {
