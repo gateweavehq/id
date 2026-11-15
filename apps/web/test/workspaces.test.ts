@@ -275,7 +275,14 @@ describe("making a workspace", () => {
 		const workspace = await newWorkspace(owner, "Çay & Kahve");
 		const { you, members, workspace: seen } = await details(owner, workspace);
 		expect(you.role).toBe("owner");
-		expect(seen).toEqual({ id: workspace.id, name: "Çay & Kahve", slug: workspace.slug });
+		// All of it, so that a column added to the table does not reach the page unasked. Its rule on
+		// two-factor sign-in is off until someone turns it on.
+		expect(seen).toEqual({
+			id: workspace.id,
+			name: "Çay & Kahve",
+			slug: workspace.slug,
+			requireTwoFactor: false,
+		});
 		expect(members).toEqual([
 			{ id: you.memberId, name: owner.name, email: owner.email, role: "owner" },
 		]);

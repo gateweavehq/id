@@ -47,6 +47,21 @@ export function restartHref(search: Search): string {
 }
 
 /**
+ * The app's request again, asking for a new sign-in whoever is signed in now, for someone whose
+ * session falls short of what a workspace asks. Nobody is signed out for it, so the apps they are
+ * signed in to hear nothing. `none` goes, since it cannot stand beside any other prompt.
+ */
+export function signInAgainHref(search: Search): string {
+	const [path, query] = restartHref(search).split("?");
+	const request = new URLSearchParams(query);
+	const prompts = new Set((request.get("prompt") ?? "").split(" ").filter(Boolean));
+	prompts.delete("none");
+	prompts.add("login");
+	request.set("prompt", [...prompts].join(" "));
+	return `${path}?${request}`;
+}
+
+/**
  * Whether a response says where to go. The auth client has already sent the browser there, so a page
  * that navigated as well would cancel it.
  */

@@ -59,6 +59,8 @@ that run on Cloudflare, next to [Gateweave Track](https://github.com/gateweavehq
 - **Workspaces.** People can make workspaces, invite each other and
   [connect their own apps](docs/connect-an-app.md), which only that workspace's members can use. Groups
   decide who in a workspace may sign in to which app, and an app can ask for them as a `groups` claim.
+  A workspace can require two-factor sign-in, and its apps then only admit people who signed in with a
+  passkey, or with a password and a code.
   These apps do not hear about a sign-out yet. One of them can be
   [Cloudflare Access](docs/cloudflare-access.md), which puts an internal app behind ID through a tunnel,
   with no server of your own to run. There are guides for [Grafana](docs/recipes/grafana.md),

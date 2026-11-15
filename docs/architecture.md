@@ -299,8 +299,8 @@ Whoever runs it has to be sure who is asking, which ID cannot help with, and the
 was done for them. Their sessions stay, since they lost a device and nobody said someone else has it.
 
 **Apps cannot be told how someone signed in.** The provider strips `amr` from custom claims and always sends
-`acr: "0"`, so no app can require a second factor through its tokens. A rule that does has to live in ID's
-own check at authorization.
+`acr: "0"`, so no app can require a second factor through its tokens. A rule that does lives in ID's own
+check at authorization: see "A workspace that requires two-factor sign-in".
 
 ## Workspaces
 
@@ -322,6 +322,7 @@ granted by name, so a role this build has not heard of has none.
 | See the workspace and its members, and leave | Yes    | Yes              | Yes    |
 | Rename, invite, see and withdraw invitations | Yes    | Yes              | No     |
 | Add and change apps, make and manage groups  | Yes    | Yes              | No     |
+| Require two-factor sign-in for its apps      | Yes    | Yes              | No     |
 | Change a role, remove someone                | Anyone | Anyone but owner | No     |
 | Make someone an owner                        | Yes    | No               | No     |
 | Delete the workspace                         | Yes    | No               | No     |
@@ -436,6 +437,59 @@ on them would let any workspace's admin receive a member's address silently. The
 the workspace that owns it and the host it sends people back to, from the app's own row, and says that
 nobody has checked who runs it. Asked about an app they cannot use, it tells a person nothing.
 
+### A workspace that requires two-factor sign-in
+
+An owner or admin can say that their workspace's apps only admit people who signed in with a second factor.
+It is off unless someone turns it on, and a workspace that has not is asked nothing new. It is a fourth
+rule, after the three above, and it stands beside `maySignIn` rather than inside it (`signedInAsAsked`,
+in `who-may-sign-in.ts`), because the answer is different: someone it refuses does belong, and is told what
+to do about it, where someone who does not belong is told nothing.
+
+- **The session remembers how it was made.** `session.sign_in_method` holds the audit log's word for it:
+  `password`, `totp`, `recovery_code`, `passkey`, `github`, `code`, `invitation` or `claim`. A database
+  hook writes it as the row is made, from the path that made it (`session-method.ts`). It takes no input, so
+  `/update-session` cannot set it.
+- **What counts as two factors:** a passkey, since user verification is required of every one; a code from an
+  authenticator; and a recovery code. Those last two are only ever taken after the right password. A recovery
+  code counts because it is what ID already takes in place of the authenticator's code, and works once:
+  refusing it would let someone who lost their phone into their account and keep them out of their apps.
+- **GitHub does not count by itself.** GitHub has its own second factor, and ID cannot see whether the person
+  turned it on or was asked. Someone who came in through GitHub passes once they sign in here with a passkey,
+  or with a password and a code. The pages say so.
+- **Nothing counts as one factor.** A session made before the column has no method, and neither does one
+  from a path nobody has decided about. Those are refused, so the person signs in again. Letting them through
+  would undo the rule for as long as a session can be kept alive.
+- **Sessions that replace one.** Confirming an authenticator to turn two-factor on makes the new session
+  `totp`: the password was asked for and a code was shown. Changing a password keeps what the session it
+  replaces had. Turning two-factor off makes a `totp` or `recovery_code` session `password`, and leaves a
+  passkey's alone. A passkey removed later does not change the session it made.
+- **Where it runs:** wherever the check above does. At authorization, in `postLogin.shouldRedirect`, by the
+  session asking. At every token, in `customTokenResponseFields`, by the session behind the code or the
+  refresh token, which the provider does not pass by itself (see "A patched dependency"). So a code handed
+  out a moment before the rule was turned on buys nothing, and neither does a refresh token from a sign-in
+  with one factor. It fails closed: a workspace it cannot read, or no session to go by, refuses.
+- **A refresh lasts as long as the session behind it, where the rule is on.** A session that has ended
+  cannot say how it was made, and the provider clears it from the token. So in a workspace with the rule on,
+  signing out of ID, or a session running out after its seven days, ends what `offline_access` gave, and the
+  app sends the person back to sign in. Off, a refresh token outlives the session as before. Keeping the
+  method on the token itself would lift this, and is not done.
+- **What is already held is not taken away.** Turning the rule on deletes nothing: an access token from
+  before it runs out within the hour, and a refresh token is refused the next time it is used.
+- **The page.** The provider knows one page for a refusal, `/no-access`. That page sends a member who lacks
+  only the second factor on to `/second-factor`, which names the workspace and the app, says what counts
+  and that GitHub alone does not, and leads to the account page to add a passkey or turn two-factor on.
+  Someone who already has one is offered "Sign in again", which asks the provider for the app's request
+  with `prompt=login`, so nobody is signed out to do it. Someone outside the workspace still sees
+  `/no-access`, and asking `/second-factor` about an app they cannot use gets them the same.
+- **Turning it on or off** is `/workspaces/require-two-factor` (`workspace-two-factor.ts`), the only thing
+  that writes `organization.require_two_factor`: the column takes no input, and the gate's bodies are strict.
+  It wants a recent sign-in, since on it can end everyone's access and off lets a password alone back in.
+  **And the admin's own session has to pass the rule, in both directions.** Otherwise an admin would be
+  turned away from their own apps the moment it was on, and whoever held a cookie the rule refuses could
+  take the rule away. The workspace's page says so before anyone presses anything.
+- **Apps with no workspace are not asked about.** Nobody could ask on their behalf, and the products check
+  their own membership.
+
 ## Signing in to an app
 
 An app sends someone to the authorization endpoint, and the provider decides where they go next. Each
@@ -461,7 +515,8 @@ and `lib/search.ts`:
 |              | with a way to sign in, it tells the provider they are done.                         |
 | `/consent`   | The app sent `prompt=consent`. Workspace apps will always come here.                |
 | `/no-access` | The check above refused them. They can use another account, or go back to the app,  |
-|              | which gets `access_denied`.                                                         |
+|              | which gets `access_denied`. A member who lacks only the second factor their         |
+|              | workspace asks for goes on from here to `/second-factor`.                           |
 
 The check does not depend on any of this. A page that sends the wrong thing gets a bad signature, and
 a person who skips a page runs into the same checks at the next one.
@@ -722,9 +777,9 @@ both sides of a crossing.
 
 ## A patched dependency
 
-`patches/` changes two things in how `@better-auth/oauth-provider` sends back-channel logouts. pnpm stops an
-install when a patch no longer has its version, so an upgrade has to look at both again: drop what upstream
-has fixed, and move the rest.
+`patches/` changes two things in how `@better-auth/oauth-provider` sends back-channel logouts, and one in
+what it tells the token hook. pnpm stops an install when a patch no longer has its version, so an upgrade
+has to look at each again: drop what upstream has fixed, and move the rest.
 
 - **`redirect: "error"`, which Workers refuse outright,** so every logout failed with only a warning in the
   log. It is `"manual"` now. The provider treats anything but 200 or 204 as a failure, so a redirect still
@@ -737,6 +792,10 @@ has fixed, and move the rest.
   signed out counts as a success (section 2.7). An app down for longer than that is handed on (below).
 - **`backchannelLogoutUndelivered`,** an option of ours, which the provider calls when all three tries of
   a logout failed that way, with the app's client id, the `sub` and the session's id.
+- **`sessionId` for `customTokenResponseFields`.** The hook is told the code's session and nothing of a
+  refresh token's, and a workspace that requires two-factor sign-in goes by the session behind either. One
+  line passes what the provider already has. Without it the hook gets no session, which refuses everyone
+  in such a workspace and nobody else, and `test/require-two-factor.test.ts` fails.
 
 ## Logouts an app missed
 
@@ -812,7 +871,8 @@ holds it, in D1.
   wrong code, against the account it was for. `two_factor_asked` is a right password with a code still
   owed, which is not someone signing in, though someone who did not enter it will want to know.
 - **Apps:** `app_sign_in` when an app exchanges a code, the moment it learns who someone is, `refused`
-  by the check at authorization or on refresh, `consent_granted`, `consent_denied`, `consent_revoked` when
+  by the check at authorization or on refresh (its detail ends in `+two_factor` when a second factor was
+  all the person lacked), `consent_granted`, `consent_denied`, `consent_revoked` when
   someone takes an app back, and `token_revoked` when an app revokes a token. That last one names no person: an app's server is asking, and tokens are
   stored hashed.
 - **A wrong password from a session:** `password_refused`, since the person would want to know that someone with
@@ -824,7 +884,8 @@ holds it, in D1.
 - **Workspaces:** `workspace_created`, `workspace_renamed`, `workspace_deleted`, `member_invited`,
   `invitation_canceled`, `invitation_accepted`, `invitation_declined`, `member_role_changed`,
   `member_removed`, `member_left`, `group_created`, `group_renamed`, `group_deleted`, `group_member_added`,
-  `group_member_removed` and `app_groups_changed`.
+  `group_member_removed`, `app_groups_changed`, and `workspace_two_factor_changed` when an admin turns
+  the rule on two-factor sign-in on or off, with which in `detail`.
 - **The deployment:** `app_added`, from `apps:add`. Who ran it is between them and Cloudflare. The owner's
   changes to it are `deployment_sign_up_changed`, `deployment_invitation_created`,
   `deployment_invitation_canceled`, `deployment_allow_added` and `deployment_allow_removed`; the last two
@@ -963,8 +1024,15 @@ provider and an app added through the workspace form at its defaults, as
 12 sign-ins it fetched the keys each time and never called userinfo, so what it knows comes from the ID token. That
 was through Cloudflare's API, not its dashboard.
 
+`apps/web/test/require-two-factor.test.ts` holds a workspace that requires two-factor sign-in: what each way of
+signing in leaves on the session, a password alone refused at authorization and on refresh and admitted after
+a code, a passkey and a recovery code admitted and GitHub alone refused, a session with no method refused, and
+an admin who could not pass the rule unable to turn it on or off. It reads the pages over HTTP. No browser has
+driven them, and none of it has run on a deployed Worker.
+
 Still unproven:
 
+- A workspace that requires two-factor sign-in, in a browser and on a deployed Worker.
 - A real passkey, from Windows Hello or a phone, rather than a virtual authenticator.
 - An invitation email sent by a deployed Worker.
 - A workspace's app that someone runs, rather than one a script plays.

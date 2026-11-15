@@ -1,4 +1,5 @@
-import { and, asc, eq, exists, notExists, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, notExists, or, sql } from "drizzle-orm";
+import { isTwoFactor } from "../../lib/sign-in-method";
 import type { Database } from "../db";
 import { schema } from "../db";
 
@@ -74,6 +75,53 @@ export async function maySignIn(
 		)
 		.get();
 	return admitted !== undefined;
+}
+
+/**
+ * Whether this session is good enough for this app: a workspace can ask that its apps only admit
+ * people who signed in with a second factor. It stands beside `maySignIn` and not inside it, because
+ * someone it refuses does belong, and is told what to do about it, where someone who does not belong
+ * is told nothing. Apps cannot ask this themselves, since no token says how someone signed in.
+ *
+ * It fails closed like the check above: an app or a workspace it cannot read is refused. So is a
+ * session that has ended or does not say how it was made, once the workspace asks, since nothing then
+ * shows a second factor. A workspace that has not asked admits any session, and so does an app with
+ * no workspace, which has nobody to ask on its behalf.
+ */
+export async function signedInAsAsked(
+	db: Database,
+	{
+		user,
+		app,
+		sessionId,
+	}: {
+		user: { id?: unknown } | null | undefined;
+		app: AppIdentity | undefined;
+		sessionId: string | null | undefined;
+	},
+): Promise<boolean> {
+	if (!app) return false;
+	if (!app.workspace) return true;
+	if (typeof user?.id !== "string" || !user.id) return false;
+	const { organization: workspace, session } = schema;
+	// One query, as above. The session has to be this person's and still good.
+	const found = await db
+		.select({ asks: workspace.requireTwoFactor, method: session.signInMethod })
+		.from(workspace)
+		.leftJoin(
+			session,
+			and(
+				eq(session.id, sessionId ?? ""),
+				eq(session.userId, user.id),
+				gt(session.expiresAt, new Date()),
+			),
+		)
+		.where(eq(workspace.id, app.workspace))
+		.get();
+	if (!found) return false;
+	// Only a plain "no" is one. A workspace made before the column has it too, from its default.
+	if (found.asks === false || found.asks === null) return true;
+	return isTwoFactor(found.method);
 }
 
 /**

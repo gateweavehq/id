@@ -1,3 +1,4 @@
+import { SECOND_FACTOR_MISSING } from "./sign-in-method";
 import { roleName } from "./workspace";
 
 /** What the audit log records, and how the account page says it. */
@@ -37,6 +38,7 @@ export const AUDIT_EVENT_TYPES = [
 	"workspace_created",
 	"workspace_renamed",
 	"workspace_deleted",
+	"workspace_two_factor_changed",
 	"member_invited",
 	"invitation_canceled",
 	"invitation_accepted",
@@ -81,6 +83,15 @@ function workspaceDetail(detail: string | null): { workspace: string; role: stri
 		workspace: typeof parsed?.workspace === "string" ? parsed.workspace : "a workspace",
 		role: typeof parsed?.role === "string" ? roleName(parsed.role).toLowerCase() : undefined,
 	};
+}
+
+/** Whether a workspace turned its rule on. What cannot be read says off, the plainer of the two. */
+function requiredIn(detail: string | null): boolean {
+	try {
+		return JSON.parse(detail ?? "{}")?.required === true;
+	} catch {
+		return false;
+	}
 }
 
 /** What an app's event keeps in `detail`: its name is all that is left once it is deleted. */
@@ -161,7 +172,9 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 		case "app_sign_in":
 			return `Signed in to ${theApp}`;
 		case "refused":
-			return `Was refused entry to ${theApp}`;
+			return detail?.endsWith(SECOND_FACTOR_MISSING)
+				? `Was refused entry to ${theApp}, whose workspace asks for two-factor sign-in`
+				: `Was refused entry to ${theApp}`;
 		case "consent_granted":
 			return `Allowed ${theApp} to see this account`;
 		case "consent_denied":
@@ -248,6 +261,12 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 			return `Renamed a workspace to ${workspaceDetail(detail).workspace}`;
 		case "workspace_deleted":
 			return `Deleted the workspace ${workspaceDetail(detail).workspace}`;
+		case "workspace_two_factor_changed": {
+			const { workspace } = workspaceDetail(detail);
+			return requiredIn(detail)
+				? `Required two-factor sign-in for the apps of ${workspace}`
+				: `Stopped requiring two-factor sign-in for the apps of ${workspace}`;
+		}
 		case "member_invited": {
 			const { workspace, role } = workspaceDetail(detail);
 			return `Invited someone to ${workspace}${role ? ` as ${role}` : ""}`;

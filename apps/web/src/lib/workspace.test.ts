@@ -30,6 +30,7 @@ describe("can", () => {
 		"cancelInvitation",
 		"manageApps",
 		"manageGroups",
+		"requireTwoFactor",
 	] as const)("keeps %s to owners and admins", (action) => {
 		expect(allowed((actor) => can(actor, action))).toEqual(["owner", "admin"]);
 	});

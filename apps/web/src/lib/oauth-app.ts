@@ -37,3 +37,55 @@ export const getAppToAllow = createServerFn({ method: "GET" })
 			.get();
 		return workspace ? { ...about, workspace: workspace.name } : null;
 	});
+
+/**
+ * What to tell a member about their workspace's rule on two-factor sign-in, on the way to one of its
+ * apps. Null for anyone the app would not admit anyway, and for an app with no workspace, so asking
+ * tells nobody whether a workspace they are not in has the rule, or that it exists.
+ */
+export const getSecondFactorAsked = createServerFn({ method: "GET" })
+	.validator(z.string().max(200))
+	.handler(async ({ data: clientId }) => {
+		const { db, getAuth } = await import("#/server/auth");
+		const { schema } = await import("#/server/db");
+		const { hasPasskey } = await import("#/server/auth/passkeys");
+		const { appIn, maySignIn, signedInAsAsked } = await import("#/server/auth/who-may-sign-in");
+		const { and, eq } = await import("drizzle-orm");
+		const session = await getAuth().api.getSession({ headers: getRequestHeaders() });
+		if (!session) return null;
+		const client = await db
+			.select({ name: schema.oauthClient.name, metadata: schema.oauthClient.metadata })
+			.from(schema.oauthClient)
+			.where(eq(schema.oauthClient.clientId, clientId))
+			.get();
+		// Read as the check reads it, so that this page and the check cannot disagree about whose it is.
+		const app = appIn(client?.metadata);
+		if (!client || !app?.workspace) return null;
+		const { user } = session;
+		if (!(await maySignIn(db, { user, app }))) return null;
+		const [workspace, owed, passkey, password] = await Promise.all([
+			db
+				.select({ name: schema.organization.name })
+				.from(schema.organization)
+				.where(eq(schema.organization.id, app.workspace))
+				.get(),
+			signedInAsAsked(db, { user, app, sessionId: session.session.id }).then((asAsked) => !asAsked),
+			hasPasskey(db, user.id),
+			db
+				.select({ id: schema.account.id })
+				.from(schema.account)
+				.where(and(eq(schema.account.userId, user.id), eq(schema.account.providerId, "credential")))
+				.get(),
+		]);
+		if (!workspace) return null;
+		const twoFactorOn = (user as { twoFactorEnabled?: boolean | null }).twoFactorEnabled === true;
+		return {
+			app: client.name,
+			workspace: workspace.name,
+			/** Whether this session falls short of the rule. False once they have signed in with more. */
+			owed,
+			/** Whether they have something to sign in again with: a passkey, or a password and a code. */
+			ready: passkey || (twoFactorOn && password !== undefined),
+			hasPassword: password !== undefined,
+		};
+	});

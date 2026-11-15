@@ -130,6 +130,28 @@ app. Being an owner or an admin does not change that. An app narrowed to groups 
 nobody, and a group an app names cannot be deleted until the app stops naming it, so an app only ever opens
 to everyone when an admin chooses that.
 
+## When the workspace requires two-factor sign-in
+
+An owner or admin can turn this on under **Two-factor sign-in** on the workspace's page. Your app then only
+gets people who signed in to ID with a second factor: a passkey, or a password followed by a code from an
+authenticator app or a recovery code. Signing in with GitHub does not count by itself, because ID cannot see
+whether GitHub asked for a second factor. To change the setting, an admin has to be signed in that way
+themselves, and recently.
+
+Your app cannot ask for this itself, since no token says how someone signed in. ID checks it for you:
+
+- A member signed in any other way gets no code. They see a page that names the workspace and your app, and
+  says how to sign in again or where to set a second factor up. With `prompt=none`, your app gets
+  `interaction_required`.
+- A refresh is refused with `invalid_grant` when the sign-in behind it was not one with a second factor. That
+  includes every refresh token from before the rule was turned on, the next time it is used. Access tokens
+  from before it last out their hour.
+- **A refresh token works only while the person's sign-in at ID lasts.** Once they sign out of ID, or their
+  session there runs out, the next refresh fails and your app has to send them to sign in again. Without the
+  rule, a refresh token outlives the session.
+
+So treat a failed refresh as you would for someone who left: end your session and send them through sign-in.
+
 ## When someone leaves or takes your app back
 
 When someone leaves a workspace or is removed, they lose its apps at once. The same goes for someone taken

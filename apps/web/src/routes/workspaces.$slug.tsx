@@ -118,6 +118,9 @@ function WorkspacePage() {
 					{details.appsEnabled && can(details.you, "manageApps") && (
 						<WorkspaceApps details={details} reload={load} />
 					)}
+					{details.appsEnabled && can(details.you, "requireTwoFactor") && (
+						<RequireTwoFactor details={details} reload={load} />
+					)}
 					<LeaveWorkspace details={details} />
 					{can(details.you, "delete") && <DeleteWorkspace details={details} />}
 				</>
@@ -422,6 +425,82 @@ function Invitations({ details, reload }: SectionProps) {
 					))}
 				</ul>
 			)}
+		</section>
+	);
+}
+
+/**
+ * Whether this workspace's apps only admit people who signed in with a second factor. The server
+ * decides, and refuses an admin whose own session would not pass. This says so first, so that nobody
+ * finds out by being turned away from their own apps.
+ */
+function RequireTwoFactor({ details, reload }: SectionProps) {
+	const [error, setError] = useState<string | null>(null);
+	const [pending, setPending] = useState(false);
+	const { requireTwoFactor: required } = details.workspace;
+	const { twoFactors } = details.you;
+
+	async function change() {
+		setPending(true);
+		setError(null);
+		const failure = await send("/workspaces/require-two-factor", {
+			organizationId: details.workspace.id,
+			required: !required,
+		});
+		if (failure) setError(failure);
+		try {
+			await reload();
+		} finally {
+			setPending(false);
+		}
+	}
+
+	return (
+		<section aria-labelledby="two-factor-heading" className="space-y-4">
+			<h2 id="two-factor-heading" className="text-sm font-semibold">
+				Two-factor sign-in
+			</h2>
+			<div className="space-y-4 rounded-lg border p-4">
+				<p role="status" className="text-sm font-medium">
+					{required
+						? "Required: this workspace's apps only admit people who signed in with a second factor."
+						: "Not required: any way of signing in gets a member into this workspace's apps."}
+				</p>
+				<div className="space-y-2 text-sm text-muted-foreground">
+					<p>
+						A passkey counts, and so does a password followed by a code from an authenticator app or
+						a recovery code. Signing in with GitHub does not count by itself, because this server
+						cannot see whether GitHub asked for a second factor.
+					</p>
+					<p>
+						{required
+							? "Turning it off lets a password alone back in."
+							: "Once it is on, members signed in any other way are asked to sign in again before they reach an app, and an app stays signed in only for as long as the sign-in behind it lasts here."}
+					</p>
+					{!twoFactors && (
+						<p>
+							You are signed in without a second factor yourself, so you cannot change this now:{" "}
+							{required
+								? "whoever holds a session like this one must not be able to turn it off."
+								: "these apps would turn you away too."}{" "}
+							Sign in with a passkey, or with your password and a code, and come back. You can set
+							either up on{" "}
+							<Link to="/account" className="underline underline-offset-4 hover:text-foreground">
+								your account page
+							</Link>
+							.
+						</p>
+					)}
+				</div>
+				{error && (
+					<p role="alert" className="text-sm text-destructive">
+						{error}
+					</p>
+				)}
+				<LiveButton variant="outline" size="sm" disabled={pending || !twoFactors} onClick={change}>
+					{required ? "Stop requiring it" : "Require two-factor sign-in"}
+				</LiveButton>
+			</div>
 		</section>
 	);
 }

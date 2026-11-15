@@ -100,6 +100,7 @@ const SERVED = [
 	"POST /workspaces/groups/delete",
 	"POST /workspaces/groups/remove-member",
 	"POST /workspaces/groups/rename",
+	"POST /workspaces/require-two-factor",
 
 	// The provider's flow.
 	"GET,POST /oauth2/authorize",

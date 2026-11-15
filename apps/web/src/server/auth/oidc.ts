@@ -3,12 +3,20 @@ import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { createJwk, type JwtOptions, jwt } from "better-auth/plugins/jwt";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { SECOND_FACTOR_MISSING } from "../../lib/sign-in-method";
 import { PKCE_LEFT_OUT } from "../../lib/sign-in-refusal";
 import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
 import { hasPasskey } from "./passkeys";
-import { type AppIdentity, appIn, groupsOf, maySignIn, stillAllowed } from "./who-may-sign-in";
+import {
+	type AppIdentity,
+	appIn,
+	groupsOf,
+	maySignIn,
+	signedInAsAsked,
+	stillAllowed,
+} from "./who-may-sign-in";
 
 export interface OidcConfig {
 	/** The deployment's origin. Apps have it in their settings, so it can never change. */
@@ -433,26 +441,38 @@ export function oidcPlugins(
 				return groupsClaim(db, user.id, scopes, await appOfClient(db, clientId));
 			},
 			// Authorization does not run on refresh, so without this a removed person keeps their access.
-			customTokenResponseFields: async ({ grantType, user, metadata, scopes }) => {
+			customTokenResponseFields: async (info) => {
+				const { grantType, user, metadata, scopes } = info;
 				const app = appIn(metadata);
-				if (
-					!(await maySignIn(db, { user, app })) ||
-					!(await stillAllowed(db, { user, app, scopes }))
-				) {
+				const belongs =
+					(await maySignIn(db, { user, app })) && (await stillAllowed(db, { user, app, scopes }));
+				// The session behind the code, or behind the refresh token for as long as it lasts. The
+				// provider does not pass it by itself: our patch of it does (see "A patched dependency" in
+				// docs/architecture.md). Without it nothing shows a second factor, which refuses.
+				const { sessionId } = info as { sessionId?: unknown };
+				const asAsked =
+					belongs &&
+					(await signedInAsAsked(db, {
+						user,
+						app,
+						sessionId: typeof sessionId === "string" ? sessionId : null,
+					}));
+				if (!belongs || !asAsked) {
+					const detail = belongs ? `${grantType}${SECOND_FACTOR_MISSING}` : grantType;
 					record("refused", async () => {
-						if (grantType === "refresh_token" && (await refusedLately(db, user?.id, app?.app))) {
+						if (
+							grantType === "refresh_token" &&
+							(await refusedLately(db, user?.id, app?.app, detail))
+						) {
 							return undefined;
 						}
-						return {
-							userId: user?.id,
-							app: app?.app,
-							workspaceId: app?.workspace,
-							detail: grantType,
-						};
+						return { userId: user?.id, app: app?.app, workspaceId: app?.workspace, detail };
 					});
 					throw new APIError("BAD_REQUEST", {
 						error: "invalid_grant",
-						error_description: "This person may not use this app",
+						error_description: belongs
+							? "This app's workspace asks for two-factor sign-in"
+							: "This person may not use this app",
 					});
 				}
 				// The moment an app learns who someone is. A refresh tells it nothing new. This request is
@@ -471,14 +491,19 @@ export function oidcPlugins(
 			postLogin: {
 				page: "/no-access",
 				// Runs on every path to a code, and again when someone continues past the page.
-				shouldRedirect: async ({ user, headers }) => {
+				shouldRedirect: async ({ user, session, headers }) => {
 					const app = await appBeingAuthorized(db);
-					if (await maySignIn(db, { user, app })) return false;
+					const belongs = await maySignIn(db, { user, app });
+					// Someone who belongs may still have signed in with less than their workspace asks. The
+					// page tells the two apart, and sends that person on to what they can do about it.
+					if (belongs && (await signedInAsAsked(db, { user, app, sessionId: session.id }))) {
+						return false;
+					}
 					record("refused", {
 						userId: user.id,
 						app: app?.app,
 						workspaceId: app?.workspace,
-						detail: "authorization",
+						detail: belongs ? `authorization${SECOND_FACTOR_MISSING}` : "authorization",
 						...whereFrom(headers),
 					});
 					return true;
@@ -498,6 +523,7 @@ async function refusedLately(
 	db: Database,
 	userId: string | undefined,
 	app: string | undefined,
+	detail: string,
 ): Promise<boolean> {
 	if (!userId || !app) return false;
 	const row = await db
@@ -509,7 +535,7 @@ async function refusedLately(
 				gt(schema.auditEvent.at, new Date(Date.now() - REFUSED_REFRESH_WINDOW)),
 				eq(schema.auditEvent.type, "refused"),
 				eq(schema.auditEvent.app, app),
-				eq(schema.auditEvent.detail, "refresh_token"),
+				eq(schema.auditEvent.detail, detail),
 			),
 		)
 		.get();

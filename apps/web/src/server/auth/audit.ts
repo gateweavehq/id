@@ -81,7 +81,7 @@ export function whereFrom(headers: Headers | undefined | null) {
  * How each path signs someone in. A session made anywhere else, such as a new one for changing a
  * password, is not someone signing in.
  */
-const SIGN_IN_METHODS: Record<string, string> = {
+export const SIGN_IN_METHODS: Record<string, string> = {
 	"/sign-in/email": "password",
 	"/sign-in/email-otp": "code",
 	"/passkey/verify-authentication": "passkey",
@@ -90,7 +90,7 @@ const SIGN_IN_METHODS: Record<string, string> = {
 	"/deployment/invitations/accept": "invitation",
 	"/deployment/claim": "claim",
 };
-const PROVIDER_CALLBACK = "/callback/:id";
+export const PROVIDER_CALLBACK = "/callback/:id";
 
 function signInMethod(context: GenericEndpointContext | null): string | undefined {
 	if (!context) return undefined;

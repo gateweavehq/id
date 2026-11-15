@@ -5,7 +5,7 @@ import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { LiveButton } from "#/components/live-button";
 import { authClient } from "#/lib/auth-client";
-import { getAppToAllow } from "#/lib/oauth-app";
+import { getAppToAllow, getSecondFactorAsked } from "#/lib/oauth-app";
 import { flowSearch, inFlow, onItsWay, restartHref } from "#/lib/oauth-flow";
 import { getSession } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
@@ -22,6 +22,10 @@ export const Route = createFileRoute("/no-access")({
 	beforeLoad: async ({ search }) => {
 		const session = await getSession();
 		if (!session) throw redirect({ to: "/login", search: flowSearch(search) });
+		// Someone who belongs and only lacks the second factor their workspace asks for has a page of
+		// their own, since there is something they can do. The provider knows one page for a refusal.
+		const asked = search.client_id ? await getSecondFactorAsked({ data: search.client_id }) : null;
+		if (asked?.owed) throw redirect({ to: "/second-factor", search: flowSearch(search) });
 		return { session };
 	},
 	loaderDeps: ({ search }) => ({ clientId: search.client_id }),

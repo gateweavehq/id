@@ -1,8 +1,18 @@
 diff --git a/dist/authorize-BnSO_Slc.mjs b/dist/authorize-BnSO_Slc.mjs
-index ad180217ca750e4dcba1992ebc9a588b1d80a196..d0658c87b7ce9c004e36059cbc6e2b93945cdb40 100644
+index ad180217ca750e4dcba1992ebc9a588b1d80a196..420e725dd8dbf608115710a7a35f29e6c9a3af83 100644
 --- a/dist/authorize-BnSO_Slc.mjs
 +++ b/dist/authorize-BnSO_Slc.mjs
-@@ -2746,6 +2746,8 @@ const BACKCHANNEL_LOGOUT_EVENT_URI = "http://schemas.openid.net/event/backchanne
+@@ -1997,7 +1997,8 @@ async function createUserTokens(ctx, opts, params) {
+ 		user,
+ 		scopes: effectiveScopes,
+ 		metadata,
+-		verificationValue
++		verificationValue,
++		sessionId
+ 	}) : void 0;
+ 	const refreshResources = grantIssuance.refreshResources;
+ 	const confirmation = params.confirmation ?? await resolveDpopTokenBinding(ctx, opts, {
+@@ -2746,6 +2747,8 @@ const BACKCHANNEL_LOGOUT_EVENT_URI = "http://schemas.openid.net/event/backchanne
  const LOGOUT_TOKEN_JWT_TYP = "logout+jwt";
  const LOGOUT_TOKEN_LIFETIME_SECONDS = 120;
  const BACKCHANNEL_DISPATCH_TIMEOUT_MS = 5e3;
@@ -11,7 +21,7 @@ index ad180217ca750e4dcba1992ebc9a588b1d80a196..d0658c87b7ce9c004e36059cbc6e2b93
  /**
  * Signs a Back-Channel Logout Token per OIDC Back-Channel Logout 1.0 §2.4.
  *
-@@ -2827,6 +2829,7 @@ async function prepareBackchannelLogoutPlan(ctx, opts, input) {
+@@ -2827,6 +2830,7 @@ async function prepareBackchannelLogoutPlan(ctx, opts, input) {
  			accessTokenIds: accessToRevokeIds,
  			refreshTokenIds: refreshToRevokeIds,
  			sessionId,
@@ -19,7 +29,7 @@ index ad180217ca750e4dcba1992ebc9a588b1d80a196..d0658c87b7ce9c004e36059cbc6e2b93
  			targets: (await Promise.all(eligibleClients.map(async (client) => {
  				try {
  					return {
-@@ -2903,17 +2906,31 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
+@@ -2903,17 +2907,31 @@ async function deliverBackchannelLogoutTokens(ctx, plan) {
  				exp,
  				jti
  			});

@@ -49,6 +49,7 @@ import {
 } from "./workspace-access";
 import { appsOf } from "./workspace-apps";
 import { groupsSeenBy } from "./workspace-groups";
+import { showedTwoFactors } from "./workspace-two-factor";
 
 // "Workspaces" in docs/architecture.md. The organization plugin keeps the rows; every request to it
 // comes through the gate below first, so what a person can do is what this file lets through.
@@ -401,6 +402,7 @@ function getWorkspace(db: Database, appsEnabled: boolean) {
 					id: schema.organization.id,
 					name: schema.organization.name,
 					slug: schema.organization.slug,
+					requireTwoFactor: schema.organization.requireTwoFactor,
 				})
 				.from(schema.organization)
 				.where(eq(schema.organization.slug, ctx.query.slug))
@@ -442,8 +444,12 @@ function getWorkspace(db: Database, appsEnabled: boolean) {
 			const apps = appsEnabled && can(you, "manageApps") ? await appsOf(db, workspace.id) : [];
 			const groups = appsEnabled ? await groupsSeenBy(db, workspace.id, you) : [];
 			return {
-				workspace,
-				you: { memberId: you.id, role: you.role },
+				workspace: { ...workspace, requireTwoFactor: workspace.requireTwoFactor === true },
+				you: {
+					memberId: you.id,
+					role: you.role,
+					twoFactors: showedTwoFactors(ctx.context.session),
+				},
 				members,
 				invitations,
 				mayInvite: can(you, "invite") && (await mayInviteTo(db, workspace.id)),
@@ -509,6 +515,20 @@ export function workspacePlugins(config: WorkspacesConfig) {
 					});
 				},
 			}),
+			// Only `/workspaces/require-two-factor` writes this: it takes no input from a request, and
+			// the gate's bodies are strict besides.
+			schema: {
+				organization: {
+					additionalFields: {
+						requireTwoFactor: {
+							type: "boolean",
+							required: false,
+							defaultValue: false,
+							input: false,
+						},
+					},
+				},
+			},
 			organizationHooks: {
 				// The database will not let a workspace lose its last owner while it exists (see the
 				// migration), so it goes first, and takes its members and invitations with it. What the

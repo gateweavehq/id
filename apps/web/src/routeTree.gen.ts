@@ -18,6 +18,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as NoAccessRouteImport } from './routes/no-access'
 import { Route as RequestRefusedRouteImport } from './routes/request-refused'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SecondFactorRouteImport } from './routes/second-factor'
 import { Route as ServerRouteImport } from './routes/server'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
@@ -71,6 +72,11 @@ const RequestRefusedRoute = RequestRefusedRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecondFactorRoute = SecondFactorRouteImport.update({
+  id: '/second-factor',
+  path: '/second-factor',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ServerRoute = ServerRouteImport.update({
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/no-access': typeof NoAccessRoute
   '/request-refused': typeof RequestRefusedRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/second-factor': typeof SecondFactorRoute
   '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
   '/two-factor': typeof TwoFactorRoute
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/no-access': typeof NoAccessRoute
   '/request-refused': typeof RequestRefusedRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/second-factor': typeof SecondFactorRoute
   '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
   '/two-factor': typeof TwoFactorRoute
@@ -171,6 +179,7 @@ export interface FileRoutesById {
   '/no-access': typeof NoAccessRoute
   '/request-refused': typeof RequestRefusedRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/second-factor': typeof SecondFactorRoute
   '/server': typeof ServerRoute
   '/signup': typeof SignupRoute
   '/two-factor': typeof TwoFactorRoute
@@ -193,6 +202,7 @@ export interface FileRouteTypes {
     | '/no-access'
     | '/request-refused'
     | '/reset-password'
+    | '/second-factor'
     | '/server'
     | '/signup'
     | '/two-factor'
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
     | '/no-access'
     | '/request-refused'
     | '/reset-password'
+    | '/second-factor'
     | '/server'
     | '/signup'
     | '/two-factor'
@@ -233,6 +244,7 @@ export interface FileRouteTypes {
     | '/no-access'
     | '/request-refused'
     | '/reset-password'
+    | '/second-factor'
     | '/server'
     | '/signup'
     | '/two-factor'
@@ -254,6 +266,7 @@ export interface RootRouteChildren {
   NoAccessRoute: typeof NoAccessRoute
   RequestRefusedRoute: typeof RequestRefusedRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SecondFactorRoute: typeof SecondFactorRoute
   ServerRoute: typeof ServerRoute
   SignupRoute: typeof SignupRoute
   TwoFactorRoute: typeof TwoFactorRoute
@@ -328,6 +341,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/second-factor': {
+      id: '/second-factor'
+      path: '/second-factor'
+      fullPath: '/second-factor'
+      preLoaderRoute: typeof SecondFactorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/server': {
@@ -406,6 +426,7 @@ const rootRouteChildren: RootRouteChildren = {
   NoAccessRoute: NoAccessRoute,
   RequestRefusedRoute: RequestRefusedRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SecondFactorRoute: SecondFactorRoute,
   ServerRoute: ServerRoute,
   SignupRoute: SignupRoute,
   TwoFactorRoute: TwoFactorRoute,

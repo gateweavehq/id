@@ -8,6 +8,7 @@ import {
 	onItsWay,
 	owesACode,
 	restartHref,
+	signInAgainHref,
 	welcomeIsDone,
 } from "./oauth-flow";
 
@@ -65,6 +66,25 @@ describe("a page on the way to an app", () => {
 			state: "1e5",
 			scope: "openid email",
 		});
+	});
+
+	it("asks for a new sign-in with the app's request, whatever it asked to be shown", () => {
+		const again = (search: Record<string, unknown>) =>
+			new URL(signInAgainHref(search), "https://id.test");
+		const url = again({ ...signed, error: "x" });
+		expect(url.pathname).toBe("/api/auth/oauth2/authorize");
+		expect(Object.fromEntries(url.searchParams)).toEqual({
+			client_id: "app",
+			state: "1e5",
+			scope: "openid email",
+			prompt: "login",
+		});
+		expect(again({ ...signed, prompt: "consent" }).searchParams.get("prompt")).toBe(
+			"consent login",
+		);
+		expect(again({ ...signed, prompt: "login" }).searchParams.get("prompt")).toBe("login");
+		// Asking to show nothing cannot stand beside asking for a sign-in.
+		expect(again({ ...signed, prompt: "none" }).searchParams.get("prompt")).toBe("login");
 	});
 
 	it("repeats what the app repeated", () => {

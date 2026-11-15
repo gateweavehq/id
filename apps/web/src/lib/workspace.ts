@@ -88,6 +88,7 @@ export interface Resources {
 	cancelInvitation: undefined;
 	manageApps: undefined;
 	manageGroups: undefined;
+	requireTwoFactor: undefined;
 	changeRole: { role: string; to: WorkspaceRole };
 	removeMember: { role: string };
 }
@@ -122,6 +123,7 @@ export function can<Action extends WorkspaceAction>(
 		case "cancelInvitation":
 		case "manageApps":
 		case "manageGroups":
+		case "requireTwoFactor":
 			return admin;
 		case "delete":
 			return owner;
@@ -212,9 +214,15 @@ export interface WorkspaceGroup {
 }
 
 export interface WorkspaceDetails {
-	workspace: { id: string; name: string; slug: string };
-	/** Who is asking. */
-	you: { memberId: string; role: string };
+	workspace: {
+		id: string;
+		name: string;
+		slug: string;
+		/** Whether its apps only admit people who signed in with a second factor. */
+		requireTwoFactor: boolean;
+	};
+	/** Who is asking, and whether the session they ask with showed two factors. */
+	you: { memberId: string; role: string; twoFactors: boolean };
 	members: WorkspaceMember[];
 	/** Empty for someone who may not see them. */
 	invitations: PendingInvitation[];
@@ -235,6 +243,8 @@ const FAILURES: Record<string, string> = {
 	ORGANIZATION_MEMBERSHIP_LIMIT_REACHED: "This workspace has as many members as it can hold.",
 	INVITATION_LIMIT_REACHED:
 		"This workspace has as many open invitations as it can hold. Withdraw some first.",
+	SECOND_FACTOR_FIRST:
+		"Sign in with a passkey, or with your password and a code from your authenticator, then try this again. As you are signed in now, this workspace's apps would turn you away too.",
 	SESSION_NOT_FRESH: "You signed in a while ago. Sign out and sign in again, then try this again.",
 };
 

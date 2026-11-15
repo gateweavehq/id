@@ -35,6 +35,7 @@ export const session = sqliteTable(
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
 		activeOrganizationId: text("active_organization_id"),
+		signInMethod: text("sign_in_method"),
 	},
 	(table) => [index("session_userId_idx").on(table.userId)],
 );
@@ -133,6 +134,7 @@ export const organization = sqliteTable("organization", {
 	logo: text("logo"),
 	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 	metadata: text("metadata"),
+	requireTwoFactor: integer("require_two_factor", { mode: "boolean" }).default(false),
 });
 
 export const member = sqliteTable(
