@@ -7,6 +7,51 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.16.0] - 2026-11-16
+
+The account page is rebuilt around what a person comes to it for, and a sign-in that could finish
+twice no longer does. There is no migration in this release, and the signing algorithm doesn't
+change.
+
+### Fixed
+
+- **A passkey that answers late no longer signs in a second time.** The login page offers a
+  passkey in the email field as soon as it loads. Someone who pressed "Continue with GitHub" while
+  a password manager answered that offer was signed in twice, the app's request was continued
+  twice, and the app showed a `state_mismatch` error; a second try worked. A page now lets one way
+  of signing in run at a time, and withdraws the passkey offer when another way starts. A page
+  still showing after a sign-in says so and offers a reload.
+  ([#126](https://github.com/gateweavehq/id/pull/126))
+- **A blank name is told it is blank**, where it was told it was too long.
+  ([#125](https://github.com/gateweavehq/id/pull/125))
+- **The lists on the account page no longer stay on "Loading…"** when a request fails: they say so
+  and can be tried again. ([#125](https://github.com/gateweavehq/id/pull/125))
+
+### Changed
+
+- **The account page says whose account it is and how they sign in.** A header with the name and
+  address, a row of sections, and a summary of the ways the account can sign in, which is also
+  true for an account with no password or with GitHub only.
+  ([#125](https://github.com/gateweavehq/id/pull/125))
+- **Products you use.** The apps of this service the account has signed in to, with when and a
+  link to each. ([#125](https://github.com/gateweavehq/id/pull/125))
+- **Sessions say more and ask first.** Each row names the browser and how it signed in, and when
+  the session was last renewed. Signing out the other browsers, or everything, asks before it
+  does. ([#127](https://github.com/gateweavehq/id/pull/127))
+- **Activity is grouped by day and marks what matters.** A password and the code that followed it
+  are one sign-in. A right password that no code followed is marked as an alarm; a failed sign-in
+  is marked quietly. ([#127](https://github.com/gateweavehq/id/pull/127))
+- **Deleting an account says first which workspaces only you own**, before it asks for a password.
+  The server decides at deletion as before. ([#127](https://github.com/gateweavehq/id/pull/127))
+- The password form opens from a row instead of standing open.
+  ([#125](https://github.com/gateweavehq/id/pull/125))
+
+### If you run your own
+
+- **Update.** Nothing to set.
+- "Products you use" lists every app registered with `apps:add`, with a link to the origin of its
+  first `https` redirect address.
+
 ## [0.15.2] - 2026-11-16
 
 A guard that cannot read the session now refuses. There is no migration in this release, and the
