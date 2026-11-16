@@ -5,6 +5,7 @@ import {
 	CLIENT_SECRET_PREFIX,
 	hostOfUris,
 	insertStatement,
+	originOfUris,
 	problemWithRedirectUri,
 	problemWithWorkspaceAppUris,
 	workspaceAppRow,
@@ -147,4 +148,47 @@ describe("hostOfUris", () => {
 			expect(hostOfUris(uris)).toBeNull();
 		},
 	);
+});
+
+describe("originOfUris", () => {
+	it("is the origin of an https address, without its path", () => {
+		expect(originOfUris(["https://track.example/api/auth/callback?x=1"])).toBe(
+			"https://track.example",
+		);
+	});
+
+	// An app registered for a developer's machine as well sent everyone to that machine.
+	it("prefers the first https address to an http one registered before it", () => {
+		expect(originOfUris(["http://localhost:4710/cb", "https://track.example/cb"])).toBe(
+			"https://track.example",
+		);
+		expect(
+			originOfUris([
+				"http://localhost:4710/cb",
+				"https://one.example/cb",
+				"https://two.example/cb",
+			]),
+		).toBe("https://one.example");
+	});
+
+	it("falls back to the first http address only where there is no https one", () => {
+		expect(originOfUris(["http://localhost:4710/cb", "http://127.0.0.1:4711/cb"])).toBe(
+			"http://localhost:4710",
+		);
+		expect(originOfUris(["myapp://cb", "http://localhost:4710/cb"])).toBe("http://localhost:4710");
+	});
+
+	it.each([
+		[[]],
+		[null],
+		["https://a.example.com"],
+		[["not a url"]],
+		[[7]],
+		[["myapp://cb"]],
+		[["data:text/html,hello"]],
+		[["javascript:alert(1)"]],
+		[["com.example.app:/oauth2redirect"]],
+	])("has nowhere to lead for %j", (uris) => {
+		expect(originOfUris(uris)).toBeNull();
+	});
 });

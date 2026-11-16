@@ -91,19 +91,60 @@ test("an account with no password types its address instead", async ({ page, bas
 	expect(problems).toEqual([]);
 });
 
-test("the only owner of a workspace is told which one to see to", async ({ page, baseURL }) => {
+test("the only owner of a workspace is told which one to see to, before any password", async ({
+	page,
+	baseURL,
+}) => {
 	const device = await newDevice(page, baseURL);
 	const problems = await watch(device);
 	await signUp(device, "Grace Hopper", address("owner"));
 	await expect(device.getByRole("heading", { name: "Your account" })).toBeVisible();
-	await makeWorkspace(device, "Only Mine");
+	const slug = await makeWorkspace(device, "Only Mine");
+	const deletions: string[] = [];
+	device.on("request", (request) => {
+		if (request.url().endsWith("/account/delete")) deletions.push(request.method());
+	});
 
 	await device.goto("/account", { waitUntil: "networkidle" });
 	const section = device.getByRole("region", { name: "Delete account" });
-	await section.getByRole("button", { name: "Delete account" }).click();
-	await section.getByLabel("Your password").fill(PASSWORD);
-	await section.getByRole("button", { name: "Delete my account" }).click();
-	await expect(section.getByRole("alert")).toContainText("Only Mine");
+	// The card is marked for what it does before anyone presses anything.
+	await expect(section.getByText("Cannot be undone")).toBeVisible();
+	const opener = section.getByRole("button", { name: "Delete account" });
+	await opener.click();
+
+	// They used to give their password to find this out.
+	await expect(section.getByText("This account cannot be deleted yet.")).toBeVisible();
+	await expect(
+		section.getByText(
+			"You are the only owner of Only Mine. Make someone else an owner, or delete it, first.",
+		),
+	).toBeVisible();
+	await expect(section.getByLabel("Your password")).toHaveCount(0);
+	await expect(section.getByRole("button", { name: "Delete my account" })).toHaveCount(0);
+	await expect(section.getByRole("link", { name: "Open Only Mine" })).toHaveAttribute(
+		"href",
+		`/workspaces/${slug}`,
+	);
+
+	await section.getByRole("button", { name: "Close" }).click();
+	await expect(section.getByText("This account cannot be deleted yet.")).toHaveCount(0);
+	await expect(opener).toBeFocused();
+	expect(deletions).toEqual([]);
+
+	await test.step("once the workspace has gone, the same button asks for the password", async () => {
+		await opener.click();
+		await section.getByRole("link", { name: "Open Only Mine" }).click();
+		await expect(device.getByRole("heading", { name: "Only Mine", exact: true })).toBeVisible();
+		await device.getByLabel("Type its name to confirm").fill("Only Mine");
+		await device.getByRole("button", { name: "Delete workspace" }).click();
+		await expect(device.getByRole("heading", { name: "Your workspaces" })).toBeVisible();
+
+		await device.goto("/account", { waitUntil: "networkidle" });
+		await opener.click();
+		await expect(section.getByLabel("Your password")).toBeFocused();
+		await expect(section.getByText("This account cannot be deleted yet.")).toHaveCount(0);
+		await section.getByRole("button", { name: "Keep it" }).click();
+	});
 
 	await device.reload({ waitUntil: "networkidle" });
 	await expect(device.getByRole("heading", { name: "Your account" })).toBeVisible();

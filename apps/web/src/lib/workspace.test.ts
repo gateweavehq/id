@@ -6,6 +6,7 @@ import {
 	groupName,
 	slugFrom,
 	type WorkspaceRole,
+	workspaceCounts,
 	workspaceFailure,
 	workspaceName,
 	workspaceSlug,
@@ -206,5 +207,17 @@ describe("workspaceFailure", () => {
 			"A workspace needs an owner.",
 		);
 		expect(workspaceFailure({})).toBe("Something went wrong");
+	});
+});
+
+describe("workspaceCounts", () => {
+	it.each([
+		[0, 0, "You are in no workspaces yet."],
+		[1, 0, "You are in 1 workspace."],
+		[3, 0, "You are in 3 workspaces."],
+		[0, 1, "You are in no workspaces yet. 1 invitation is waiting for you."],
+		[2, 4, "You are in 2 workspaces. 4 invitations are waiting for you."],
+	])("says %i and %i in words", (workspaces, invitations, words) => {
+		expect(workspaceCounts(workspaces, invitations)).toBe(words);
 	});
 });

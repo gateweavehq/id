@@ -1,13 +1,13 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, desc, eq, isNull, max, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { AllowedApp } from "../../lib/allowed-app";
+import type { AllowedApp, UsedProduct } from "../../lib/allowed-app";
 import type { Database } from "../db";
 import { schema } from "../db";
-import { hostOfUris } from "./app-row";
+import { hostOfUris, originOfUris } from "./app-row";
 import { type RecordEvent, whereFrom } from "./audit";
-import { scopesIn } from "./who-may-sign-in";
+import { appIn, scopesIn } from "./who-may-sign-in";
 import { noStore, parseBody } from "./workspace-access";
 
 // "Taking an app back" in docs/architecture.md. The provider's own consent endpoints stay closed: the
@@ -59,10 +59,68 @@ async function lastSignIns(db: Database, userId: string) {
 	return new Map(rows.flatMap(({ app, at }) => (app && at ? [[app, at] as const] : [])));
 }
 
+/**
+ * The deployment's own apps this person has signed in to, the latest first. It goes by their own rows
+ * of the log and by what each app is registered as, so it shows nothing of anyone else and nothing an
+ * app or a person said on the way in. An app that is switched off has nowhere to go back to.
+ *
+ * The log names an app by its own id, which two registrations can share, as one product's staging
+ * and production might. The one registered last stands for both: the log cannot say which it was.
+ */
+async function productsUsedBy(db: Database, userId: string): Promise<UsedProduct[]> {
+	const signIns = await lastSignIns(db, userId);
+	if (signIns.size === 0) return [];
+	// Every first-party app, as a deployment has a handful, and naming the ones wanted would run into
+	// the same limit as above.
+	const rows = await db
+		.select({
+			name: schema.oauthClient.name,
+			// As text: one app's unreadable metadata, which the column would throw on, must not take
+			// this list from everybody. `appIn` reads it, and gets nothing from what it cannot read.
+			metadata: sql<string | null>`${schema.oauthClient.metadata}`,
+			redirectUris: schema.oauthClient.redirectUris,
+			disabled: schema.oauthClient.disabled,
+		})
+		.from(schema.oauthClient)
+		.where(isNull(schema.oauthClient.referenceId))
+		.orderBy(desc(schema.oauthClient.createdAt))
+		.all();
+	const products = new Map<string, UsedProduct>();
+	for (const row of rows) {
+		// Read as the check for who may sign in reads it, so an app it would not know is not listed.
+		const identity = appIn(row.metadata);
+		if (!identity || identity.workspace || row.disabled) continue;
+		const lastSignIn = signIns.get(identity.app);
+		if (!lastSignIn || products.has(identity.app)) continue;
+		const openUrl = originOfUris(row.redirectUris);
+		products.set(identity.app, {
+			app: identity.app,
+			name: row.name || identity.app,
+			// The host of where the link leads, so the two cannot disagree, and no host where there is
+			// no link: a custom scheme has none worth reading.
+			host: openUrl && new URL(openUrl).host,
+			openUrl,
+			lastSignIn,
+		});
+	}
+	return [...products.values()].sort(
+		(a, b) => new Date(b.lastSignIn).getTime() - new Date(a.lastSignIn).getTime(),
+	);
+}
+
 export function allowedAppsPlugin({ db, record }: AllowedAppsConfig): BetterAuthPlugin {
 	return {
 		id: "allowed-apps",
 		endpoints: {
+			listUsedProducts: createAuthEndpoint(
+				"/account/products",
+				{ method: "GET", use: [sessionMiddleware] },
+				async (ctx) => {
+					noStore(ctx);
+					return { products: await productsUsedBy(db, ctx.context.session.user.id) };
+				},
+			),
+
 			listAllowedApps: createAuthEndpoint(
 				"/account/allowed-apps",
 				{ method: "GET", use: [sessionMiddleware] },

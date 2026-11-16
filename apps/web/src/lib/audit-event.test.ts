@@ -42,7 +42,7 @@ describe("describeActivity", () => {
 	});
 
 	it.each([
-		["sessions_revoked", null, "Signed out on another device"],
+		["sessions_revoked", null, "Signed out another browser"],
 		["sessions_revoked", "everywhere", "Signed out everywhere"],
 		["deployment_sign_up_changed", "open", "Opened sign-up on this server"],
 		["deployment_sign_up_changed", "closed", "Closed sign-up on this server"],
@@ -200,7 +200,7 @@ describe("describeActivity", () => {
 
 	it("tells a wrong password given while signed in from a failed sign-in", () => {
 		expect(describeActivity(activity({ type: "password_refused" }))).toBe(
-			"A wrong password was entered while signed in",
+			"A wrong password was entered on the account page",
 		);
 	});
 

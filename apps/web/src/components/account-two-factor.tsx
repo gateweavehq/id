@@ -1,5 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { AccountCard, CARD_FORM } from "#/components/account-section";
 import { LiveButton } from "#/components/live-button";
 import { QrCode } from "#/components/qr-code";
 import { Button } from "#/components/ui/button";
@@ -16,16 +17,17 @@ type Step =
 	| { name: "showing-codes"; recoveryCodes: string[]; turnedOn: boolean };
 
 const WRONG_PASSWORD = "INVALID_PASSWORD";
+const NOT_DONE = "That did not work. Please try again.";
 
 function messageOf(error: object & { message?: string | undefined }): string {
 	if ("code" in error && error.code === WRONG_PASSWORD) return "That password is wrong.";
-	return error.message ?? "Something went wrong";
+	return error.message ?? NOT_DONE;
 }
 
 const PASSWORD_ACTIONS = {
-	"turn-on": { label: "Continue", variant: "default" },
-	"new-codes": { label: "Replace my recovery codes", variant: "default" },
-	"turn-off": { label: "Turn off", variant: "destructive" },
+	"turn-on": { label: "Continue", pending: "Checking…", variant: "default" },
+	"new-codes": { label: "Replace my recovery codes", pending: "Replacing…", variant: "default" },
+	"turn-off": { label: "Turn off", pending: "Turning off…", variant: "destructive" },
 } as const;
 
 /**
@@ -62,36 +64,39 @@ export function AccountTwoFactor({
 		const password = String(new FormData(event.currentTarget).get("password"));
 		setPending(true);
 		setError(null);
-		switch (step.action) {
-			case "turn-on": {
-				const result = await authClient.twoFactor.enable({ password });
-				setPending(false);
-				if (result.error) return setError(messageOf(result.error));
-				// For the types: nothing here asks for the other method, and the server refuses it.
-				if (result.data.method !== "totp") return setError("Something went wrong");
-				return goTo({
-					name: "confirming",
-					uri: result.data.totpURI,
-					recoveryCodes: result.data.backupCodes,
-				});
+		try {
+			switch (step.action) {
+				case "turn-on": {
+					const result = await authClient.twoFactor.enable({ password });
+					if (result.error) return setError(messageOf(result.error));
+					// For the types: nothing here asks for the other method, and the server refuses it.
+					if (result.data.method !== "totp") return setError(NOT_DONE);
+					return goTo({
+						name: "confirming",
+						uri: result.data.totpURI,
+						recoveryCodes: result.data.backupCodes,
+					});
+				}
+				case "new-codes": {
+					const result = await authClient.twoFactor.generateBackupCodes({ password });
+					if (result.error) return setError(messageOf(result.error));
+					return goTo({
+						name: "showing-codes",
+						recoveryCodes: result.data.backupCodes,
+						turnedOn: false,
+					});
+				}
+				case "turn-off": {
+					const result = await authClient.twoFactor.disable({ password });
+					if (result.error) return setError(messageOf(result.error));
+					goTo({ name: "resting" });
+					return await router.invalidate();
+				}
 			}
-			case "new-codes": {
-				const result = await authClient.twoFactor.generateBackupCodes({ password });
-				setPending(false);
-				if (result.error) return setError(messageOf(result.error));
-				return goTo({
-					name: "showing-codes",
-					recoveryCodes: result.data.backupCodes,
-					turnedOn: false,
-				});
-			}
-			case "turn-off": {
-				const result = await authClient.twoFactor.disable({ password });
-				setPending(false);
-				if (result.error) return setError(messageOf(result.error));
-				goTo({ name: "resting" });
-				return router.invalidate();
-			}
+		} catch {
+			setError(NOT_DONE);
+		} finally {
+			setPending(false);
 		}
 	}
 
@@ -101,29 +106,32 @@ export function AccountTwoFactor({
 		const code = String(new FormData(event.currentTarget).get("code")).trim();
 		setPending(true);
 		setError(null);
-		const result = await authClient.twoFactor.verifyTotp({ code });
-		setPending(false);
-		if (result.error) {
-			return setError(
-				"That code is wrong. Check the time on your device, and try the next one if it is about to change.",
-			);
+		try {
+			const result = await authClient.twoFactor.verifyTotp({ code });
+			if (result.error) {
+				return setError(
+					"That code is wrong. Check the time on your device, and try the next one if it is about to change.",
+				);
+			}
+			goTo({ name: "showing-codes", recoveryCodes: step.recoveryCodes, turnedOn: true });
+			// This replaced the session, and with it what the rest of the page shows.
+			await router.invalidate();
+		} catch {
+			setError(NOT_DONE);
+		} finally {
+			setPending(false);
 		}
-		goTo({ name: "showing-codes", recoveryCodes: step.recoveryCodes, turnedOn: true });
-		// This replaced the session, and with it what the rest of the page shows.
-		await router.invalidate();
 	}
 
 	return (
-		<section aria-labelledby="two-factor-heading" className="space-y-4">
-			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-				<h2 id="two-factor-heading" className="text-sm font-semibold">
-					Two-factor sign-in
-				</h2>
-				{enabled && step.name === "resting" && (
-					<span className="text-xs text-muted-foreground">On</span>
-				)}
-			</div>
-
+		<AccountCard
+			id="two-factor-heading"
+			title="Two-factor sign-in"
+			aside={
+				enabled &&
+				step.name === "resting" && <span className="text-xs text-muted-foreground">On</span>
+			}
+		>
 			{step.name === "resting" && (
 				<Resting
 					enabled={enabled}
@@ -133,7 +141,8 @@ export function AccountTwoFactor({
 			)}
 
 			{step.name === "asking-password" && (
-				<form onSubmit={withPassword} className="space-y-4 rounded-lg border p-4">
+				// A mistake is about what was typed, so it goes once that changes.
+				<form onSubmit={withPassword} onChange={() => setError(null)} className={CARD_FORM}>
 					{step.action === "turn-off" && (
 						<p className="text-sm text-muted-foreground">
 							Your password alone will sign you in, and your recovery codes stop working. Apps you
@@ -177,7 +186,9 @@ export function AccountTwoFactor({
 							variant={PASSWORD_ACTIONS[step.action].variant}
 							disabled={pending}
 						>
-							{PASSWORD_ACTIONS[step.action].label}
+							{pending
+								? PASSWORD_ACTIONS[step.action].pending
+								: PASSWORD_ACTIONS[step.action].label}
 						</LiveButton>
 						<Button
 							type="button"
@@ -193,7 +204,7 @@ export function AccountTwoFactor({
 			)}
 
 			{step.name === "confirming" && (
-				<form onSubmit={confirm} className="space-y-4 rounded-lg border p-4">
+				<form onSubmit={confirm} onChange={() => setError(null)} className={CARD_FORM}>
 					<p className="text-sm text-muted-foreground">
 						Scan this with an authenticator app, such as 1Password, Google Authenticator or Aegis.
 					</p>
@@ -218,7 +229,7 @@ export function AccountTwoFactor({
 					)}
 					<div className="flex gap-2">
 						<LiveButton type="submit" size="sm" disabled={pending}>
-							Turn on
+							{pending ? "Turning on…" : "Turn on"}
 						</LiveButton>
 						<Button
 							type="button"
@@ -245,7 +256,7 @@ export function AccountTwoFactor({
 					}}
 				/>
 			)}
-		</section>
+		</AccountCard>
 	);
 }
 
@@ -260,7 +271,7 @@ function Resting({
 }) {
 	if (!enabled) {
 		return (
-			<div className="space-y-3">
+			<div className="space-y-3 p-4">
 				<p className="text-sm text-muted-foreground">
 					Ask for a code from an authenticator app whenever you sign in with your password, so that
 					your password alone is not enough. A passkey already takes two factors, and GitHub has its
@@ -273,7 +284,7 @@ function Resting({
 		);
 	}
 	return (
-		<div className="space-y-3">
+		<div className="space-y-3 p-4">
 			<p className="text-sm text-muted-foreground">
 				Signing in with your password asks for a code from your authenticator app. Passkeys and
 				GitHub do not ask.
@@ -312,6 +323,17 @@ function SetupKey({ uri }: { uri: string }) {
 	);
 }
 
+/** Saves the codes as a file, for someone with nowhere to paste them. */
+function download(codes: string[]) {
+	const file = URL.createObjectURL(new Blob([`${codes.join("\n")}\n`], { type: "text/plain" }));
+	const link = document.createElement("a");
+	link.href = file;
+	link.download = "gateweave-id-recovery-codes.txt";
+	link.click();
+	// Once the browser has started reading it, which it does not do within the click.
+	setTimeout(() => URL.revokeObjectURL(file), 1000);
+}
+
 function RecoveryCodes({
 	codes,
 	turnedOn,
@@ -321,10 +343,21 @@ function RecoveryCodes({
 	turnedOn: boolean;
 	onDone: () => void;
 }) {
-	const [copied, setCopied] = useState(false);
+	const [copied, setCopied] = useState<"no" | "yes" | "failed">("no");
+
+	async function copy() {
+		try {
+			// A browser can refuse this, and one on a page without https has no clipboard at all. They
+			// are shown these codes once, so a button that did nothing would cost them the codes.
+			await navigator.clipboard.writeText(codes.join("\n"));
+			setCopied("yes");
+		} catch {
+			setCopied("failed");
+		}
+	}
 
 	return (
-		<div className="space-y-4 rounded-lg border p-4">
+		<div className={CARD_FORM}>
 			{turnedOn && (
 				<p role="status" className="text-sm">
 					Two-factor sign-in is on. Apps you were signed in to here will ask you to sign in again.
@@ -342,17 +375,18 @@ function RecoveryCodes({
 					</li>
 				))}
 			</ul>
+			{copied === "failed" && (
+				<p role="alert" className="text-sm text-destructive">
+					Your browser did not let this page copy them. Select the codes and copy them yourself, or
+					download them.
+				</p>
+			)}
 			<div className="flex flex-wrap gap-2">
-				<Button
-					type="button"
-					variant="outline"
-					size="sm"
-					onClick={async () => {
-						await navigator.clipboard.writeText(codes.join("\n"));
-						setCopied(true);
-					}}
-				>
-					{copied ? "Copied" : "Copy"}
+				<Button type="button" variant="outline" size="sm" onClick={copy}>
+					{copied === "yes" ? "Copied" : "Copy"}
+				</Button>
+				<Button type="button" variant="outline" size="sm" onClick={() => download(codes)}>
+					Download
 				</Button>
 				<Button type="button" size="sm" onClick={onDone}>
 					I have saved them

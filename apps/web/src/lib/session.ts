@@ -73,6 +73,18 @@ export const signInMethods = createServerFn({ method: "GET" }).handler(async () 
 	return methods;
 });
 
+/**
+ * What the signed-in person has to sign in with, for their account page to say. The session is read
+ * once and everything is answered from it. With none, this throws, and the page shows that it could
+ * not be loaded, with a way to try again.
+ */
+export const getWaysToSignIn = createServerFn({ method: "GET" }).handler(async () => {
+	const { db, getAuth, githubEnabled } = await import("#/server/auth");
+	const { waysToSignIn } = await import("#/server/auth/ways-to-sign-in");
+	const signedIn = await getAuth().api.getSession({ headers: getRequestHeaders() });
+	return waysToSignIn(db, signedIn, githubEnabled);
+});
+
 /** Whether the signed-in person can sign in with a password. */
 export const hasPassword = createServerFn({ method: "GET" }).handler(async () => {
 	const { getAuth } = await import("#/server/auth");

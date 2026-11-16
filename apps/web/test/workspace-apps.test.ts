@@ -2204,6 +2204,15 @@ describe("taking an app back", () => {
 			expect(await allowedApps(stranger)).toEqual([]);
 		});
 
+		// The other list on the account page, of the server's own apps, which offers no taking back.
+		it("is the only list a workspace's app is on", async () => {
+			const { app, person } = await allowed();
+			await id.auditEventRecorded(person.userId, { type: "app_sign_in", app: app.clientId });
+			const response = await api("/account/products", { who: person });
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({ products: [] });
+		});
+
 		it("leaves out a first-party app, even one that asked", async () => {
 			const person = await newPerson();
 			const made = await firstPartyAppAllowedBy(person);

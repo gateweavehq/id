@@ -210,3 +210,19 @@ export function hostOfUris(uris: unknown): string | null {
 	const first = Array.isArray(uris) ? uris[0] : undefined;
 	return typeof first === "string" && URL.canParse(first) ? new URL(first).host : null;
 }
+
+/**
+ * Where an app lives, for a link back to it: the origin of what it is registered to return to, and
+ * so nothing a request could have named. The first https address, since an app registered for a
+ * developer's machine as well would otherwise send everyone to `localhost`, and plain http only
+ * where there is no https one. Null for anything else, which a browser would not open as a page.
+ */
+export function originOfUris(uris: unknown): string | null {
+	const origins = (Array.isArray(uris) ? uris : []).flatMap((uri) => {
+		if (typeof uri !== "string" || !URL.canParse(uri)) return [];
+		const { protocol, origin } = new URL(uri);
+		return protocol === "https:" || protocol === "http:" ? [{ protocol, origin }] : [];
+	});
+	const secure = origins.find(({ protocol }) => protocol === "https:");
+	return (secure ?? origins[0])?.origin ?? null;
+}

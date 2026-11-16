@@ -1,6 +1,14 @@
 import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
-import { useHydrated } from "@tanstack/react-router";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { useHydrated, useRouter } from "@tanstack/react-router";
+import { type FormEvent, useRef, useState } from "react";
+import {
+	AccountCard,
+	CARD_ROW,
+	LoadFailure,
+	ROW_BUTTON,
+	useFocusBack,
+	useLoaded,
+} from "#/components/account-section";
 import { LiveButton } from "#/components/live-button";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -16,12 +24,17 @@ import { TWO_FACTORS_TO_ADD_A_PASSKEY } from "#/lib/sign-in-method";
 const TWO_FACTORS_TO_ADD_OR_REMOVE =
 	"Sign in with your passkey or your authenticator code first, then add or remove a passkey.";
 
+const NOT_LOADED = "Your passkeys could not be loaded";
+const NOT_DONE = "That did not work. Please try again.";
+
 interface ListedPasskey {
 	id: string;
 	name?: string | null | undefined;
 	createdAt?: Date | string | null | undefined;
 	backedUp: boolean;
 }
+
+const listPasskeys = () => authClient.passkey.listUserPasskeys();
 
 /**
  * The passkeys that can sign this person in, where they can add, name and remove them. It loads in
@@ -41,33 +54,37 @@ export function AccountPasskeys({
 	signedInWithTwoFactors: boolean;
 }) {
 	const hydrated = useHydrated();
-	const [passkeys, setPasskeys] = useState<ListedPasskey[] | null>(null);
+	const router = useRouter();
+	const {
+		data: passkeys,
+		failure,
+		loading,
+		reload,
+	} = useLoaded<ListedPasskey[]>(listPasskeys, NOT_LOADED);
 	const [error, setError] = useState<string | null>(null);
 	const [adding, setAdding] = useState(false);
+	const heading = useRef<HTMLHeadingElement>(null);
 
-	const load = useCallback(async () => {
-		const result = await authClient.passkey.listUserPasskeys();
-		if (result.error) {
-			setError(result.error.message ?? "Your passkeys could not be loaded");
-			return;
-		}
-		setPasskeys(result.data);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
+	/** The list again, and the count of them that the top of this part of the page gives. */
+	async function changed() {
+		await Promise.all([reload(), router.invalidate()]);
+	}
 
 	async function add() {
 		setAdding(true);
 		setError(null);
-		const result = await authClient.passkey.addPasskey();
-		setAdding(false);
-		if (result.error) {
-			if (!nothingHappened(result.error)) setError(passkeyFailure(result.error));
-			return;
+		try {
+			const result = await authClient.passkey.addPasskey();
+			if (result.error) {
+				if (!nothingHappened(result.error)) setError(passkeyFailure(result.error));
+				return;
+			}
+			await changed();
+		} catch {
+			setError(NOT_DONE);
+		} finally {
+			setAdding(false);
 		}
-		await load();
 	}
 
 	const canUsePasskeys = !hydrated || browserSupportsWebAuthn();
@@ -75,48 +92,61 @@ export function AccountPasskeys({
 	const signInFirst = !signedInWithTwoFactors && (twoFactorOn || hasPasskeys);
 
 	return (
-		<section aria-labelledby="passkeys-heading" className="space-y-4">
-			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-				<h2 id="passkeys-heading" className="text-sm font-semibold">
-					Passkeys
-				</h2>
-				{canUsePasskeys && !signInFirst && (
+		<AccountCard
+			id="passkeys-heading"
+			title="Passkeys"
+			headingRef={heading}
+			aside={
+				canUsePasskeys &&
+				!signInFirst && (
 					<LiveButton variant="outline" size="sm" disabled={adding} onClick={add}>
-						Add a passkey
+						{adding ? "Adding…" : "Add a passkey"}
 					</LiveButton>
-				)}
-			</div>
+				)
+			}
+		>
 			{error && (
-				<p role="alert" className="text-sm text-destructive">
+				<p role="alert" className={`${CARD_ROW} text-destructive`}>
 					{error}
 				</p>
 			)}
+			{failure && (
+				<LoadFailure
+					message={failure}
+					loading={loading}
+					onRetry={async () => {
+						// The button goes with the failure, and the focus would go with the button.
+						if (await reload()) heading.current?.focus();
+					}}
+				/>
+			)}
 			{canUsePasskeys && signInFirst && (
-				<p className="text-sm text-muted-foreground">
+				<p className={`${CARD_ROW} text-muted-foreground`}>
 					{hasPasskeys ? TWO_FACTORS_TO_ADD_OR_REMOVE : TWO_FACTORS_TO_ADD_A_PASSKEY.message}
 				</p>
 			)}
 			{passkeys === null ? (
-				!error && <p className="text-sm text-muted-foreground">Loading…</p>
+				!failure && <p className={`${CARD_ROW} text-muted-foreground`}>Loading…</p>
 			) : passkeys.length === 0 ? (
-				<p className="text-sm text-muted-foreground">
+				<p className={`${CARD_ROW} text-muted-foreground`}>
 					Sign in with your fingerprint, your face or your device's PIN, with nothing to type and
 					nothing a fake site could ask you for.
 				</p>
 			) : (
-				<ul className="divide-y rounded-lg border text-sm">
+				<ul className="divide-y">
 					{passkeys.map((passkey) => (
 						<PasskeyRow
 							key={passkey.id}
 							passkey={passkey}
 							mayRemove={signedInWithTwoFactors}
-							onChange={load}
+							onChange={changed}
+							onRemoved={() => heading.current?.focus()}
 							onError={setError}
 						/>
 					))}
 				</ul>
 			)}
-		</section>
+		</AccountCard>
 	);
 }
 
@@ -124,30 +154,44 @@ function PasskeyRow({
 	passkey,
 	mayRemove,
 	onChange,
+	onRemoved,
 	onError,
 }: {
 	passkey: ListedPasskey;
 	/** Whether this session showed two factors. One that did not is told why above the list. */
 	mayRemove: boolean;
 	onChange: () => Promise<void>;
+	/** Its row has gone, and the focus with it. */
+	onRemoved: () => void;
 	onError: (message: string | null) => void;
 }) {
 	const [mode, setMode] = useState<"showing" | "renaming" | "removing">("showing");
 	const [pending, setPending] = useState(false);
 	const name = passkey.name || "Passkey";
+	// Each step takes the place of the button that opened it.
+	const renameButton = useFocusBack<HTMLButtonElement>(mode === "renaming");
+	const removeButton = useFocusBack<HTMLButtonElement>(mode === "removing");
 
-	async function run(action: () => Promise<{ error: { message?: string | undefined } | null }>) {
+	async function run(
+		action: () => Promise<{ error: { message?: string | undefined } | null }>,
+		removes = false,
+	) {
 		setPending(true);
 		onError(null);
-		const result = await action();
-		setPending(false);
-		if (result.error) {
-			onError(passkeyFailure(result.error));
+		try {
+			const result = await action();
+			if (result.error) {
+				onError(passkeyFailure(result.error));
+				return;
+			}
+			await onChange();
+			if (removes) onRemoved();
+		} catch {
+			onError(NOT_DONE);
+		} finally {
+			setPending(false);
 			setMode("showing");
-			return;
 		}
-		await onChange();
-		setMode("showing");
 	}
 
 	function rename(event: FormEvent<HTMLFormElement>) {
@@ -158,7 +202,7 @@ function PasskeyRow({
 
 	if (mode === "renaming") {
 		return (
-			<li className="px-4 py-3">
+			<li className={CARD_ROW}>
 				<form onSubmit={rename} className="flex flex-col gap-2 sm:flex-row sm:items-end">
 					<div className="min-w-0 flex-1 space-y-1.5">
 						<Label htmlFor={`passkey-${passkey.id}`}>Name</Label>
@@ -173,13 +217,14 @@ function PasskeyRow({
 						/>
 					</div>
 					<div className="flex gap-2">
-						<Button type="submit" size="sm" disabled={pending}>
-							Save
+						<Button type="submit" size="sm" className={ROW_BUTTON} disabled={pending}>
+							{pending ? "Saving…" : "Save"}
 						</Button>
 						<Button
 							type="button"
 							variant="ghost"
 							size="sm"
+							className={ROW_BUTTON}
 							disabled={pending}
 							onClick={() => setMode("showing")}
 						>
@@ -207,29 +252,55 @@ function PasskeyRow({
 					<Button
 						variant="destructive"
 						size="sm"
+						className={ROW_BUTTON}
+						aria-label={`Remove ${name}`}
 						disabled={pending}
 						onClick={() =>
-							run(() =>
-								authClient.$fetch("/account/remove-passkey", {
-									method: "POST",
-									body: { id: passkey.id },
-								}),
+							run(
+								() =>
+									authClient.$fetch("/account/remove-passkey", {
+										method: "POST",
+										body: { id: passkey.id },
+									}),
+								true,
 							)
 						}
 					>
-						Remove
+						{pending ? "Removing…" : "Remove"}
 					</Button>
-					<Button variant="ghost" size="sm" disabled={pending} onClick={() => setMode("showing")}>
+					<Button
+						variant="ghost"
+						size="sm"
+						className={ROW_BUTTON}
+						disabled={pending}
+						// The button that was pressed has gone, and this is the one that changes nothing.
+						autoFocus
+						onClick={() => setMode("showing")}
+					>
 						Keep
 					</Button>
 				</div>
 			) : (
 				<div className="flex shrink-0 gap-2">
-					<Button variant="ghost" size="sm" onClick={() => setMode("renaming")}>
+					<Button
+						ref={renameButton}
+						variant="ghost"
+						size="sm"
+						className={ROW_BUTTON}
+						aria-label={`Rename ${name}`}
+						onClick={() => setMode("renaming")}
+					>
 						Rename
 					</Button>
 					{mayRemove && (
-						<Button variant="ghost" size="sm" onClick={() => setMode("removing")}>
+						<Button
+							ref={removeButton}
+							variant="ghost"
+							size="sm"
+							className={ROW_BUTTON}
+							aria-label={`Remove ${name}`}
+							onClick={() => setMode("removing")}
+						>
 							Remove
 						</Button>
 					)}

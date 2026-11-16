@@ -11,6 +11,21 @@ export interface AllowedApp {
 	lastSignIn: string | Date | null;
 }
 
+/**
+ * One of the deployment's own apps that someone has signed in to. These do not ask, so there is nothing
+ * to take back: the list says where the account is in use, and leads back there.
+ */
+export interface UsedProduct {
+	/** The app's own id, such as `track`. */
+	app: string;
+	name: string;
+	host: string | null;
+	/** The origin the app is registered at, and never anything a sign-in brought along. */
+	openUrl: string | null;
+	/** When it last learned who they are, as the server serializes a date. */
+	lastSignIn: string | Date;
+}
+
 /** What each scope lets an app have, in the words of the person it is about. */
 const SCOPES: Record<string, string> = {
 	profile: "See your name and picture",

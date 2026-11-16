@@ -850,6 +850,163 @@ describe("the audit log", () => {
 	});
 });
 
+// The account page's list of where an account is in use. It reads the person's own rows of the log.
+describe("the products someone uses", () => {
+	interface Product {
+		app: string;
+		name: string;
+		host: string | null;
+		openUrl: string | null;
+		lastSignIn: string;
+	}
+
+	async function productsOf(person: Person) {
+		const response = await api("/account/products", person);
+		expect(response.status).toBe(200);
+		return ((await response.json()) as { products: Product[] }).products;
+	}
+
+	async function signedIn(app: App, person: Person) {
+		await signInToApp(app, person);
+		await id.auditEventRecorded(person.userId, { type: "app_sign_in", app: app.appId });
+	}
+
+	it("lists an app once someone has signed in to it, with where it is registered", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		expect(await productsOf(person)).toEqual([]);
+
+		await signedIn(app, person);
+		const response = await api("/account/products", person);
+		expect(response.headers.get("cache-control")).toContain("no-store");
+		const text = await response.text();
+		expect((JSON.parse(text) as { products: Product[] }).products).toEqual([
+			{
+				app: app.appId,
+				name: app.name,
+				host: app.host,
+				openUrl: `https://${app.host}`,
+				lastSignIn: expect.any(String),
+			},
+		]);
+		expect(text).not.toContain(app.clientId);
+		expect(text).not.toContain(app.clientSecret);
+	});
+
+	it("shows only what this person signed in to, whoever else signed in to what", async () => {
+		const [theirs, another] = [await newApp(), await newApp()];
+		const [person, someoneElse, nobody] = [await newPerson(), await newPerson(), await newPerson()];
+		await signedIn(theirs, person);
+		await signedIn(another, someoneElse);
+
+		expect((await productsOf(person)).map(({ app }) => app)).toEqual([theirs.appId]);
+		expect((await productsOf(someoneElse)).map(({ app }) => app)).toEqual([another.appId]);
+		expect(await productsOf(nobody)).toEqual([]);
+	});
+
+	it("refuses anyone who is not signed in", async () => {
+		const response = await api("/account/products", { client: newClient() });
+		expect(response.status).toBe(401);
+		expect(await response.text()).not.toContain("products");
+	});
+
+	it("puts the latest sign-in first", async () => {
+		const [first, second] = [await newApp(), await newApp()];
+		const person = await newPerson();
+		await signedIn(first, person);
+		await signedIn(second, person);
+		// The log's own clock, since two sign-ins in a test can share a millisecond.
+		await id.db
+			.prepare("UPDATE audit_event SET at = at - 60000 WHERE user_id = ? AND app = ?")
+			.bind(person.userId, first.appId)
+			.run();
+		expect((await productsOf(person)).map(({ app }) => app)).toEqual([second.appId, first.appId]);
+	});
+
+	// A link out of the account page is worth something to whoever could choose where it goes.
+	it("leads to where the app is registered, whatever the log or a request says", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		await signedIn(app, person);
+		await id.db
+			.prepare("UPDATE audit_event SET detail = ?, ip = ? WHERE user_id = ? AND app = ?")
+			.bind("https://elsewhere.test/", "https://elsewhere.test/", person.userId, app.appId)
+			.run();
+		const response = await id.fetch(
+			`${origin}/api/auth/account/products?openUrl=https://elsewhere.test&redirect_uri=https://elsewhere.test`,
+			{ headers: { cookie: person.cookie, "cf-connecting-ip": person.client } },
+		);
+		const { products } = (await response.json()) as { products: Product[] };
+		expect(products.map(({ openUrl }) => openUrl)).toEqual([`https://${app.host}`]);
+	});
+
+	it.each(["javascript:alert(1)", "myapp://cb", "data:text/html,hello"])(
+		"has no link and no host for an app registered at %s",
+		async (uri) => {
+			const app = await newApp();
+			const person = await newPerson();
+			await signedIn(app, person);
+			await id.db
+				.prepare("UPDATE oauth_client SET redirect_uris = ? WHERE client_id = ?")
+				.bind(JSON.stringify([uri]), app.clientId)
+				.run();
+			// A custom scheme's "host" is a word like `cb`, which reads as nothing to anyone.
+			expect(await productsOf(person)).toEqual([
+				expect.objectContaining({ app: app.appId, openUrl: null, host: null }),
+			]);
+		},
+	);
+
+	// An app registered for a developer's machine first sent everyone to that machine.
+	it("leads to the app's https address, though an http one is registered before it", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		await signedIn(app, person);
+		await id.db
+			.prepare("UPDATE oauth_client SET redirect_uris = ? WHERE client_id = ?")
+			.bind(
+				JSON.stringify(["http://localhost:4710/callback", `https://${app.host}/callback`]),
+				app.clientId,
+			)
+			.run();
+		expect(await productsOf(person)).toEqual([
+			expect.objectContaining({ openUrl: `https://${app.host}`, host: app.host }),
+		]);
+	});
+
+	it("leaves out an app that is switched off, gone or unreadable", async () => {
+		const [off, gone, unreadable, kept] = [
+			await newApp(),
+			await newApp(),
+			await newApp(),
+			await newApp(),
+		];
+		const person = await newPerson();
+		for (const app of [off, gone, unreadable, kept]) await signedIn(app, person);
+		await id.db
+			.prepare("UPDATE oauth_client SET disabled = 1 WHERE client_id = ?")
+			.bind(off.clientId)
+			.run();
+		await id.db.prepare("DELETE FROM oauth_client WHERE client_id = ?").bind(gone.clientId).run();
+		await id.db
+			.prepare("UPDATE oauth_client SET metadata = ? WHERE client_id = ?")
+			.bind("not json", unreadable.clientId)
+			.run();
+		expect((await productsOf(person)).map(({ app }) => app)).toEqual([kept.appId]);
+	});
+
+	it("forgets a product when the log has let go of the sign-in", async () => {
+		const app = await newApp();
+		const person = await newPerson();
+		await signedIn(app, person);
+		await id.db
+			.prepare("DELETE FROM audit_event WHERE user_id = ? AND type = 'app_sign_in'")
+			.bind(person.userId)
+			.run();
+		expect(await productsOf(person)).toEqual([]);
+	});
+});
+
 describe("what nobody gets", () => {
 	it("hands out no JWT holding someone's real id", async () => {
 		const person = await newPerson();

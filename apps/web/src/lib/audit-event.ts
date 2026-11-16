@@ -184,14 +184,15 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 		case "token_revoked":
 			return `Ended ${theApp}'s access`;
 		case "sessions_revoked":
-			return detail === "everywhere" ? "Signed out everywhere" : "Signed out on another device";
+			return detail === "everywhere" ? "Signed out everywhere" : "Signed out another browser";
 		case "password_changed":
 			if (detail === "first") return "Added a password";
 			if (detail === "link")
 				return "A new password was chosen with a link from this server's owner";
 			return detail === "removed" ? "Removed the password" : "Changed the password";
 		case "password_refused":
-			return "A wrong password was entered while signed in";
+			// What happened, and not who did it: the row under it asks whether it was them.
+			return "A wrong password was entered on the account page";
 		case "password_link_made":
 			if (byOther) return `${someone} made a link to choose a new password for this account`;
 			return `Made a link to choose a new password for ${other ?? "someone"}`;

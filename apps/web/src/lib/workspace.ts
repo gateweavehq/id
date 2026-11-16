@@ -235,6 +235,20 @@ export interface WorkspaceDetails {
 	appsEnabled: boolean;
 }
 
+/** How many workspaces someone is in and how many invitations they have, for their account page. */
+export function workspaceCounts(workspaces: number, invitations: number): string {
+	const belongs =
+		workspaces === 0
+			? "You are in no workspaces yet."
+			: workspaces === 1
+				? "You are in 1 workspace."
+				: `You are in ${workspaces} workspaces.`;
+	if (invitations === 0) return belongs;
+	return invitations === 1
+		? `${belongs} 1 invitation is waiting for you.`
+		: `${belongs} ${invitations} invitations are waiting for you.`;
+}
+
 const FAILURES: Record<string, string> = {
 	ORGANIZATION_ALREADY_EXISTS: "That address is taken. Try another.",
 	YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS:

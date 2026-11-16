@@ -1322,11 +1322,14 @@ describe("the owner's paths", () => {
 			"INVALID_PASSWORD_LENGTH",
 			400,
 		);
-		await refused(
-			await post("/deployment/invitations/accept", { token, name: "  ", newPassword: PASSWORD }),
-			"INVALID_REQUEST",
-			400,
-		);
+		const blank = await post("/deployment/invitations/accept", {
+			token,
+			name: "  ",
+			newPassword: PASSWORD,
+		});
+		// It used to be told it was too long.
+		expect(((await blank.clone().json()) as { message: string }).message).toBe("Enter a name.");
+		await refused(blank, "INVALID_REQUEST", 400);
 		await refused(
 			await post("/deployment/invitations/accept", {
 				token,

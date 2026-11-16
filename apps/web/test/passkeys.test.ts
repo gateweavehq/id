@@ -668,6 +668,21 @@ describe("naming a passkey", () => {
 		expect((await passkeysOf(person))[0]?.name).toBe(before);
 	});
 
+	// A blank name used to be told it was too long.
+	it("says what is wrong with a name it refuses", async () => {
+		const person = await newPersonWithAPassword();
+		const { passkeyId } = await withPasskey(person);
+		const refusalOf = async (name: string) => {
+			const renamed = await api("/passkey/update-passkey", {
+				...person,
+				body: { id: passkeyId, name },
+			});
+			return ((await renamed.json()) as { message: string }).message;
+		};
+		expect(await refusalOf("   ")).toBe("Enter a name.");
+		expect(await refusalOf("x".repeat(101))).toBe("Enter a name of at most 100 characters.");
+	});
+
 	it("does not reach someone else's", async () => {
 		const owner = await newPersonWithAPassword();
 		const { passkeyId } = await withPasskey(owner);

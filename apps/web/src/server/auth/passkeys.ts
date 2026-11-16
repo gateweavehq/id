@@ -207,7 +207,12 @@ function passkeyRules(db: Database, githubSignIn: boolean) {
 					handler: createAuthMiddleware(async (ctx) => {
 						const name = ctx.body?.name;
 						if (name !== undefined && !passkeyName.safeParse(name).success) {
-							throw APIError.from("BAD_REQUEST", INVALID_NAME);
+							// Someone who cleared the field has not gone over any limit.
+							const tooLong = typeof name === "string" && name.trim().length > 0;
+							throw APIError.from(
+								"BAD_REQUEST",
+								tooLong ? INVALID_NAME : { ...INVALID_NAME, message: "Enter a name." },
+							);
 						}
 						// Adding a passkey takes a recent sign-in, and this would make the session recent
 						// again for whoever holds it.
