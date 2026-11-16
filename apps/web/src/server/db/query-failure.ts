@@ -102,8 +102,9 @@ const STATEMENT_LENGTH = 600;
 /**
  * Makes the error for what D1 said, and logs it once, with the statement if there was one: the
  * text with its `?`, as Drizzle sent it, never the values. The app writes no value into a
- * statement's text (no `sql.raw`, and `sql` templates bind what they are given), so the text is
- * the code's own.
+ * statement's text: `sql` templates bind what they are given, and the one `sql.raw`, in
+ * `workspace-apps.ts`, takes only the column names of a row the code makes. So the text is the
+ * code's own.
  */
 function failed(cause: unknown, statement?: string): DatabaseError {
 	const error = new DatabaseError(kindOf(cause), newReference());

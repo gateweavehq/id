@@ -952,8 +952,11 @@ Agents have the same code, and the reasons are theirs too; what is ID's own is n
   Both are writes although they answer with rows, so they are sent once, and whoever's statement
   returns the row is the one that goes on. The read that finds a code's row before the delete may
   be sent again, which changes nothing: the delete names the row by its id. A code whose delete
-  failed was not used, and is good for the next request, once. The daily run's deletes begin with
-  `delete` and hold a `select`, and are sent once too.
+  never ran, because the failure came before D1 got it, was not used, and is good for the next
+  request, once. That is the case the tests make. When D1 ran the delete and only its answer was
+  lost, the caller gets an error and the code is spent: from the error alone the two cannot be
+  told apart, which is why the delete is never sent again. Either way a code buys tokens at most
+  once. The daily run's deletes begin with `delete` and hold a `select`, and are sent once too.
 - **A query that failed says nothing of its statement.** Drizzle's own error is `Failed query:
   select … params: …`, with every value the statement was given, and whoever catches an error
   tends to log it or show it. Better Auth logged a session read that failed, the token among its
@@ -988,11 +991,17 @@ Agents have the same code, and the reasons are theirs too; what is ID's own is n
   kind only, which Better Auth's oauth-provider would read to tell a database not migrated yet (`no
   such table`) from a real failure when it writes the resources it is given as it starts. ID gives
   it none, so it asks nothing then.
-- **An app gets an error, never a token and never a person.** The provider's endpoints catch no
-  failed query, so Better Auth answers 500 with an empty body, as it did: nothing in a redirect,
-  no `error_description`. `/oauth2/authorize` leaves the browser here when the app or the check
-  for who may sign in cannot be read; when the session cannot be read, the provider takes it for
-  nobody being signed in and asks the person to sign in, here. `/oauth2/token` gives nothing when
+- **An app gets an error, never a token and never a person.** Most of the provider's endpoints
+  catch no failed query, so Better Auth answers 500 with an empty body, as it did, and nothing of
+  the database is in any answer. `/oauth2/authorize` leaves the browser here when the app or the
+  check for who may sign in cannot be read. Where the provider catches a failed read itself, it
+  answers in fixed words of its own. When the session or the person cannot be read, it takes that
+  for nobody being signed in: it asks the person to sign in, here, and an app that asked quietly
+  (`prompt=none`) is sent back `error=login_required` with `error_description=authentication
+  required`, which fails closed, with no code. `/oauth2/end-session` answers 500 `server_error`
+  with `Unable to read the current session` or `Unable to resolve the logout client`, and 401
+  `invalid_token` with `The id_token_hint is invalid` when the keys cannot be read to check the
+  hint; nobody is signed out by half. `/oauth2/token` gives nothing when
   the code or the refresh token cannot be looked up, when the tokens cannot be written (the code
   is spent by then) or when the check that runs again there cannot be read, since a check that
   fails closed has to fail closed on an error too. `/oauth2/userinfo`, the keys and discovery
@@ -1003,7 +1012,13 @@ Agents have the same code, and the reasons are theirs too; what is ID's own is n
   cause, as Better Auth's `Failed to get session` is, leaves with the reference added to its
   message (`apps/web/src/start.ts`). A form still shows the message of what a server function
   threw, which for a failed query is that sentence, and Better Auth's own endpoints give a form
-  nothing to show but its fallback.
+  nothing to show but its fallback. That file is the app's start instance, and having one
+  replaces the framework's defaults: without one, TanStack Start puts its guard against requests
+  another site made in front of every server function, and with one it uses only the request
+  middleware the instance lists. So `start.ts` lists the same guard
+  (`createCsrfMiddleware`, for server functions only), and a server function still answers 403
+  to a request whose `Sec-Fetch-Site`, `Origin` or `Referer` is not this origin's. The provider's
+  endpoints are no server functions, and other origins call them by design.
 
 None of what `query-failure.ts` reaches for is in Drizzle's public types. With a session it does
 not know, `createDb` throws as the Worker starts, and with a prepared query sent some other way,

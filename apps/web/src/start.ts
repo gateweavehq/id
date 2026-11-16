@@ -1,4 +1,4 @@
-import { createMiddleware, createStart } from "@tanstack/react-start";
+import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
 import { referenceIn } from "./lib/error-reference";
 
 /**
@@ -21,4 +21,16 @@ const keepReference = createMiddleware({ type: "function" }).server(async ({ nex
 	}
 });
 
-export const startInstance = createStart(() => ({ functionMiddleware: [keepReference] }));
+/**
+ * The framework's own guard for server functions, said here because saying anything here takes
+ * it away: without a start instance the framework puts this in front of every server-function
+ * request, and with one it uses the instance's `requestMiddleware` and nothing else. It answers
+ * 403 to a request another site made (`Sec-Fetch-Site`, then `Origin`, then `Referer`). Only
+ * server functions: the provider's endpoints are called from other origins by design.
+ */
+const sameSiteOnly = createCsrfMiddleware({ filter: (ctx) => ctx.handlerType === "serverFn" });
+
+export const startInstance = createStart(() => ({
+	requestMiddleware: [sameSiteOnly],
+	functionMiddleware: [keepReference],
+}));

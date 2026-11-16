@@ -168,7 +168,7 @@ async function answerOf(response: Response) {
 type Answer = Awaited<ReturnType<typeof answerOf>>;
 
 /** A browser arriving at the authorization endpoint, as an app would send it there. */
-async function authorizeRequest(app: App, person: Who | null) {
+async function authorizeRequest(app: App, person: Who | null, params: Record<string, string> = {}) {
 	const state = oauth.generateRandomState();
 	const nonce = oauth.generateRandomNonce();
 	const verifier = oauth.generateRandomCodeVerifier();
@@ -182,10 +182,16 @@ async function authorizeRequest(app: App, person: Who | null) {
 		nonce,
 		code_challenge: await oauth.calculatePKCECodeChallenge(verifier),
 		code_challenge_method: "S256",
+		...params,
 	}).toString();
-	const send = () =>
+	/** `from` is what the browser says of where it was sent from, if a test has it say so. */
+	const send = (from: Record<string, string> = {}) =>
 		id.fetch(url, {
-			headers: { "cf-connecting-ip": newClient(), ...(person && { cookie: person.cookie }) },
+			headers: {
+				"cf-connecting-ip": newClient(),
+				...(person && { cookie: person.cookie }),
+				...from,
+			},
 		});
 	return { send, state, nonce, verifier };
 }
@@ -302,8 +308,11 @@ function serverFnUrl(name: string) {
 	return `${origin}/_serverFn/${found}`;
 }
 
-/** Calls a GET server function with nothing, and answers what came back. */
-async function serverFn(name: string, cookie: string) {
+/**
+ * Calls a GET server function with nothing, and answers what came back. `from` is what the browser
+ * says of where the request was made: its own page, unless a test says another.
+ */
+async function serverFn(name: string, cookie: string, from: Record<string, string> = { origin }) {
 	// Seroval's JSON for `{ data: undefined }`.
 	const payload = JSON.stringify({
 		t: { t: 10, i: 0, p: { k: ["data"], v: [{ t: 2, s: 1 }] }, o: 0 },
@@ -314,12 +323,12 @@ async function serverFn(name: string, cookie: string) {
 		headers: {
 			"x-tsr-serverFn": "true",
 			accept: "application/json",
-			origin,
+			...from,
 			cookie,
 			"cf-connecting-ip": newClient(),
 		},
 	});
-	return { text: await response.text() };
+	return { status: response.status, text: await response.text() };
 }
 
 function page(path: string, who: Who) {
@@ -707,5 +716,150 @@ describe("what else asks the database", () => {
 
 		await id.runCron();
 		expect(await held()).toBe(0);
+	});
+});
+
+// The two places where the provider catches a failed read itself and answers in words of its own.
+// The words are fixed ones, and none is the database's.
+describe("where the provider answers a failed read itself", () => {
+	it.each(["session", "user"])(
+		"an app asking quietly is told nobody is signed in when %s cannot be read, and gets no code",
+		async (table) => {
+			const person = await newPerson();
+			const app = await firstPartyApp();
+			const asked = await authorizeRequest(app, person, { prompt: "none" });
+
+			const from = id.logs.length;
+			const answer = await without(table, async () => answerOf(await asked.send()));
+
+			// It fails closed: the app is told to ask the person to sign in.
+			const sent = whereSent(answer);
+			expect(sent.host).toBe(app.host);
+			expect(sent.searchParams.get("error")).toBe("login_required");
+			expect(sent.searchParams.get("error_description")).toBe("authentication required");
+			expect(sent.searchParams.get("state")).toBe(asked.state);
+			expectNoTokens(answer);
+			expectNoStatement(answer.everything);
+			expectNoStatementValues(loggedSince(from), person);
+			expect(failuresSince(from).length).toBeGreaterThan(0);
+
+			// With the table back, the same request gets its code.
+			expect(whereSent(await answerOf(await asked.send())).searchParams.get("code")).toBeTruthy();
+		},
+	);
+
+	it("signing out of an app answers in fixed words, and signs nobody out by half", async () => {
+		const person = await newPerson();
+		const app = await firstPartyApp();
+		const returning = await withACode(app, person);
+		const tokens = await tokensFrom(app, returning, await tokenRequest(app, returning));
+		const endSession = () =>
+			id.fetch(`${as.end_session_endpoint}?id_token_hint=${tokens.id_token}`, {
+				headers: { cookie: person.cookie, "cf-connecting-ip": newClient() },
+			});
+		const said = async (table: string) => {
+			const from = id.logs.length;
+			const answer = await without(table, async () => answerOf(await endSession()));
+			expectNoStatement(answer.everything);
+			expectNoStatementValues(loggedSince(from), person);
+			expect(loggedSince(from)).not.toContain(app.clientId);
+			expect(answer.location).toBeNull();
+			return { status: answer.status, ...(JSON.parse(answer.text) as object) };
+		};
+
+		expect(await said("session")).toEqual({
+			status: 500,
+			error: "server_error",
+			error_description: "Unable to read the current session",
+		});
+		expect(await said("oauth_client")).toEqual({
+			status: 500,
+			error: "server_error",
+			error_description: "Unable to resolve the logout client",
+		});
+		// A key that cannot be read is a hint that cannot be checked.
+		expect(await said("jwks")).toEqual({
+			status: 401,
+			error: "invalid_token",
+			error_description: "The id_token_hint is invalid",
+		});
+
+		// Still signed in after all three.
+		expect((await serverFn("getSession", person.cookie)).text).toContain(person.email);
+	});
+});
+
+// `src/start.ts` adds a middleware to server functions, and a start instance replaces the
+// framework's defaults, its guard against requests another site made among them. So the guard is
+// listed there, and this holds it there. Other sites do call the provider's endpoints, which are
+// no server functions.
+describe("a server function called from another site", () => {
+	it.each([
+		["a cross-site request", { "sec-fetch-site": "cross-site" }],
+		["a same-site request from another host", { "sec-fetch-site": "same-site" }],
+		["another origin", { origin: "https://elsewhere.test" }],
+		["another origin's page", { referer: "https://elsewhere.test/page" }],
+	])("is refused, and its handler does not run: %s", async (_what, from) => {
+		const person = await newPerson();
+
+		const logged = id.logs.length;
+		// The handler reads the session first, which would fail and say so in the log.
+		const answer = await without("session", () => serverFn("getSession", person.cookie, from));
+
+		expect(answer.status).toBe(403);
+		expect(answer.text).toBe("Forbidden");
+		expect(failuresSince(logged)).toEqual([]);
+	});
+
+	it.each([
+		["the browser saying so", { "sec-fetch-site": "same-origin" }],
+		["its origin", { origin }],
+		["its page's address", { referer: `${origin}/account` }],
+	])("answers its own page as before, by %s", async (_what, from) => {
+		const person = await newPerson();
+
+		const answer = await serverFn("getSession", person.cookie, from);
+
+		expect(answer.status).toBe(200);
+		expect(answer.text).toContain(person.email);
+	});
+
+	it("leaves the provider's endpoints to other origins, as apps call them", async () => {
+		const person = await newPerson();
+		const app = await firstPartyApp();
+		const elsewhere = { origin: `https://${app.host}`, "sec-fetch-site": "cross-site" };
+		const fromElsewhere: typeof fetch = (input, init) =>
+			appFetch(input, {
+				...init,
+				headers: { ...Object.fromEntries(new Headers(init?.headers)), ...elsewhere },
+			});
+
+		const discovery = await fromElsewhere(`${origin}/.well-known/openid-configuration`);
+		expect(discovery.status).toBe(200);
+		const keys = await fromElsewhere(as.jwks_uri ?? "");
+		expect(((await keys.json()) as { keys: unknown[] }).keys.length).toBeGreaterThan(0);
+
+		// A browser sent here from the app's page.
+		const asked = await authorizeRequest(app, person);
+		const location = whereSent(await answerOf(await asked.send(elsewhere)));
+		expect(location.host).toBe(app.host);
+		const returning = { ...asked, location };
+
+		const exchanged = await oauth.authorizationCodeGrantRequest(
+			as,
+			app.client,
+			app.auth,
+			oauth.validateAuthResponse(as, app.client, location, asked.state),
+			app.redirectUri,
+			asked.verifier,
+			{ [oauth.customFetch]: fromElsewhere },
+		);
+		const tokens = await tokensFrom(app, returning, exchanged);
+		expect(tokens.access_token).toMatch(/^gwid_at_/);
+
+		const userinfo = await fromElsewhere(as.userinfo_endpoint ?? "", {
+			headers: { authorization: `Bearer ${tokens.access_token}` },
+		});
+		expect(await userinfo.json()).toMatchObject({ email: person.email });
 	});
 });
