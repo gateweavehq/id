@@ -1,11 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	AccountCard,
 	CARD_ACTION_ROW,
 	CARD_ROW,
 	LoadFailure,
 	ROW_BUTTON,
-	useFocusBack,
 	useLoaded,
 } from "#/components/account-section";
 import { Button } from "#/components/ui/button";
@@ -85,9 +84,24 @@ export function AccountSessions({
 	const [asking, setAsking] = useState<"others" | "everything" | null>(null);
 	const [done, setDone] = useState<string | null>(null);
 	const heading = useRef<HTMLHeadingElement>(null);
-	// Each question takes the place of the button that asked it.
-	const othersButton = useFocusBack<HTMLButtonElement>(asking === "others");
-	const everythingButton = useFocusBack<HTMLButtonElement>(asking === "everything");
+	// Each question takes the place of the button that asked it, and "Cancel" gives that button the
+	// focus back. Only "Cancel": when one question gives way to the other, or a sign-out closes one,
+	// the focus belongs to the new question or to the heading, and must not be taken back here.
+	const othersButton = useRef<HTMLButtonElement>(null);
+	const everythingButton = useRef<HTMLButtonElement>(null);
+	const cancelled = useRef<"others" | "everything" | null>(null);
+
+	function cancel() {
+		cancelled.current = asking;
+		setAsking(null);
+	}
+
+	useEffect(() => {
+		if (asking !== null) return;
+		if (cancelled.current === "others") othersButton.current?.focus();
+		if (cancelled.current === "everything") everythingButton.current?.focus();
+		cancelled.current = null;
+	}, [asking]);
 
 	/**
 	 * The sessions the server has said are ended. They leave the list at once, whatever becomes of
@@ -226,7 +240,7 @@ export function AccountSessions({
 							disabled={ending !== null}
 							// The button that was pressed has gone, and this is the one that changes nothing.
 							autoFocus
-							onClick={() => setAsking(null)}
+							onClick={cancel}
 						>
 							Cancel
 						</Button>
@@ -290,13 +304,7 @@ export function AccountSessions({
 						>
 							{ending === "everything" ? "Signing out…" : "Yes, sign out of everything"}
 						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							disabled={ending !== null}
-							autoFocus
-							onClick={() => setAsking(null)}
-						>
+						<Button variant="ghost" size="sm" disabled={ending !== null} autoFocus onClick={cancel}>
 							Cancel
 						</Button>
 					</div>

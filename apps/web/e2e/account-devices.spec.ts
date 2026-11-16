@@ -184,6 +184,44 @@ test("signing out other browsers asks first, and can be taken back", async ({ pa
 	expect(problemsElsewhere).toEqual([[], []]);
 });
 
+// Only "Cancel" gives the focus back to the button that asked. It used to go back on every close,
+// and so away from where it had just been put.
+test("the focus stays where a new question or an ended session puts it", async ({
+	page,
+	baseURL,
+}) => {
+	const problems = await watch(page);
+	const email = await newPerson(page);
+	const [second, third] = [await newDevice(page, baseURL), await newDevice(page, baseURL)];
+	await signIn(second, email, PASSWORD);
+	await signIn(third, email, PASSWORD);
+	await page.reload({ waitUntil: "networkidle" });
+	const sessions = sessionsOf(page);
+	const rows = sessions.getByRole("listitem");
+	await expect(rows).toHaveCount(3);
+
+	await test.step("one question giving way to the other", async () => {
+		await sessions.getByRole("button", { name: "Sign out other browsers", exact: true }).click();
+		await sessions.getByRole("button", { name: "Sign out of everything", exact: true }).click();
+		await expect(sessions.getByText("This signs you out everywhere, here too")).toBeVisible();
+		await expect(sessions.getByRole("button", { name: "Cancel" })).toBeFocused();
+	});
+
+	await test.step("a session ended while a question is open", async () => {
+		await rows
+			.last()
+			.getByRole("button", { name: /^Sign out Chrome on Windows/ })
+			.click();
+		await expect(rows).toHaveCount(2);
+		await expect(sessions.getByText("This signs you out everywhere, here too")).toHaveCount(0);
+		await expect(page.getByRole("heading", { name: "Where you are signed in" })).toBeFocused();
+	});
+
+	await second.context().close();
+	await third.context().close();
+	expect(problems).toEqual([]);
+});
+
 test("signing out of everything asks first, and can be taken back", async ({ page }) => {
 	const problems = await watch(page);
 	await newPerson(page);
