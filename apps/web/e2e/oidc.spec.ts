@@ -181,6 +181,7 @@ test("signing in leaves the way to the provider's answer alone", async ({ page }
 test("someone who stopped the browser on its way to the app is told, and can load the page again", async ({
 	page,
 }) => {
+	const problems = await watch(page);
 	// An answer with no page in it leaves the browser where it was, as pressing Stop does.
 	await page.route(`${APP.redirectUri}*`, (route) => route.fulfill({ status: 204 }));
 	await goToSignIn(page);
@@ -202,6 +203,7 @@ test("someone who stopped the browser on its way to the app is told, and can loa
 
 	await expect(progress).toHaveCount(0);
 	for (const button of buttons) await expect(button).toBeEnabled();
+	expect(problems).toEqual([]);
 });
 
 test("signing up leaves the way to the provider's answer alone", async ({ page }) => {
@@ -605,11 +607,18 @@ test.describe("signing in with a passkey on the way to an app", () => {
 		const gitHubAnswered = new Promise<void>((resolve) => {
 			answered = resolve;
 		});
+		// Whether the browser gave up on GitHub, which is what leaves its answer with nowhere to go.
+		let gaveUpOnGitHub = false;
+		page.on("requestfailed", (request) => {
+			if (request.url().startsWith("https://github.com/")) gaveUpOnGitHub = true;
+		});
 		await page.route("https://github.com/**", async (route) => {
 			await new Promise((resolve) => setTimeout(resolve, 20_000));
 			gitHubHasAnswered = true;
 			// The page stopped the browser on its way here, so there is nobody to answer.
-			await route.fulfill({ status: 302, headers: { location: comeBackTo } }).catch(() => {});
+			await route.fulfill({ status: 302, headers: { location: comeBackTo } }).catch(() => {
+				gaveUpOnGitHub = true;
+			});
 			answered();
 		});
 		const flow = await goToSignIn(page);
@@ -626,7 +635,8 @@ test.describe("signing in with a passkey on the way to an app", () => {
 		const claims = await finish(page, flow);
 		expect(claims.email).toBe(email);
 		await gitHubAnswered;
-		await page.waitForTimeout(500);
+		// GitHub's answer came to a browser that was no longer waiting for it, so nothing follows it.
+		expect(gaveUpOnGitHub).toBe(true);
 		// One, and it left while GitHub was still thinking: the page had given itself back.
 		expect({ answers: sent.length, returns }).toEqual({ answers: 1, returns: [false] });
 		expect(problems).toEqual([]);

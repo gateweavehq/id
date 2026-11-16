@@ -234,6 +234,21 @@ describe("an attempt that worked, on a page that is leaving", () => {
 		expect(latch.phase).toBe("leaving");
 	});
 
+	it("does not stop the browser for a page that started going while it was asking", async () => {
+		const page = shownPage();
+		const latch = createSignInLatch(page);
+		let answer: (nothing: boolean) => void = () => {};
+		latch.take()?.leave(() => new Promise<boolean>((resolve) => (answer = resolve)));
+		await vi.advanceTimersByTimeAsync(GIVE_BACK_AFTER);
+
+		latch.halt();
+		answer(true);
+		await vi.advanceTimersByTimeAsync(GIVE_BACK_AFTER);
+
+		expect(page.stopped).toBe(0);
+		expect(latch.held).toBe(true);
+	});
+
 	it("does not give back the page of a later attempt", async () => {
 		const page = shownPage();
 		const latch = createSignInLatch(page);

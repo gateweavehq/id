@@ -77,7 +77,10 @@ export function createSignInLatch(page: ShownPage = thisPage): SignInLatch {
 	const changed = () => {
 		for (const listener of [...listeners]) listener();
 	};
+	/** Goes up when the page is going, so that what was already asking does not act on the answer. */
+	let halts = 0;
 	const halt = () => {
+		halts++;
 		for (const timer of timers) clearTimeout(timer);
 		timers = [];
 	};
@@ -109,11 +112,14 @@ export function createSignInLatch(page: ShownPage = thisPage): SignInLatch {
 					timers.push(setTimeout(() => giveBack(cameToNothing), 1_000));
 					return;
 				}
+				// A page that started going while this was asking is somebody else's to stop by now.
+				const began = halts;
+				const still = () => mine() && halts === began;
 				try {
 					// Asked before stopping, so that one on its way to an app is left to arrive.
-					if (!(await cameToNothing()) || !mine()) return;
+					if (!(await cameToNothing()) || !still()) return;
 					page.stop();
-					if (!(await cameToNothing()) || !mine()) return;
+					if (!(await cameToNothing()) || !still()) return;
 				} catch {
 					return;
 				}

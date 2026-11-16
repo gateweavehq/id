@@ -375,11 +375,14 @@ test("an offer in the email field that got going late does not end the passkey b
 			const url = input instanceof Request ? input.url : String(input);
 			if (url.includes("/passkey/generate-authenticate-options") && !pressed) {
 				await theButtonAsked;
+				// Counted once they have arrived, which is when the offer's ceremony would start.
+				const answer = await send(input, init);
 				Reflect.set(
 					window,
 					"lateOptions",
 					((Reflect.get(window, "lateOptions") as number) ?? 0) + 1,
 				);
+				return answer;
 			}
 			return send(input, init);
 		};
@@ -395,8 +398,8 @@ test("an offer in the email field that got going late does not end the passkey b
 
 	await page.getByRole("button", { name: "Use a passkey" }).click();
 	await expect.poll(late).toBeGreaterThan(0);
-	// The time the offer's options take to arrive, and its ceremony to start if it is going to.
-	await page.waitForLoadState("networkidle");
+	// The options have arrived. What is left before a ceremony starts is the page's own work, with
+	// nothing more to wait for from outside.
 	await page.waitForTimeout(500);
 
 	expect(await ceremonies()).toEqual([{ offer: false, ended: false }]);
