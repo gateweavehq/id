@@ -59,7 +59,7 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await signIn(elsewhere, email, PASSWORD);
 		await page.reload({ waitUntil: "networkidle" });
 		await expect(sessions.getByRole("listitem")).toHaveCount(2);
-		await expect(sessions.getByText("This device")).toHaveCount(1);
+		await expect(sessions.getByText("This browser")).toHaveCount(1);
 		await expect(sessions.getByText(`from ${ELSEWHERE}`)).toBeVisible();
 		// The newest session, and the one that is not this device, is the only one with a button.
 		await sessions.getByRole("listitem").getByRole("button", { name: "Sign out" }).click();
@@ -87,7 +87,7 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await expect(page.getByText("Your password is changed")).toBeVisible();
 
 		// This device has a new session now, and the list keeps up.
-		await expect(sessions.getByText("This device")).toHaveCount(1);
+		await expect(sessions.getByText("This browser")).toHaveCount(1);
 		await expect(sessions.getByRole("listitem")).toHaveCount(1);
 
 		await elsewhere.reload();
@@ -106,7 +106,8 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await copy.goto("/account", { waitUntil: "networkidle" });
 		await expect(copy.getByRole("heading", { name: "Your account" })).toBeVisible();
 
-		await sessions.getByRole("button", { name: "Sign out everywhere", exact: true }).click();
+		await sessions.getByRole("button", { name: "Sign out of everything", exact: true }).click();
+		await sessions.getByRole("button", { name: "Yes, sign out of everything" }).click();
 		await expect(
 			page.getByRole("heading", { name: "You are signed out everywhere" }),
 		).toBeVisible();

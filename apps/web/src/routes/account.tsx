@@ -193,7 +193,7 @@ function AccountPage() {
 				)}
 
 				<AccountGroup id="activity" title="Activity">
-					<AccountActivity />
+					<AccountActivity hasPassword={data.ways.password} />
 				</AccountGroup>
 
 				<AccountDelete

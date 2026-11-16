@@ -30,6 +30,7 @@ const SERVED = [
 	// Someone's own account and sessions.
 	"GET /account/activity",
 	"GET /account/allowed-apps",
+	"GET /account/delete/check",
 	"GET /account/products",
 	"GET /list-accounts",
 	"GET /list-sessions",

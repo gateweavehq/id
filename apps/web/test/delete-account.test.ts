@@ -508,6 +508,97 @@ describe("who has to stay", () => {
 	});
 });
 
+// What the account page asks before it shows a field for the password. It reads, and decides nothing.
+describe("what would stop an account being deleted", () => {
+	interface Check {
+		runsServer: boolean;
+		onlyOwnerOf: { name: string; slug: string }[];
+	}
+
+	async function checkOf(who: Who) {
+		const response = await api("/account/delete/check", { who });
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toContain("no-store");
+		return (await response.json()) as Check;
+	}
+
+	it("is nothing, for someone with no workspace of their own", async () => {
+		expect(await checkOf(await newPerson())).toEqual({ runsServer: false, onlyOwnerOf: [] });
+	});
+
+	it("names the workspaces only they own, and where each is", async () => {
+		const owner = await newPerson();
+		const other = await newPerson();
+		const shared = await newWorkspace(owner, "Zebra Tools");
+		const alone = await newWorkspace(owner, "Acme Labs");
+		const otherMember = await join(other, shared, owner, "admin");
+
+		expect(await checkOf(owner)).toEqual({
+			runsServer: false,
+			onlyOwnerOf: [
+				{ name: "Acme Labs", slug: alone.slug },
+				{ name: "Zebra Tools", slug: shared.slug },
+			],
+		});
+
+		const promoted = await api("/organization/update-member-role", {
+			who: owner,
+			body: { organizationId: shared.id, memberId: otherMember, role: "owner" },
+		});
+		expect(promoted.status).toBe(200);
+		expect((await checkOf(owner)).onlyOwnerOf).toEqual([{ name: "Acme Labs", slug: alone.slug }]);
+	});
+
+	it("says nothing of anyone else's workspaces, to a member or to a stranger", async () => {
+		const owner = await newPerson();
+		const member = await newPerson();
+		const stranger = await newPerson();
+		const workspace = await newWorkspace(owner, "Theirs Alone");
+		await join(member, workspace, owner);
+
+		expect((await checkOf(owner)).onlyOwnerOf).toHaveLength(1);
+		expect(await checkOf(member)).toEqual({ runsServer: false, onlyOwnerOf: [] });
+		expect(await checkOf(stranger)).toEqual({ runsServer: false, onlyOwnerOf: [] });
+	});
+
+	it("says who runs the server, and only to them", async () => {
+		expect((await checkOf(runsTheServer)).runsServer).toBe(true);
+		expect((await checkOf(await newPerson())).runsServer).toBe(false);
+	});
+
+	it("refuses anyone who is not signed in", async () => {
+		const response = await api("/account/delete/check");
+		expect(response.status).toBe(401);
+		expect(await response.text()).not.toContain("onlyOwnerOf");
+	});
+
+	it("takes no body, and changes nothing", async () => {
+		const person = await newPerson();
+		const asked = await api("/account/delete/check", { who: person, body: { password: PASSWORD } });
+		expect(asked.status).not.toBe(200);
+		await checkOf(person);
+		expect(await hasAccount(person)).toBe(true);
+		expect(await isSignedIn(person)).toBe(true);
+	});
+
+	// The page's question is a courtesy. Whatever it was told, deleting asks again.
+	it("does not stand in for the check at deletion", async () => {
+		const owner = await newPerson();
+		expect((await checkOf(owner)).onlyOwnerOf).toEqual([]);
+		await newWorkspace(owner, "Made Since");
+
+		const refused = await deleteAccount(owner);
+		expect(refused.status).toBe(403);
+		const { code, message } = (await refused.json()) as { code: string; message: string };
+		expect(code).toBe("ONLY_OWNER_OF_WORKSPACES");
+		// One workspace, so not "of each".
+		expect(message).toBe(
+			"You are the only owner of Made Since. Make someone else an owner, or delete it, first.",
+		);
+		expect(await hasAccount(owner)).toBe(true);
+	});
+});
+
 describe("what a workspace keeps", () => {
 	it("keeps an app and a group, and says who left", async () => {
 		const owner = await newPerson();

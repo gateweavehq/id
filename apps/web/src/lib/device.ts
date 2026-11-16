@@ -35,3 +35,14 @@ export function describeDevice(userAgent: string | null | undefined): string {
 	if (browser && system) return `${browser} on ${system}`;
 	return browser ?? system ?? "Unknown device";
 }
+
+/**
+ * The same, for a session, which is always a browser's: where the user agent does not say which,
+ * it is still "A browser", and where it says only the system, "A browser on Windows". It guesses at
+ * nothing it does not find, and like the name above it is only a label.
+ */
+export function describeBrowser(userAgent: string | null | undefined): string {
+	const browser = userAgent ? find(BROWSERS, userAgent) : undefined;
+	const system = userAgent ? find(SYSTEMS, userAgent) : undefined;
+	return `${browser ?? "A browser"}${system ? ` on ${system}` : ""}`;
+}

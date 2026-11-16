@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeDevice } from "./device";
+import { describeBrowser, describeDevice } from "./device";
 
 describe("describeDevice", () => {
 	it.each([
@@ -62,5 +62,33 @@ describe("describeDevice", () => {
 		expect(describeDevice(undefined)).toBe("Unknown device");
 		expect(describeDevice("")).toBe("Unknown device");
 		expect(describeDevice("curl/8.5.0")).toBe("Unknown device");
+	});
+});
+
+describe("describeBrowser", () => {
+	it("names the browser and the system where the user agent says both", () => {
+		expect(
+			describeBrowser(
+				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+			),
+		).toBe("Chrome on Windows");
+		expect(
+			describeBrowser(
+				"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+			),
+		).toBe("Safari on iPhone");
+	});
+
+	it("says a browser where it cannot tell which", () => {
+		expect(describeBrowser("Mozilla/5.0 (Windows NT 10.0)")).toBe("A browser on Windows");
+		expect(describeBrowser("Firefox/132.0")).toBe("Firefox");
+	});
+
+	it("says a browser, and no more, when it is unsure", () => {
+		expect(describeBrowser(null)).toBe("A browser");
+		expect(describeBrowser(undefined)).toBe("A browser");
+		expect(describeBrowser("")).toBe("A browser");
+		expect(describeBrowser("curl/8.5.0")).toBe("A browser");
+		expect(describeBrowser("Mozilla/5.0 (compatible; SomethingNew/1.0)")).toBe("A browser");
 	});
 });

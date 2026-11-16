@@ -277,6 +277,32 @@ describe("sessions", () => {
 		expect(await isSignedIn(elsewhere)).toBe(true);
 	});
 
+	// What the page's rows are made of: "Chrome on Windows · with a password", and when it was last used.
+	it("says how each was made and when it was last used, and takes neither from a request", async () => {
+		const person = await newPerson();
+		await signIn(person.email);
+		const response = await api("/list-sessions", person);
+		const sessions = (await response.json()) as {
+			signInMethod: string | null;
+			createdAt: string;
+			updatedAt: string;
+		}[];
+		expect(sessions.map(({ signInMethod }) => signInMethod).sort()).toEqual(["code", "password"]);
+		for (const session of sessions) {
+			expect(Date.parse(session.updatedAt)).toBeGreaterThanOrEqual(Date.parse(session.createdAt));
+		}
+
+		await api("/update-session", {
+			client: person.client,
+			cookie: person.cookie,
+			body: { signInMethod: "passkey" },
+		});
+		const after = (await (await api("/list-sessions", person)).json()) as {
+			signInMethod: string | null;
+		}[];
+		expect(after.map(({ signInMethod }) => signInMethod).sort()).toEqual(["code", "password"]);
+	});
+
 	it("ends one device, leaving the others", async () => {
 		const person = await newPerson();
 		const second = await signIn(person.email);

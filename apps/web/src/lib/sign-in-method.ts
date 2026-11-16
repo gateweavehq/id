@@ -46,6 +46,27 @@ export const TWO_FACTORS_TO_CHANGE_TWO_FACTOR = {
 		"Sign in with your authenticator code, a recovery code or your passkey first, then turn off two-factor sign-in or replace your recovery codes.",
 };
 
+const SIGNED_IN: Record<string, string> = {
+	password: "with a password",
+	passkey: "with a passkey",
+	github: "with GitHub",
+	code: "with a code sent by email",
+	totp: "with a password and an authenticator code",
+	recovery_code: "with a password and a recovery code",
+	invitation: "from an invitation",
+	claim: "with a password",
+};
+
+/**
+ * How a session was made, to finish "Chrome on Windows · …" in the list of someone's sessions.
+ * Nothing for a session that does not say, or says something this build has not heard of.
+ */
+export function signedInWith(method: unknown): string | undefined {
+	return typeof method === "string" && Object.hasOwn(SIGNED_IN, method)
+		? SIGNED_IN[method]
+		: undefined;
+}
+
 /**
  * Whether a session made this way showed two factors. One that does not say how it was made did not:
  * it is older than the column, or came from a path nobody has decided about, and asking that person to

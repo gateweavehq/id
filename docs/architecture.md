@@ -397,7 +397,10 @@ it, at `/account/delete`.
 - **Two people have to stay.** The only owner of a workspace hands it over or deletes it first, and the answer
   names each one. Whoever runs the server stays until someone else does, as [self-hosting.md](self-hosting.md)
   says. The answers have words because the code asks first. The triggers `member_delete_keeps_an_owner` and
-  `deployment_keeps_its_owner` hold it whatever asks.
+  `deployment_keeps_its_owner` hold it whatever asks. The page asks the same two questions before it shows a
+  field for the password (`/account/delete/check`, which reads, about whoever asks), and says what stands in
+  the way with a link to each workspace. That is a courtesy: deleting asks again, since either answer can
+  change in between.
 - **Better Auth's `/delete-user` stays off.** Its `internalAdapter.deleteUser` removes the sessions, then the
   ways of signing in, and the user last, so a trigger refusing that last step would leave someone with no way
   back. This ends the sessions through the adapter, so that the provider's hooks send back-channel logouts,
@@ -1075,7 +1078,8 @@ themselves, so a session they cannot read is refused there too.
   Siteverify cannot answer. Entering a code needs no pass, since the code is the proof.
 - Rate limits are durable and keyed by `cf-connecting-ip`, or by zone for a Worker.
 - Changing a password ends every other session, since whoever knew the old one may be why it changed.
-  The account page lists a person's sessions, and they can end any of them.
+  The account page lists a person's sessions, and they can end any of them. Ending several at once asks
+  first, on the page, and then makes the request it always made.
 - The cookie keeps the session token away from scripts, so the session a page carries leaves it out.
 - A password known from a breach is refused wherever someone chooses one. Only the first five
   characters of its SHA-1 go to Have I Been Pwned. It is on in Gateweave Cloud, and self-hosters opt in
@@ -1143,7 +1147,10 @@ account can collect.
 
 A person sees their last 50 events on their account page: what happened to them, and what they did to
 someone else. Where someone else did it, they see who, and not that person's IP address or device. Nobody
-can read anyone else's.
+can read anyone else's. The page shows ten at a time, under the day they happened on. It leaves out a
+`two_factor_asked` whose sign-in with a code followed from the same place within ten minutes, since the two
+are one sign-in, and marks a failed sign-in, a wrong password from a session and a `two_factor_asked` that
+nothing followed. That is the page's arrangement (`lib/activity.ts`): the endpoint still sends every row.
 
 Every write happens after the response. A failed sign-in writes a row only for an address with an
 account, so a response that waited for the write would say which addresses have one, as sending email

@@ -223,7 +223,7 @@ test("a blank name is told it is blank, and Save waits for a change", async ({ p
 });
 
 for (const list of [
-	{ region: "Where you are signed in", path: "**/api/auth/list-sessions", row: "This device" },
+	{ region: "Where you are signed in", path: "**/api/auth/list-sessions", row: "This browser" },
 	{
 		region: "Passkeys",
 		path: "**/api/auth/passkey/list-user-passkeys",

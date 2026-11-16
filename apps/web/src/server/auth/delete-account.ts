@@ -1,8 +1,14 @@
 import type { BetterAuthPlugin } from "better-auth";
-import { APIError, createAuthEndpoint, freshSessionMiddleware } from "better-auth/api";
+import {
+	APIError,
+	createAuthEndpoint,
+	freshSessionMiddleware,
+	sessionMiddleware,
+} from "better-auth/api";
 import { deleteSessionCookie } from "better-auth/cookies";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { type DeleteAccountCheck, onlyOwnerWords, RUNS_THE_SERVER } from "../../lib/delete-account";
 import type { Database } from "../db";
 import { schema } from "../db";
 import type { Mailer } from "../email/mailer";
@@ -16,17 +22,15 @@ import { detailOf } from "./workspaces";
 // "Deleting an account" in docs/architecture.md.
 
 const DELETE_ACCOUNT = "/account/delete";
-
-const RUNS_THE_SERVER = {
-	code: "RUNS_THE_SERVER",
-	message:
-		"You run this server, so this account has to stay until someone else does. The self-hosting guide says how to hand it over.",
-};
+const DELETE_ACCOUNT_CHECK = "/account/delete/check";
 
 /** What the trigger `member_delete_keeps_an_owner` would refuse, in names someone can act on. */
-async function workspacesOnlyTheyOwn(db: Database, userId: string): Promise<string[]> {
-	const rows = await db.all<{ name: string }>(sql`
-		SELECT organization.name AS name
+async function workspacesOnlyTheyOwn(
+	db: Database,
+	userId: string,
+): Promise<{ name: string; slug: string }[]> {
+	return db.all<{ name: string; slug: string }>(sql`
+		SELECT organization.name AS name, organization.slug AS slug
 		FROM member
 		JOIN organization ON organization.id = member.organization_id
 		WHERE member.user_id = ${userId}
@@ -39,7 +43,6 @@ async function workspacesOnlyTheyOwn(db: Database, userId: string): Promise<stri
 			)
 		ORDER BY organization.name
 	`);
-	return rows.map(({ name }) => name);
 }
 
 interface DeleteAccountConfig {
@@ -57,6 +60,25 @@ export function deleteAccountPlugin({ db, mailer, record }: DeleteAccountConfig)
 	return {
 		id: "delete-account",
 		endpoints: {
+			/**
+			 * What would stop this person deleting their account, so the page can say so before it asks
+			 * for a password. It only reads, about whoever asks, and decides nothing: the endpoint below
+			 * asks the same questions again when it deletes, since either answer can change in between.
+			 */
+			deleteAccountCheck: createAuthEndpoint(
+				DELETE_ACCOUNT_CHECK,
+				{ method: "GET", use: [sessionMiddleware] },
+				async (ctx): Promise<DeleteAccountCheck> => {
+					noStore(ctx);
+					const { id } = ctx.context.session.user;
+					const [runsServer, onlyOwnerOf] = await Promise.all([
+						ownsDeployment(db, id),
+						workspacesOnlyTheyOwn(db, id),
+					]);
+					return { runsServer, onlyOwnerOf };
+				},
+			),
+
 			deleteAccount: createAuthEndpoint(
 				DELETE_ACCOUNT,
 				{ method: "POST", use: [freshSessionMiddleware] },
@@ -73,7 +95,7 @@ export function deleteAccountPlugin({ db, mailer, record }: DeleteAccountConfig)
 					if (onlyTheirs.length > 0) {
 						throw APIError.from("FORBIDDEN", {
 							code: "ONLY_OWNER_OF_WORKSPACES",
-							message: `You are the only owner of ${onlyTheirs.join(", ")}. Make someone else an owner of each, or delete it, first.`,
+							message: onlyOwnerWords(onlyTheirs.map(({ name }) => name)),
 						});
 					}
 
