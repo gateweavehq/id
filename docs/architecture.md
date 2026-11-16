@@ -274,7 +274,7 @@ and a page the browser brings back as it was left (`pageshow` with `persisted`) 
   request is the signed query in the page's address, good for ten minutes, and any response that sets a
   session cookie while a page sends it back is followed by the authorization. Refusing the second would
   take a row per signature, with a unique index to make the first use win, written inside the plugin's
-  own hook between the session and the code. That is a migration and a fourth change to a patched
+  own hook between the session and the code. That is a migration and one more change to a patched
   dependency for something only ID's own page could do, so it is not done. What went wrong was the page
   setting off twice, and the latch is what stops that.
 
