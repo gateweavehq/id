@@ -49,8 +49,8 @@ change.
 ### If you run your own
 
 - **Update.** Nothing to set.
-- "Products you use" lists every app registered with `apps:add`, with a link to the origin of its
-  first `https` redirect address.
+- "Products you use" lists the apps registered with `apps:add` that the account has signed in to,
+  each with a link to the origin of its first `https` redirect address.
 
 ## [0.15.2] - 2026-11-16
 
