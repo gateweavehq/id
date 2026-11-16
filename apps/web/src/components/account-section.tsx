@@ -128,12 +128,18 @@ export function useLoaded<Data>(read: () => Promise<Answer<Data>>, notLoaded: st
 	const [data, setData] = useState<Data | null>(null);
 	const [failure, setFailure] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
+	/** Which request is the latest. An earlier one that answers late must not put back an older list. */
+	const asked = useRef(0);
 
 	const reload = useCallback(async (): Promise<boolean> => {
+		const mine = ++asked.current;
+		const latest = () => asked.current === mine;
 		setLoading(true);
 		try {
 			const answer = await read();
-			if (answer.error || answer.data === null) {
+			const failed = answer.error || answer.data === null;
+			if (!latest()) return !failed;
+			if (failed) {
 				setFailure(answer.error?.message ?? notLoaded);
 				return false;
 			}
@@ -141,10 +147,10 @@ export function useLoaded<Data>(read: () => Promise<Answer<Data>>, notLoaded: st
 			setFailure(null);
 			return true;
 		} catch {
-			setFailure(notLoaded);
+			if (latest()) setFailure(notLoaded);
 			return false;
 		} finally {
-			setLoading(false);
+			if (latest()) setLoading(false);
 		}
 	}, [read, notLoaded]);
 

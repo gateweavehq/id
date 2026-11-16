@@ -32,7 +32,11 @@ function listed(items: string[]): string {
  * and one that left before choosing a password and may have nothing to come back with.
  */
 export function signInSummary(has: WaysToSignIn, offered: WaysOffered): SignInSummary {
-	const others = [...(has.passkeys > 0 ? ["a passkey"] : []), ...(has.github ? ["GitHub"] : [])];
+	const others = [
+		// A passkey kept from when this server offered them signs nobody in now.
+		...(offered.passkeys && has.passkeys > 0 ? ["a passkey"] : []),
+		...(has.github ? ["GitHub"] : []),
+	];
 	const ways = [
 		{ name: "Password", state: has.password ? "Set" : "Not set", on: has.password },
 		{

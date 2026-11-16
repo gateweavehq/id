@@ -85,4 +85,17 @@ describe("signInSummary", () => {
 		);
 		expect(names).toEqual(["Password", "Authenticator app"]);
 	});
+
+	// Passkeys are only on with a pinned address. One made before that was taken away signs nobody in,
+	// and saying it did would send someone to sign out with no way back.
+	it("does not count a passkey on a server that no longer offers them", () => {
+		const offered = { passkeys: false, github: true };
+		expect(leadOf({ passkeys: 2 }, offered)).toBe(
+			"This account has nothing to sign in with again yet. Add a password before you sign out.",
+		);
+		expect(leadOf({ passkeys: 2, password: true }, offered)).toBe(
+			"You sign in with your password.",
+		);
+		expect(leadOf({ passkeys: 2, github: true }, offered)).toMatch(/^You sign in with GitHub\./);
+	});
 });

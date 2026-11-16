@@ -66,6 +66,8 @@ export function AccountProfile({ name, email }: { name: string; email: string })
 						autoComplete="name"
 						maxLength={100}
 						value={value}
+						// What is typed while a save is on its way would be replaced by what was sent.
+						readOnly={pending}
 						onChange={(event) => {
 							setValue(event.target.value);
 							setError(null);
