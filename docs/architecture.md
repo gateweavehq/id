@@ -1027,6 +1027,32 @@ without a database (a branch's Preview) is left as Drizzle made it, so it starts
 503. The schema generator's configuration (`auth/cli.ts`) asks nothing, and makes its database
 without `createDb`, which refuses a stand-in that is no binding.
 
+### When a guard cannot read the session
+
+Some rules are held in hooks in front of an endpoint that is Better Auth's or a plugin's own, and
+decide by the session the request came with: what a session that showed one factor may do to a
+second factor ("Adding a second factor" and "Taking a second factor away"), the password asked
+for before a password is removed, the tries at a password one person's sessions share, and
+whether someone answering for a workspace's app is one of its members. Each leaves a request
+with no session to the endpoint, which answers 401 by itself. So each has to know that nobody is
+signed in before it steps aside, and reads the session through `sessionOf`
+(`apps/web/src/server/auth/session-of.ts`):
+
+- **No session cookie** is nobody, and the endpoint answers as it does. Nothing more is asked of
+  the database.
+- **A cookie whose session the database does not have, or has as ended,** is nobody too: the
+  person signed out, or was signed out. That costs one more read, for a request that is refused
+  anyway.
+- **A cookie whose session could not be read** is refused with 500, like any other request whose
+  query failed, and the reference is in the log. The endpoint is never reached, so nothing is
+  changed.
+
+With the database answering, a guard reads the session once, as before, and decides as before.
+A hook that only writes to the audit log after an endpoint has answered still takes a session it
+cannot read for nobody, and writes nothing: the answer has been given by then. The gate in front
+of `/organization/` and every endpoint of ID's own refuse a request without a session
+themselves, so a session they cannot read is refused there too.
+
 ## Security baseline
 
 - The session cookie stays on ID's own host. Nothing is shared on a parent domain.
