@@ -265,6 +265,26 @@ the offer in the field is ended and the buttons are off. It is given back only w
 failed, which brings the offer back too. An attempt that worked keeps it, since the browser is leaving,
 and a page the browser brings back as it was left (`pageshow` with `persisted`) starts free again.
 
+- **A page that is leaving says so.** A browser has no event for someone pressing Stop on the way, or for
+  an app that never answers, and the buttons are off. So the page shows "Taking you there…", and after
+  five seconds "Still here? Reload the page to try again." with a button that does.
+- **It gives itself back only where nothing came of the attempt.** GitHub is the one way that hands the
+  browser to someone else before anyone is signed in. Fifteen seconds after it left, a page that is
+  still showing, in a tab someone is looking at, asks ID whether the session is the one it began with
+  (usually none). If so it stops the browser from following that trip any further, asks once more, and
+  on a second yes frees the latch: GitHub's answer had not reached ID when the trip was stopped, so no
+  code was made and no app has heard of it. Leaving takes about two seconds when it works, so fifteen is
+  someone who has waited, and being right does not depend on the number. With a new session the page
+  stays taken and the browser is left alone, because a code may be with the app. For the same reason a
+  password, a passkey and a second factor never give the page back: they leave with someone signed in.
+- **The check that a person is there holds only "Sign in".** The page is taken for a password when its
+  request is about to be sent, after Turnstile has answered. It can ask for a click or never answer, and
+  GitHub and the passkey work meanwhile. One of them started in that time drops the password.
+- **The email field asks for a passkey only while the page is free.** Its `autocomplete` loses `webauthn`
+  while an attempt has the page, without which the browser's offer cannot start. An offer whose options
+  were still on their way when the passkey button was pressed would otherwise start after the button's
+  ceremony and end it, since a browser runs one.
+
 - **Ending the ceremony is not what stops a second sign-in.** `WebAuthnAbortService.cancelCeremony()`
   only ends a request the browser has waiting. It does nothing to an offer whose options are still on
   their way, which starts when they arrive, nor to one the authenticator has just answered. The plugin's

@@ -6,7 +6,7 @@ import { LiveButton } from "#/components/live-button";
 import { authClient } from "#/lib/auth-client";
 import { onItsWay, type Search } from "#/lib/oauth-flow";
 import { nothingHappened, passkeyFailure } from "#/lib/passkey-errors";
-import { type Release, type SignInLatch, useSignInBusy } from "#/lib/sign-in-latch";
+import { type Attempt, type SignInLatch, useSignInBusy } from "#/lib/sign-in-latch";
 
 /**
  * "Use a passkey", and the browser offering one under the email field of the form on the same page,
@@ -33,8 +33,8 @@ export function PasskeySignIn({
 
 	/** `held` is the latch as the button took it. The offer in the field has none until it is answered. */
 	const signIn = useCallback(
-		async (autoFill: boolean, held: Release | null) => {
-			let release = held;
+		async (autoFill: boolean, held: Attempt | null) => {
+			let attempt = held;
 			let result: Awaited<ReturnType<typeof authClient.signIn.passkey>>;
 			try {
 				result = await authClient.signIn.passkey({
@@ -46,19 +46,19 @@ export function PasskeySignIn({
 						// their way, which starts when they arrive, nor to one the authenticator has
 						// already answered.
 						onRequest: () => {
-							if (release) return;
-							release = latch.take();
-							if (!release) throw new Error("Another sign-in has started on this page");
+							if (attempt) return;
+							attempt = latch.take();
+							if (!attempt) throw new Error("Another sign-in has started on this page");
 						},
 					},
 				});
-			} catch (caught) {
+			} catch {
 				// The client catches what the ceremony and the check throw, and not its request for
 				// the options, which fails this way with no network. Kept, the latch would leave the
-				// page with nothing to press. The offer in the field asked for nothing, so it says
-				// nothing either.
-				if (held) setError(caught instanceof Error ? caught.message : "Something went wrong");
-				release?.();
+				// page with nothing to press. What the browser says about that is not for people, and
+				// the offer in the field asked for nothing, so it says nothing at all.
+				if (held) setError("Something went wrong");
+				attempt?.release();
 				return;
 			}
 			if (result.error) {
@@ -67,10 +67,11 @@ export function PasskeySignIn({
 						failureMessage({ ...result.error, message: passkeyFailure(result.error) }, search),
 					);
 				}
-				release?.();
+				attempt?.release();
 				return;
 			}
 			// From here the browser is leaving, and the latch stays taken until it has.
+			attempt?.leave();
 			if (onItsWay(result.data)) return;
 			await router.invalidate();
 			await router.navigate({ href: next });
@@ -88,8 +89,13 @@ export function PasskeySignIn({
 		// The latch tells this the moment it changes, so the offer has ended before the attempt that
 		// took it sends anything. Given back, they may still want a passkey: after a wrong password,
 		// or after closing the browser's window.
+		// Only when it is taken or given back: it also tells how far the attempt that has it has come,
+		// and ending "the ceremony" then would end the passkey button's own.
+		let held: boolean | undefined;
 		const offerWhileFree = () => {
-			if (latch.held) WebAuthnAbortService.cancelCeremony();
+			if (held === latch.held) return;
+			held = latch.held;
+			if (held) WebAuthnAbortService.cancelCeremony();
 			else offerInField();
 		};
 		offerWhileFree();
@@ -105,10 +111,10 @@ export function PasskeySignIn({
 	if (hydrated && !browserSupportsWebAuthn()) return null;
 
 	async function onClick() {
-		const release = latch.take();
-		if (!release) return;
+		const attempt = latch.take();
+		if (!attempt) return;
 		setError(null);
-		await signIn(false, release);
+		await signIn(false, attempt);
 	}
 
 	return (

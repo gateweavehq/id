@@ -18,6 +18,12 @@ export const APP = {
  */
 export const SLOW_STATE = "take-your-time-";
 
+/**
+ * And with this, twenty seconds: longer than a sign-in page waits before it asks whether anything came
+ * of the attempt that left it (`GIVE_BACK_AFTER` in `lib/sign-in-latch`).
+ */
+export const VERY_SLOW_STATE = "take-all-day-";
+
 /** Someone who already has an account, so that a test about something else need not make one. */
 export const PERSON = {
 	name: "Seeded Person",

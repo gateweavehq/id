@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { z } from "zod";
 import { AskForAccess } from "#/components/ask-for-access";
 import { failureMessage } from "#/components/expired-link";
@@ -8,13 +8,14 @@ import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { LiveButton } from "#/components/live-button";
 import { PasskeySignIn } from "#/components/passkey-sign-in";
 import { SignInDivider } from "#/components/sign-in-divider";
+import { SignInProgress } from "#/components/sign-in-progress";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, owesACode } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
 import { getAccessRequestUrl, getAuthOptions, getSession } from "#/lib/session";
-import { useSignInBusy, useSignInLatch } from "#/lib/sign-in-latch";
+import { takeWhenReady, useSignInBusy, useSignInLatch } from "#/lib/sign-in-latch";
 import { requestRefusal, signInRefusal } from "#/lib/sign-in-refusal";
 import { useTurnstile } from "#/lib/turnstile";
 
@@ -56,32 +57,53 @@ function SignInForm() {
 	// One for the form, GitHub and the passkey together: see `lib/sign-in-latch`.
 	const latch = useSignInLatch();
 	const busy = useSignInBusy(latch);
+	/** Whether the form is waiting for its check, which holds "Sign in" and nothing else. */
+	const checking = useRef(false);
+	const [waiting, setWaiting] = useState(false);
 	const turnstile = useTurnstile(options.turnstileSiteKey);
 	const legal = useLegalLinks();
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
+		if (checking.current) return;
 		const form = new FormData(event.currentTarget);
-		// Taking it ends the browser's offer of a passkey in the email field, which could otherwise be
-		// answered while the password is on its way. A wrong password gives it back, and the offer too.
-		const release = latch.take();
-		if (!release) return;
 		setError(null);
 		setRefusal(null);
+		// The check that a person is there can ask them to click, or never answer. Only "Sign in" waits
+		// for it: GitHub and the passkey go on working, and one of them started meanwhile drops this.
+		let taken: Awaited<ReturnType<typeof takeWhenReady<Record<string, string>>>>;
+		checking.current = true;
+		setWaiting(true);
+		try {
+			taken = await takeWhenReady(latch, turnstile.check);
+		} catch (caught) {
+			// Its own words: what could not be checked, and what to do about it.
+			setError(caught instanceof Error ? caught.message : "Something went wrong");
+			return;
+		} finally {
+			checking.current = false;
+			setWaiting(false);
+		}
+		if (!taken) return;
+		// Taking the page ended the browser's offer of a passkey in the email field, which could
+		// otherwise be answered while the password is on its way. A wrong password gives the page
+		// back, and the offer too.
+		const { attempt, value: headers } = taken;
 		try {
 			const result = await authClient.signIn.email({
 				email: String(form.get("email")),
 				password: String(form.get("password")),
-				fetchOptions: { headers: await turnstile.check() },
+				fetchOptions: { headers },
 			});
 			if (result.error) {
 				setError(failureMessage(result.error, search));
-				release();
+				attempt.release();
 				return;
 			}
 			// Everything from here leaves this page, and the latch stays taken until it has: the answer to
 			// a redirect can be a while in coming, and a button that worked again meanwhile would start
 			// a second sign-in beside the one that is finishing.
+			attempt.leave();
 			if (onItsWay(result.data)) return;
 			if (owesACode(result.data)) {
 				await router.navigate({
@@ -90,9 +112,10 @@ function SignInForm() {
 				});
 				return;
 			}
-		} catch (caught) {
-			setError(caught instanceof Error ? caught.message : "Something went wrong");
-			release();
+		} catch {
+			// The request was never answered. What the browser says about that is not for people.
+			setError("Something went wrong");
+			attempt.release();
 			return;
 		}
 		await router.invalidate();
@@ -129,7 +152,10 @@ function SignInForm() {
 							id="email"
 							name="email"
 							type="email"
-							autoComplete={options.passkeys ? "email webauthn" : "email"}
+							// Without `webauthn` the browser's offer cannot start, and it must not while an
+							// attempt has the page. One whose options were still on their way when the page
+							// was taken starts only now, and would end the passkey button's own ceremony.
+							autoComplete={options.passkeys && !busy ? "email webauthn" : "email"}
 							defaultValue={search.email}
 							required
 						/>
@@ -161,9 +187,10 @@ function SignInForm() {
 							{error}
 						</p>
 					)}
-					<LiveButton type="submit" className="w-full" disabled={busy}>
+					<LiveButton type="submit" className="w-full" disabled={busy || waiting}>
 						Sign in
 					</LiveButton>
+					<SignInProgress latch={latch} />
 				</form>
 
 				<p className="text-center text-sm text-muted-foreground">

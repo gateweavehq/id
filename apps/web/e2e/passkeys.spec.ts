@@ -304,10 +304,103 @@ test("a passkey that cannot reach the server says so, and leaves the page usable
 
 	await page.getByRole("button", { name: "Use a passkey" }).click();
 
-	await expect(page.getByRole("alert")).toBeVisible();
+	// In the page's words, and not the browser's "Failed to fetch".
+	await expect(page.getByRole("alert")).toHaveText("Something went wrong");
 	for (const name of ["Continue with GitHub", "Use a passkey", "Sign in"]) {
 		await expect(page.getByRole("button", { name, exact: true })).toBeEnabled();
 	}
+});
+
+test("someone who stopped the browser on its way to GitHub is told, and gets the page back", async ({
+	page,
+}) => {
+	const problems = await watch(page);
+	const offers = await watchOffers(page);
+	// It has no passkey to answer with, so each offer keeps waiting.
+	await addAuthenticator(page);
+	// An answer with no page in it leaves the browser where it was, as pressing Stop does.
+	await page.route("https://github.com/**", (route) => route.fulfill({ status: 204 }));
+	await page.goto("/login", { waitUntil: "networkidle" });
+	await expect.poll(offers.waiting).toBe(true);
+	const made = await offers.made();
+	const buttons = ["Continue with GitHub", "Use a passkey", "Sign in"].map((name) =>
+		page.getByRole("button", { name, exact: true }),
+	);
+	const progress = page.getByRole("status");
+
+	await page.getByRole("button", { name: "Continue with GitHub" }).click();
+	await expect(progress).toHaveText("Taking you there…");
+	for (const button of buttons) await expect(button).toBeDisabled();
+
+	// Longer than leaving takes: the page says what to do, with its buttons still off.
+	await expect(progress).toContainText("Still here? Reload the page to try again.");
+	await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+	for (const button of buttons) await expect(button).toBeDisabled();
+
+	// Nobody was signed in, so nothing came of it, and the page is given back by itself.
+	for (const button of buttons) await expect(button).toBeEnabled({ timeout: 15_000 });
+	await expect(progress).toHaveCount(0);
+	await expect.poll(offers.made).toBeGreaterThan(made);
+	await expect.poll(offers.waiting).toBe(true);
+	expect(problems).toEqual([]);
+});
+
+test("an offer in the email field that got going late does not end the passkey button's own", async ({
+	page,
+}) => {
+	const problems = await watch(page);
+	// Nobody answers, so that the button's ceremony is still waiting when the offer's would start.
+	const authenticator = await addAuthenticator(page);
+	await authenticator.setAnswering(false);
+	// The offer's request for its options is kept in the page until the button has asked the browser
+	// for a passkey, so the offer's own ceremony would start after the button's.
+	await page.addInitScript(() => {
+		const asked: { offer: boolean; signal: AbortSignal | undefined }[] = [];
+		Reflect.set(window, "asked", asked);
+		let buttonAsked = () => {};
+		const theButtonAsked = new Promise<void>((resolve) => {
+			buttonAsked = resolve;
+		});
+		const ask = navigator.credentials.get.bind(navigator.credentials);
+		navigator.credentials.get = (options) => {
+			const offer = options?.mediation === "conditional";
+			asked.push({ offer, signal: options?.signal });
+			if (!offer) buttonAsked();
+			return ask(options);
+		};
+		let pressed = false;
+		document.addEventListener("click", () => (pressed = true), true);
+		const send = window.fetch.bind(window);
+		window.fetch = async (input, init) => {
+			const url = input instanceof Request ? input.url : String(input);
+			if (url.includes("/passkey/generate-authenticate-options") && !pressed) {
+				await theButtonAsked;
+				Reflect.set(
+					window,
+					"lateOptions",
+					((Reflect.get(window, "lateOptions") as number) ?? 0) + 1,
+				);
+			}
+			return send(input, init);
+		};
+	});
+	await page.goto("/login", { waitUntil: "networkidle" });
+	const late = () => page.evaluate(() => (Reflect.get(window, "lateOptions") as number) ?? 0);
+	const ceremonies = () =>
+		page.evaluate(() =>
+			(Reflect.get(window, "asked") as { offer: boolean; signal: AbortSignal | undefined }[]).map(
+				({ offer, signal }) => ({ offer, ended: signal?.aborted }),
+			),
+		);
+
+	await page.getByRole("button", { name: "Use a passkey" }).click();
+	await expect.poll(late).toBeGreaterThan(0);
+	// The time the offer's options take to arrive, and its ceremony to start if it is going to.
+	await page.waitForLoadState("networkidle");
+	await page.waitForTimeout(500);
+
+	expect(await ceremonies()).toEqual([{ offer: false, ended: false }]);
+	expect(problems).toEqual([]);
 });
 
 test("someone cannot remove their last way to sign in, until they add another", async ({

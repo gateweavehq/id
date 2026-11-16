@@ -14,7 +14,7 @@ import {
 	watchOffers,
 	withoutTheOfferInTheEmailField,
 } from "./authenticator";
-import { APP, PERSON, SLOW_STATE } from "./fixtures";
+import { APP, PERSON, SLOW_STATE, VERY_SLOW_STATE } from "./fixtures";
 import { codeSentSince, watch } from "./helpers";
 
 // Signing in to an app, with a real OIDC client library for the app's server and real pages for
@@ -176,6 +176,32 @@ test("signing in leaves the way to the provider's answer alone", async ({ page }
 	await expectBackAtTheApp(page);
 
 	expect(addresses.map((address) => address.pathname)).not.toContain("/account");
+});
+
+test("someone who stopped the browser on its way to the app is told, and can load the page again", async ({
+	page,
+}) => {
+	// An answer with no page in it leaves the browser where it was, as pressing Stop does.
+	await page.route(`${APP.redirectUri}*`, (route) => route.fulfill({ status: 204 }));
+	await goToSignIn(page);
+	await fillSignInForm(page);
+	const progress = page.getByRole("status");
+	const buttons = ["Continue with GitHub", "Sign in"].map((name) =>
+		page.getByRole("button", { name, exact: true }),
+	);
+
+	await expect(progress).toHaveText("Taking you there…");
+	await expect(progress).toContainText("Still here? Reload the page to try again.");
+	// They are signed in and the app may have its code, so another sign-in from this page would be
+	// the second for one request. It stays taken for as long as it shows, well past the time a page
+	// that nothing came of is given back.
+	await page.waitForTimeout(12_000);
+	for (const button of buttons) await expect(button).toBeDisabled();
+
+	await page.getByRole("button", { name: "Reload" }).click();
+
+	await expect(progress).toHaveCount(0);
+	for (const button of buttons) await expect(button).toBeEnabled();
 });
 
 test("signing up leaves the way to the provider's answer alone", async ({ page }) => {
@@ -501,6 +527,108 @@ test.describe("signing in with a passkey on the way to an app", () => {
 			answers: 0,
 			returns: 1,
 		});
+		expect(problems).toEqual([]);
+	});
+
+	// A page that is still showing long after it left gives itself back, but only where nothing came
+	// of the attempt. Here GitHub's part is played in full: its answer reaches ID, which signs the
+	// person in (the test does, with their password, as ID's server would after asking GitHub) and
+	// sends the browser on to the app with a code. The app takes twenty seconds over it, so the page
+	// is still there when it asks itself what happened. Given back then, its new offer in the email
+	// field would be answered, and the app would get a second code for a state it has used up.
+	test("is not given back to a passkey while GitHub's answer is with a slow app", async ({
+		page,
+	}) => {
+		const problems = await watch(page);
+		const authenticator = await addAuthenticator(page);
+		const email = await signUpWithoutAPassword(page);
+		await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+		await page.getByLabel("Repeat it").fill(PASSWORD);
+		await page.getByRole("button", { name: "Continue" }).click();
+		await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+		await addPasskey(page);
+		// So that signing out stays signed out, and the first offer of the sign-in page waits.
+		await authenticator.setAnswering(false);
+		await signOut(page);
+		const returns: string[] = [];
+		page.on("request", (request) => {
+			if (request.url().startsWith(APP.redirectUri)) returns.push(request.url());
+		});
+		const sent = passkeyAnswersSent(page);
+		let comeBackTo = "";
+		await page.route("https://github.com/**", async (route) => {
+			const signedIn = await page.context().request.post("/api/auth/sign-in/email", {
+				data: { email, password: PASSWORD },
+				headers: { origin: ISSUER.origin },
+			});
+			expect(signedIn.ok()).toBe(true);
+			await route.fulfill({ status: 302, headers: { location: comeBackTo } });
+		});
+		const flow = await goToSignIn(page, {
+			state: `${VERY_SLOW_STATE}${oauth.generateRandomState()}`,
+		});
+		await expect(page).toHaveURL(/\/login\?/);
+		comeBackTo = flow.url.href;
+
+		await page.getByRole("button", { name: "Continue with GitHub" }).click();
+		await expect.poll(() => returns.length).toBe(1);
+		// Any offer the page makes from here on is answered at once.
+		await authenticator.setAnswering(true);
+
+		await expect(page.getByRole("heading", { name: "Back at the app" })).toBeVisible({
+			timeout: 30_000,
+		});
+		const claims = await finish(page, flow);
+		expect(claims.email).toBe(email);
+		expect({ answers: sent.length, returns: returns.length }).toEqual({ answers: 0, returns: 1 });
+		expect(problems).toEqual([]);
+	});
+
+	test("is given back when GitHub never answered, and then one sign-in reaches the app", async ({
+		page,
+	}) => {
+		const problems = await watch(page);
+		const { email, authenticator } = await personWithAPasskey(page);
+		await authenticator.setAnswering(false);
+		await signOut(page);
+		// Whether GitHub had answered, each time the browser set off for the app.
+		const returns: boolean[] = [];
+		let gitHubHasAnswered = false;
+		page.on("request", (request) => {
+			if (request.url().startsWith(APP.redirectUri)) returns.push(gitHubHasAnswered);
+		});
+		const sent = passkeyAnswersSent(page);
+		// GitHub takes twenty seconds, which is longer than the page waits. Its answer then is the
+		// app's request again, which would end in a second code if the browser were still to follow it.
+		let comeBackTo = "";
+		let answered = () => {};
+		const gitHubAnswered = new Promise<void>((resolve) => {
+			answered = resolve;
+		});
+		await page.route("https://github.com/**", async (route) => {
+			await new Promise((resolve) => setTimeout(resolve, 20_000));
+			gitHubHasAnswered = true;
+			// The page stopped the browser on its way here, so there is nobody to answer.
+			await route.fulfill({ status: 302, headers: { location: comeBackTo } }).catch(() => {});
+			answered();
+		});
+		const flow = await goToSignIn(page);
+		await expect(page).toHaveURL(/\/login\?/);
+		comeBackTo = flow.url.href;
+
+		await page.getByRole("button", { name: "Continue with GitHub" }).click();
+		// The offer the page makes once it has given itself back is answered at once.
+		await authenticator.setAnswering(true);
+
+		await expect(page.getByRole("heading", { name: "Back at the app" })).toBeVisible({
+			timeout: 30_000,
+		});
+		const claims = await finish(page, flow);
+		expect(claims.email).toBe(email);
+		await gitHubAnswered;
+		await page.waitForTimeout(500);
+		// One, and it left while GitHub was still thinking: the page had given itself back.
+		expect({ answers: sent.length, returns }).toEqual({ answers: 1, returns: [false] });
 		expect(problems).toEqual([]);
 	});
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { LiveButton } from "#/components/live-button";
+import { SignInProgress } from "#/components/sign-in-progress";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -81,8 +82,8 @@ function TwoFactorPage() {
 		event.preventDefault();
 		const element = event.currentTarget;
 		const code = String(new FormData(element).get("code")).trim();
-		const release = latch.take();
-		if (!release) return;
+		const attempt = latch.take();
+		if (!attempt) return;
 		setError(null);
 		const verify = () =>
 			recovery
@@ -91,17 +92,19 @@ function TwoFactorPage() {
 		let result: Awaited<ReturnType<typeof verify>>;
 		try {
 			result = await verify();
-		} catch (caught) {
-			setError(caught instanceof Error ? caught.message : "Something went wrong");
-			release();
+		} catch {
+			// The request was never answered. What the browser says about that is not for people.
+			setError("Something went wrong");
+			attempt.release();
 			return;
 		}
 		if (result.error) {
 			setError(refusal(result.error, search));
 			element.reset();
-			release();
+			attempt.release();
 			return;
 		}
+		attempt.leave();
 		// The auth client has already sent the browser on, when this is on the way to an app.
 		if (onItsWay(result.data)) return;
 		await router.invalidate();
@@ -149,6 +152,7 @@ function TwoFactorPage() {
 				<LiveButton type="submit" className="w-full" disabled={busy}>
 					Continue
 				</LiveButton>
+				<SignInProgress latch={latch} />
 			</form>
 			<Button
 				type="button"

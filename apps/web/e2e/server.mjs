@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { hashPassword } from "better-auth/crypto";
 import { appRow, insertStatement } from "../src/server/auth/app-row.ts";
-import { APP, PERSON, SLOW_STATE } from "./fixtures.ts";
+import { APP, PERSON, SLOW_STATE, VERY_SLOW_STATE } from "./fixtures.ts";
 
 const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
@@ -81,7 +81,8 @@ createServer((request, response) => {
 		response.end("<h1>Back at the app</h1>");
 	};
 	const state = new URL(request.url ?? "/", "http://localhost").searchParams.get("state");
-	if (state?.startsWith(SLOW_STATE)) setTimeout(answer, 4000);
+	if (state?.startsWith(VERY_SLOW_STATE)) setTimeout(answer, 20_000);
+	else if (state?.startsWith(SLOW_STATE)) setTimeout(answer, 4000);
 	else answer();
 }).listen(APP.port);
 
