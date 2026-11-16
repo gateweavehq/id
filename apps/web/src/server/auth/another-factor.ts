@@ -1,9 +1,9 @@
 import type { GenericEndpointContext } from "better-auth";
-import { getSessionFromCtx } from "better-auth/api";
 import { eq } from "drizzle-orm";
 import { isTwoFactor } from "../../lib/sign-in-method";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { sessionOf } from "./session-of";
 
 // "Adding a second factor" and "Taking a second factor away" in docs/architecture.md. A workspace
 // that requires two-factor sign-in goes by how a session was made, so a new passkey or authenticator
@@ -38,7 +38,7 @@ export async function secondFactorsOf(db: Database, userId: string): Promise<Sec
 /**
  * What the person asking already has, if the session they ask with showed one factor. Null when it
  * showed two, which may add and remove whatever it likes, and when nobody is signed in, which the
- * endpoint refuses by itself.
+ * endpoint refuses by itself. A session that cannot be read is neither, and throws (`session-of.ts`).
  *
  * Someone with no second factor yet gets one from a session with one factor: there is nothing else
  * they could show, and a workspace's rule could otherwise never be met. That is trust on first use,
@@ -50,7 +50,7 @@ export async function factorsBehindOneFactor(
 	db: Database,
 	ctx: GenericEndpointContext,
 ): Promise<SecondFactors | null> {
-	const session = await getSessionFromCtx(ctx);
+	const session = await sessionOf(ctx);
 	if (!session) return null;
 	if (isTwoFactor((session.session as { signInMethod?: unknown }).signInMethod)) return null;
 	return secondFactorsOf(db, session.user.id);

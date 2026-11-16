@@ -9,6 +9,7 @@ import type { Database } from "../db";
 import { schema } from "../db";
 import { type RecordEvent, whereFrom } from "./audit";
 import { hasPasskey } from "./passkeys";
+import { sessionOf } from "./session-of";
 import {
 	type AppIdentity,
 	appIn,
@@ -284,7 +285,7 @@ function membersOnlyToWorkspaceApps(db: Database, issuer: string): BetterAuthPlu
 						const clientId = new URLSearchParams(ctx.body?.oauth_query ?? "").get("client_id");
 						const app = await appOfClient(db, clientId);
 						if (!app?.workspace) return;
-						const session = await getSessionFromCtx(ctx);
+						const session = await sessionOf(ctx);
 						if (session && !(await maySignIn(db, { user: session.user, app }))) {
 							return ctx.json({ redirect: true, url: "/no-access" });
 						}

@@ -1,7 +1,8 @@
 import type { BetterAuthPlugin } from "better-auth";
-import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { type RecordEvent, whereFrom } from "./audit";
+import { sessionOf } from "./session-of";
 
 const UNLINK_ACCOUNT = "/unlink-account";
 
@@ -19,7 +20,7 @@ export function passwordRemoval(record: RecordEvent) {
 					matcher: ({ path }) => path === UNLINK_ACCOUNT,
 					handler: createAuthMiddleware(async (ctx) => {
 						// Someone with no session, or naming a row that is not theirs, gets the route's answer.
-						const session = await getSessionFromCtx(ctx);
+						const session = await sessionOf(ctx);
 						if (!session) return;
 						const { internalAdapter, password } = ctx.context;
 						const accounts = await internalAdapter.findAccounts(session.user.id);

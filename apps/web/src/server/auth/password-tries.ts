@@ -3,6 +3,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "b
 import type { Mailer } from "../email/mailer";
 import { passwordTriesSpentEmail } from "../email/templates";
 import { type RecordEvent, whereFrom } from "./audit";
+import { sessionOf } from "./session-of";
 
 /** Where someone with a session shows a password, and what the request calls it. */
 const PASSWORD_FIELDS: Record<string, string> = {
@@ -88,7 +89,7 @@ export function passwordTries({ record, allow, tell }: PasswordTriesSettings) {
 					handler: createAuthMiddleware(async (ctx) => {
 						if (!allow || !offersAPassword(ctx.path, ctx.body)) return;
 						// Someone with no session gets the route's answer.
-						const session = await getSessionFromCtx(ctx);
+						const session = await sessionOf(ctx);
 						if (session && !(await allow(session.user.id))) {
 							// The refusal does not wait, or how long it took would say whether an email went out.
 							await ctx.context.runInBackgroundOrAwait(tell(session.user));
