@@ -35,20 +35,32 @@ export function PasskeySignIn({
 	const signIn = useCallback(
 		async (autoFill: boolean, held: Release | null) => {
 			let release = held;
-			const result = await authClient.signIn.passkey({
-				autoFill,
-				fetchOptions: {
-					// This runs before the answer is sent to be checked, which is the request that signs
-					// someone in, and throwing here means it is never sent. Ending the ceremony is not
-					// enough by itself: it does nothing to one whose options are still on their way, which
-					// starts when they arrive, nor to one the authenticator has already answered.
-					onRequest: () => {
-						if (release) return;
-						release = latch.take();
-						if (!release) throw new Error("Another sign-in has started on this page");
+			let result: Awaited<ReturnType<typeof authClient.signIn.passkey>>;
+			try {
+				result = await authClient.signIn.passkey({
+					autoFill,
+					fetchOptions: {
+						// This runs before the answer is sent to be checked, which is the request that
+						// signs someone in, and throwing here means it is never sent. Ending the ceremony
+						// is not enough by itself: it does nothing to one whose options are still on
+						// their way, which starts when they arrive, nor to one the authenticator has
+						// already answered.
+						onRequest: () => {
+							if (release) return;
+							release = latch.take();
+							if (!release) throw new Error("Another sign-in has started on this page");
+						},
 					},
-				},
-			});
+				});
+			} catch (caught) {
+				// The client catches what the ceremony and the check throw, and not its request for
+				// the options, which fails this way with no network. Kept, the latch would leave the
+				// page with nothing to press. The offer in the field asked for nothing, so it says
+				// nothing either.
+				if (held) setError(caught instanceof Error ? caught.message : "Something went wrong");
+				release?.();
+				return;
+			}
 			if (result.error) {
 				if (!nothingHappened(result.error)) {
 					setError(

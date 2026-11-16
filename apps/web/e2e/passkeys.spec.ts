@@ -294,6 +294,22 @@ test("pressing the passkey button twice sends one answer", async ({ page }) => {
 	expect(problems).toEqual([]);
 });
 
+test("a passkey that cannot reach the server says so, and leaves the page usable", async ({
+	page,
+}) => {
+	await withoutTheOfferInTheEmailField(page);
+	await addAuthenticator(page);
+	await page.route("**/api/auth/passkey/generate-authenticate-options", (route) => route.abort());
+	await page.goto("/login", { waitUntil: "networkidle" });
+
+	await page.getByRole("button", { name: "Use a passkey" }).click();
+
+	await expect(page.getByRole("alert")).toBeVisible();
+	for (const name of ["Continue with GitHub", "Use a passkey", "Sign in"]) {
+		await expect(page.getByRole("button", { name, exact: true })).toBeEnabled();
+	}
+});
+
 test("someone cannot remove their last way to sign in, until they add another", async ({
 	page,
 }) => {
