@@ -30,6 +30,10 @@ export function passkeyFailure(error: object & { message?: string | undefined })
 			return TWO_FACTORS_TO_ADD_A_PASSKEY.message;
 		case TWO_FACTORS_TO_REMOVE_A_PASSKEY.code:
 			return TWO_FACTORS_TO_REMOVE_A_PASSKEY.message;
+		// The browser says so when the authenticator it reached holds one already. The plugin's words
+		// for it are "Previously registered".
+		case "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED":
+			return "This device already has a passkey for this account.";
 		// A browser can go on offering a passkey that the account no longer has.
 		case "PASSKEY_NOT_FOUND":
 			return "That passkey is not on an account here any more. Sign in another way, and add it again from your account.";

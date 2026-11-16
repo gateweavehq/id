@@ -70,10 +70,11 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 	});
 
 	await test.step("a wrong current password changes nothing", async () => {
+		await page.getByRole("button", { name: "Change password" }).click();
 		await page.getByLabel("Current password").fill("not-the-password");
 		await page.getByLabel("New password").fill(NEW_PASSWORD);
 		await page.getByLabel("Repeat it").fill(NEW_PASSWORD);
-		await page.getByRole("button", { name: "Change password" }).click();
+		await page.getByRole("button", { name: "Save password" }).click();
 		await expect(page.getByRole("alert")).toBeVisible();
 	});
 
@@ -82,7 +83,7 @@ test("from signing up to ending a session elsewhere", async ({ page, browser, ba
 		await page.getByLabel("Current password").fill(PASSWORD);
 		await page.getByLabel("New password").fill(NEW_PASSWORD);
 		await page.getByLabel("Repeat it").fill(NEW_PASSWORD);
-		await page.getByRole("button", { name: "Change password" }).click();
+		await page.getByRole("button", { name: "Save password" }).click();
 		await expect(page.getByText("Your password is changed")).toBeVisible();
 
 		// This device has a new session now, and the list keeps up.

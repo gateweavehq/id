@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useRef, useState } from "react";
+import {
+	AccountCard,
+	CARD_ACTION_ROW,
+	CARD_ROW,
+	LoadFailure,
+	ROW_BUTTON,
+	useLoaded,
+} from "#/components/account-section";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
 import { describeDevice } from "#/lib/device";
@@ -11,6 +19,9 @@ interface ActiveSession {
 	userAgent?: string | null;
 }
 
+const NOT_LOADED = "Your sessions could not be loaded";
+const NOT_DONE = "That did not work. Please try again.";
+
 /** This device first, then the most recent. */
 function inOrder(sessions: ActiveSession[], currentId: string): ActiveSession[] {
 	return [...sessions].sort((a, b) => {
@@ -19,6 +30,8 @@ function inOrder(sessions: ActiveSession[], currentId: string): ActiveSession[] 
 		return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 	});
 }
+
+const listSessions = () => authClient.listSessions();
 
 /**
  * Everywhere the person is signed in, where they can end any of it. It loads in the browser, not
@@ -36,66 +49,86 @@ export function AccountSessions({
 	currentId: string;
 	onSignedOut: () => void;
 }) {
-	const [sessions, setSessions] = useState<ActiveSession[] | null>(null);
+	const {
+		data: sessions,
+		failure,
+		loading,
+		reload,
+	} = useLoaded<ActiveSession[]>(listSessions, NOT_LOADED);
 	const [error, setError] = useState<string | null>(null);
-
-	const load = useCallback(async () => {
-		const result = await authClient.listSessions();
-		if (result.error) {
-			setError(result.error.message ?? "Your sessions could not be loaded");
-			return;
-		}
-		setSessions(result.data);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
+	const [pending, setPending] = useState(false);
+	const heading = useRef<HTMLHeadingElement>(null);
 
 	async function run(action: () => Promise<{ error: { message?: string } | null }>) {
 		setError(null);
-		const result = await action();
-		if (result.error) setError(result.error.message ?? "Something went wrong");
-		await load();
+		setPending(true);
+		try {
+			const result = await action();
+			if (result.error) setError(result.error.message ?? NOT_DONE);
+		} catch {
+			setError(NOT_DONE);
+		} finally {
+			setPending(false);
+		}
+		await reload();
 	}
 
 	async function signOutEverywhere() {
 		setError(null);
-		const result = await authClient.revokeSessions();
-		if (result.error) {
-			setError(result.error.message ?? "Something went wrong");
-			return;
+		setPending(true);
+		try {
+			const result = await authClient.revokeSessions();
+			if (result.error) {
+				setError(result.error.message ?? NOT_DONE);
+				return;
+			}
+			onSignedOut();
+		} catch {
+			setError(NOT_DONE);
+		} finally {
+			setPending(false);
 		}
-		onSignedOut();
 	}
 
 	const others = sessions?.filter((session) => session.id !== currentId) ?? [];
 
 	return (
-		<section aria-labelledby="sessions-heading" className="space-y-4">
-			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-				<h2 id="sessions-heading" className="text-sm font-semibold">
-					Where you are signed in
-				</h2>
-				{others.length > 0 && (
+		<AccountCard
+			id="sessions-heading"
+			title="Where you are signed in"
+			headingRef={heading}
+			aside={
+				others.length > 0 && (
 					<Button
 						variant="ghost"
 						size="sm"
+						disabled={pending}
 						onClick={() => run(() => authClient.revokeOtherSessions())}
 					>
 						Sign out everywhere else
 					</Button>
-				)}
-			</div>
+				)
+			}
+		>
 			{error && (
-				<p role="alert" className="text-sm text-destructive">
+				<p role="alert" className={`${CARD_ROW} text-destructive`}>
 					{error}
 				</p>
 			)}
+			{failure && (
+				<LoadFailure
+					message={failure}
+					loading={loading}
+					onRetry={async () => {
+						// The button goes with the failure, and the focus would go with the button.
+						if (await reload()) heading.current?.focus();
+					}}
+				/>
+			)}
 			{sessions === null ? (
-				!error && <p className="text-sm text-muted-foreground">Loading…</p>
+				!failure && <p className={`${CARD_ROW} text-muted-foreground`}>Loading…</p>
 			) : (
-				<ul className="divide-y rounded-lg border text-sm">
+				<ul className="divide-y">
 					{inOrder(sessions, currentId).map((session) => (
 						<li key={session.id} className="flex items-center justify-between gap-4 px-4 py-3">
 							<div className="min-w-0">
@@ -115,7 +148,8 @@ export function AccountSessions({
 								<Button
 									variant="ghost"
 									size="sm"
-									className="shrink-0"
+									className={`shrink-0 ${ROW_BUTTON}`}
+									disabled={pending}
 									onClick={() => run(() => authClient.revokeSession({ token: session.token }))}
 								>
 									Sign out
@@ -125,14 +159,14 @@ export function AccountSessions({
 					))}
 				</ul>
 			)}
-			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-4">
-				<p className="text-sm text-muted-foreground">
+			<div className={CARD_ACTION_ROW}>
+				<p className="text-muted-foreground">
 					Ends every session, this one too, in case someone has a copy of it.
 				</p>
-				<Button variant="outline" size="sm" onClick={signOutEverywhere}>
+				<Button variant="outline" size="sm" disabled={pending} onClick={signOutEverywhere}>
 					Sign out everywhere
 				</Button>
 			</div>
-		</section>
+		</AccountCard>
 	);
 }

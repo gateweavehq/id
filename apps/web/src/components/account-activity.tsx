@@ -1,41 +1,39 @@
-import { useEffect, useState } from "react";
+import { useRef } from "react";
+import { AccountCard, CARD_ROW, LoadFailure, useLoaded } from "#/components/account-section";
 import { type AuditActivity, describeActivity } from "#/lib/audit-event";
 import { authClient } from "#/lib/auth-client";
+
+const NOT_LOADED = "Your activity could not be loaded";
+
+const listActivity = () => authClient.$fetch<{ events: AuditActivity[] }>("/account/activity");
 
 /**
  * What has happened to this account lately, so someone can spot what was not them. It loads in the
  * browser, as their sessions do: dates read in their own time zone and language.
  */
 export function AccountActivity() {
-	const [events, setEvents] = useState<AuditActivity[] | null>(null);
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		authClient
-			.$fetch<{ events: AuditActivity[] }>("/account/activity")
-			.then((result) => {
-				if (result.error) setError(result.error.message ?? "Your activity could not be loaded");
-				else setEvents(result.data.events);
-			})
-			.catch(() => setError("Your activity could not be loaded"));
-	}, []);
+	const { data, failure, loading, reload } = useLoaded(listActivity, NOT_LOADED);
+	const heading = useRef<HTMLHeadingElement>(null);
+	const events = data?.events ?? null;
 
 	return (
-		<section aria-labelledby="activity-heading" className="space-y-4">
-			<h2 id="activity-heading" className="text-sm font-semibold">
-				Recent activity
-			</h2>
-			{error && (
-				<p role="alert" className="text-sm text-destructive">
-					{error}
-				</p>
+		<AccountCard id="activity-heading" title="Recent activity" headingRef={heading}>
+			{failure && (
+				<LoadFailure
+					message={failure}
+					loading={loading}
+					onRetry={async () => {
+						// The button goes with the failure, and the focus would go with the button.
+						if (await reload()) heading.current?.focus();
+					}}
+				/>
 			)}
 			{events === null ? (
-				!error && <p className="text-sm text-muted-foreground">Loading…</p>
+				!failure && <p className={`${CARD_ROW} text-muted-foreground`}>Loading…</p>
 			) : (
-				<ul className="divide-y rounded-lg border text-sm">
+				<ul className="divide-y">
 					{events.map((event) => (
-						<li key={event.id} className="px-4 py-3">
+						<li key={event.id} className={CARD_ROW}>
 							<p className="font-medium">{describeActivity(event)}</p>
 							<p className="break-words text-xs text-muted-foreground">
 								{new Date(event.at).toLocaleString(undefined, {
@@ -49,6 +47,6 @@ export function AccountActivity() {
 					))}
 				</ul>
 			)}
-		</section>
+		</AccountCard>
 	);
 }

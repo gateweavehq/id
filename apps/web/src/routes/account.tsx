@@ -1,18 +1,21 @@
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { AccountActivity } from "#/components/account-activity";
-import { AccountApps } from "#/components/account-apps";
+import { AccountApps, AccountProducts } from "#/components/account-apps";
 import { AccountDelete } from "#/components/account-delete";
 import { AccountPasskeys } from "#/components/account-passkeys";
 import { AccountPassword } from "#/components/account-password";
 import { AccountProfile } from "#/components/account-profile";
+import { AccountCard, AccountGroup, CARD_ACTION_ROW } from "#/components/account-section";
 import { AccountSessions } from "#/components/account-sessions";
+import { AccountSignIn } from "#/components/account-sign-in";
 import { AccountTwoFactor } from "#/components/account-two-factor";
+import { AccountWorkspaces } from "#/components/account-workspaces";
 import { LegalLinks, useLegalLinks } from "#/components/legal-links";
 import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
 import { carriesASignature } from "#/lib/oauth-flow";
-import { getAuthOptions, getSession, hasPassword, ownsThisServer } from "#/lib/session";
+import { getAuthOptions, getSession, getWaysToSignIn, ownsThisServer } from "#/lib/session";
 import { isTwoFactor } from "#/lib/sign-in-method";
 import { useDocumentTitle } from "#/lib/title";
 
@@ -24,15 +27,24 @@ export const Route = createFileRoute("/account")({
 		return { session };
 	},
 	loader: async () => {
-		const [password, options, owner] = await Promise.all([
-			hasPassword(),
+		const [ways, options, owner] = await Promise.all([
+			getWaysToSignIn(),
 			getAuthOptions(),
 			ownsThisServer(),
 		]);
-		return { hasPassword: password, passkeys: options.passkeys, apps: options.apps, owner };
+		return { ways, passkeys: options.passkeys, github: options.github, apps: options.apps, owner };
 	},
 	component: AccountPage,
 });
+
+/** The parts of the page, in the order they come, for the row of links at its top. */
+const PARTS = [
+	{ id: "profile", title: "Profile" },
+	{ id: "sign-in", title: "Sign-in" },
+	{ id: "devices", title: "Devices" },
+	{ id: "apps", title: "Apps" },
+	{ id: "activity", title: "Activity" },
+] as const;
 
 function AccountPage() {
 	const { session } = Route.useRouteContext();
@@ -42,7 +54,8 @@ function AccountPage() {
 	// In place, because a word on the sign-in page would be something anyone could put in a link.
 	const [deleted, setDeleted] = useState(false);
 	const [signedOut, setSignedOut] = useState(false);
-	useDocumentTitle("Account");
+	const [signingOut, setSigningOut] = useState(false);
+	useDocumentTitle(deleted ? "Account deleted" : signedOut ? "Signed out" : "Account");
 
 	if (signedOut) {
 		return (
@@ -76,80 +89,121 @@ function AccountPage() {
 		);
 	}
 
+	const twoFactorOn = session.user.twoFactorEnabled === true;
+	const signedInWithTwoFactors = isTwoFactor(session.session.signInMethod);
+
 	return (
-		<main className="mx-auto max-w-lg space-y-10 p-6 pt-24">
-			<header className="flex items-center justify-between">
-				<h1 className="text-xl font-semibold tracking-tight">Your account</h1>
+		<main className="mx-auto max-w-2xl p-6 pt-16 sm:pt-24">
+			<header className="flex items-start justify-between gap-4 pb-6">
+				<div className="min-w-0">
+					<h1 className="text-xl font-semibold tracking-tight">Your account</h1>
+					<p className="break-words text-sm text-muted-foreground">{session.user.name}</p>
+					<p className="break-words text-sm text-muted-foreground">{session.user.email}</p>
+				</div>
 				<Button
 					variant="ghost"
 					size="sm"
+					className="shrink-0"
+					disabled={signingOut}
 					onClick={async () => {
-						await authClient.signOut();
-						await router.invalidate();
-						await router.navigate({ to: "/login" });
+						setSigningOut(true);
+						try {
+							await authClient.signOut();
+							await router.invalidate();
+							await router.navigate({ to: "/login" });
+						} finally {
+							setSigningOut(false);
+						}
 					}}
 				>
 					Sign out
 				</Button>
 			</header>
 
-			<AccountProfile name={session.user.name} email={session.user.email} />
-			<section aria-labelledby="workspaces-heading" className="space-y-4">
-				<h2 id="workspaces-heading" className="text-sm font-semibold">
-					Workspaces
-				</h2>
-				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-4">
-					<p className="text-sm text-muted-foreground">The teams you belong to, and invitations.</p>
-					<Button asChild variant="outline" size="sm">
-						<Link to="/workspaces">Open workspaces</Link>
-					</Button>
-				</div>
-			</section>
-			{data.owner && (
-				<section aria-labelledby="server-heading" className="space-y-4">
-					<h2 id="server-heading" className="text-sm font-semibold">
-						This server
-					</h2>
-					<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-4">
-						<p className="text-sm text-muted-foreground">
-							You run it. Who can make an account here.
-						</p>
-						<Button asChild variant="outline" size="sm">
-							<Link to="/server">Open settings</Link>
-						</Button>
-					</div>
-				</section>
-			)}
-			<AccountPassword email={session.user.email} hasPassword={data.hasPassword} />
-			{data.hasPassword && (
-				<AccountTwoFactor
-					enabled={session.user.twoFactorEnabled === true}
+			{/* It stays at the top of the window. A phone scrolls it sideways rather than the page. */}
+			<nav
+				aria-label="On this page"
+				className="sticky top-0 z-10 -mx-6 border-b bg-background px-6"
+			>
+				<ul className="flex gap-5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					{PARTS.filter((part) => part.id !== "apps" || data.apps).map((part) => (
+						<li key={part.id} className="shrink-0">
+							<a
+								href={`#${part.id}`}
+								className="flex h-11 items-center text-sm text-muted-foreground hover:text-foreground"
+							>
+								{part.title}
+							</a>
+						</li>
+					))}
+				</ul>
+			</nav>
+
+			<div className="space-y-12 pt-8">
+				<AccountGroup id="profile" title="Profile">
+					<AccountProfile name={session.user.name} email={session.user.email} />
+					<AccountWorkspaces />
+					{data.owner && (
+						<AccountCard id="server-heading" title="This server">
+							<div className={CARD_ACTION_ROW}>
+								<p className="text-muted-foreground">You run it. Who can make an account here.</p>
+								<Button asChild variant="outline" size="sm">
+									<Link to="/server">Open settings</Link>
+								</Button>
+							</div>
+						</AccountCard>
+					)}
+				</AccountGroup>
+
+				<AccountGroup id="sign-in" title="Sign-in">
+					<AccountSignIn
+						has={{ ...data.ways, authenticator: twoFactorOn }}
+						offered={{ passkeys: data.passkeys, github: data.github }}
+					/>
+					<AccountPassword email={session.user.email} hasPassword={data.ways.password} />
+					{data.ways.password && (
+						<AccountTwoFactor
+							enabled={twoFactorOn}
+							email={session.user.email}
+							signedInWithTwoFactors={signedInWithTwoFactors}
+						/>
+					)}
+					{data.passkeys && (
+						<AccountPasskeys
+							twoFactorOn={twoFactorOn}
+							signedInWithTwoFactors={signedInWithTwoFactors}
+						/>
+					)}
+				</AccountGroup>
+
+				<AccountGroup id="devices" title="Devices">
+					{/* A changed password replaces this session, and with it what the list has to show. */}
+					<AccountSessions
+						key={session.session.id}
+						currentId={session.session.id}
+						onSignedOut={() => setSignedOut(true)}
+					/>
+				</AccountGroup>
+
+				{data.apps && (
+					<AccountGroup id="apps" title="Apps">
+						<AccountProducts />
+						<AccountApps />
+					</AccountGroup>
+				)}
+
+				<AccountGroup id="activity" title="Activity">
+					<AccountActivity />
+				</AccountGroup>
+
+				<AccountDelete
 					email={session.user.email}
-					signedInWithTwoFactors={isTwoFactor(session.session.signInMethod)}
+					hasPassword={data.ways.password}
+					onDeleted={() => setDeleted(true)}
 				/>
-			)}
-			{data.passkeys && (
-				<AccountPasskeys
-					twoFactorOn={session.user.twoFactorEnabled === true}
-					signedInWithTwoFactors={isTwoFactor(session.session.signInMethod)}
-				/>
-			)}
-			{/* A changed password replaces this session, and with it what the list has to show. */}
-			<AccountSessions
-				key={session.session.id}
-				currentId={session.session.id}
-				onSignedOut={() => setSignedOut(true)}
-			/>
-			{data.apps && <AccountApps />}
 
-			<AccountActivity />
-			<AccountDelete
-				email={session.user.email}
-				hasPassword={data.hasPassword}
-				onDeleted={() => setDeleted(true)}
-			/>
-
-			<LegalLinks links={legal} />
+				<LegalLinks links={legal} />
+			</div>
 		</main>
 	);
 }

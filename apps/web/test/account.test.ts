@@ -405,6 +405,23 @@ describe("the name", () => {
 		expect(blank.status).toBe(400);
 	});
 
+	// A blank name used to be told it was too long.
+	it("says what is wrong with a name it refuses", async () => {
+		const person = await newPerson();
+		const refusalOf = async (name: string) => {
+			const refused = await api("/update-user", {
+				client: person.client,
+				cookie: person.cookie,
+				body: { name },
+			});
+			expect(refused.status).toBe(400);
+			return ((await refused.json()) as { message: string }).message;
+		};
+		expect(await refusalOf("   ")).toBe("Enter a name.");
+		expect(await refusalOf("")).toBe("Enter a name.");
+		expect(await refusalOf("x".repeat(101))).toBe("Enter a name of at most 100 characters.");
+	});
+
 	it("cannot be changed into a different email address on the way", async () => {
 		const person = await newPerson();
 		await api("/update-user", {

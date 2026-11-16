@@ -210,3 +210,14 @@ export function hostOfUris(uris: unknown): string | null {
 	const first = Array.isArray(uris) ? uris[0] : undefined;
 	return typeof first === "string" && URL.canParse(first) ? new URL(first).host : null;
 }
+
+/**
+ * Where an app lives, for a link back to it: the origin of what it is registered to return to, and
+ * so nothing a request could have named. Null for anything a browser would not open as a page.
+ */
+export function originOfUris(uris: unknown): string | null {
+	const first = Array.isArray(uris) ? uris[0] : undefined;
+	if (typeof first !== "string" || !URL.canParse(first)) return null;
+	const { protocol, origin } = new URL(first);
+	return protocol === "https:" || protocol === "http:" ? origin : null;
+}

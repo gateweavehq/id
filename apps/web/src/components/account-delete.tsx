@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { AccountCard, CARD_ACTION_ROW, CARD_FORM } from "#/components/account-section";
 import { LiveButton } from "#/components/live-button";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -45,12 +46,9 @@ export function AccountDelete({
 	}
 
 	return (
-		<section aria-labelledby="delete-heading" className="space-y-4">
-			<h2 id="delete-heading" className="text-sm font-semibold">
-				Delete account
-			</h2>
+		<AccountCard id="delete-heading" title="Delete account" level={2}>
 			{open ? (
-				<form onSubmit={onSubmit} className="space-y-4 rounded-lg border p-4">
+				<form onSubmit={onSubmit} className={CARD_FORM}>
 					<p className="text-sm text-muted-foreground">
 						This removes your account and takes you out of your workspaces. It cannot be undone.
 					</p>
@@ -114,13 +112,13 @@ export function AccountDelete({
 					</div>
 				</form>
 			) : (
-				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-4">
-					<p className="text-sm text-muted-foreground">Remove this account for good.</p>
+				<div className={CARD_ACTION_ROW}>
+					<p className="text-muted-foreground">Remove this account for good.</p>
 					<LiveButton variant="outline" size="sm" onClick={() => setOpen(true)}>
 						Delete account
 					</LiveButton>
 				</div>
 			)}
-		</section>
+		</AccountCard>
 	);
 }

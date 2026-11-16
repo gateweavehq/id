@@ -829,6 +829,13 @@ without leaving the workspace. `allowed-apps.ts` has a list and a take-back, for
 to a workspace's apps. First-party apps do not ask, so they are not on it, and the same answer comes back
 for an app that does not exist, is someone else's to take back or was never allowed, so nobody learns which.
 
+The first-party apps someone has signed in to are on a list of their own, "Gateweave products you use", which
+only reads: `/account/products` in the same file. It goes by the person's own `app_sign_in` rows, so it
+covers the ninety days the log keeps, and it offers no taking back, since the next sign-in would undo one.
+Its link back to an app is the origin of the redirect URI the app is registered with, and never anything a
+sign-in carried. An app that is switched off, or whose metadata the check for who may sign in cannot read,
+is left out.
+
 - **All of it, at once.** The take-back deletes the person's access tokens, refresh tokens and consent for
   that app in one batch, the same three tables as the trigger below. The provider's `/oauth2/delete-consent`
   removes only the row, and a refresh never reads it, so that path is closed. `get-consent`, `get-consents`

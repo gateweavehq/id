@@ -53,9 +53,11 @@ const address = z.email();
 
 function assertValidName(value: unknown) {
 	if (!name.safeParse(value).success) {
+		// Someone who cleared the field has not gone over any limit.
+		const tooLong = typeof value === "string" && value.trim().length > 0;
 		throw APIError.from("BAD_REQUEST", {
 			code: "INVALID_NAME",
-			message: "Enter a name of at most 100 characters.",
+			message: tooLong ? "Enter a name of at most 100 characters." : "Enter a name.",
 		});
 	}
 }

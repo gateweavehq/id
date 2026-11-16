@@ -165,9 +165,10 @@ test("someone cannot remove their last way to sign in, until they add another", 
 	await expect(passkeys.getByRole("alert")).toContainText("your only way to sign in");
 	await expect(row).toHaveCount(1);
 
+	await page.getByRole("button", { name: "Add password" }).click();
 	await page.getByLabel("New password").fill(PASSWORD);
 	await page.getByLabel("Repeat it").fill(PASSWORD);
-	await page.getByRole("button", { name: "Add password" }).click();
+	await page.getByRole("button", { name: "Save password" }).click();
 	await expect(page.getByText("Your password is set.")).toBeVisible();
 
 	await row.getByRole("button", { name: "Remove" }).click();

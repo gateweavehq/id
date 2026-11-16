@@ -197,7 +197,7 @@ async function invitationFor(db: Database, token: string) {
 const personName = z
 	.string()
 	.trim()
-	.min(1, "Enter a name of at most 100 characters.")
+	.min(1, "Enter a name.")
 	.max(100, "Enter a name of at most 100 characters.");
 const address = z.email("Enter an email address.").max(254);
 const token = z.string().min(1).max(200);
