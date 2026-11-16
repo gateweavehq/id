@@ -7,6 +7,23 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.15.2] - 2026-11-16
+
+A guard that cannot read the session now refuses. There is no migration in this release, and the
+signing algorithm doesn't change.
+
+### Fixed
+
+- **A guard that cannot read the session refuses.** The guards on changing a second factor,
+  removing a password, counting password tries and an app's consent decide by the caller's
+  session. When a session cookie is present and the session cannot be read, they now refuse the
+  request instead of leaving the decision to the endpoint. Nothing changes when the database
+  answers. ([#123](https://github.com/gateweavehq/id/pull/123))
+
+### If you run your own
+
+- **Update.**
+
 ## [0.15.1] - 2026-11-16
 
 A database read that fails in passing is asked again instead of failing a sign-in, and a query
