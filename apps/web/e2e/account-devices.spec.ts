@@ -28,6 +28,7 @@ test("ending a session says so, and leaves the focus somewhere", async ({ page, 
 	const problems = await watch(page);
 	const email = await newPerson(page);
 	const elsewhere = await newDevice(page, baseURL);
+	const problemsElsewhere = await watch(elsewhere);
 	await signIn(elsewhere, email, PASSWORD);
 	await page.reload({ waitUntil: "networkidle" });
 
@@ -56,12 +57,14 @@ test("ending a session says so, and leaves the focus somewhere", async ({ page, 
 
 	await elsewhere.context().close();
 	expect(problems).toEqual([]);
+	expect(problemsElsewhere).toEqual([]);
 });
 
 test("signing out other browsers asks first, and can be taken back", async ({ page, baseURL }) => {
 	const problems = await watch(page);
 	const email = await newPerson(page);
 	const [second, third] = [await newDevice(page, baseURL), await newDevice(page, baseURL)];
+	const problemsElsewhere = [await watch(second), await watch(third)];
 	await signIn(second, email, PASSWORD);
 	await signIn(third, email, PASSWORD);
 	await page.reload({ waitUntil: "networkidle" });
@@ -97,6 +100,7 @@ test("signing out other browsers asks first, and can be taken back", async ({ pa
 		await device.context().close();
 	}
 	expect(problems).toEqual([]);
+	expect(problemsElsewhere).toEqual([[], []]);
 });
 
 test("signing out of everything asks first, and can be taken back", async ({ page }) => {
