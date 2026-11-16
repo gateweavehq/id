@@ -74,30 +74,15 @@ export const signInMethods = createServerFn({ method: "GET" }).handler(async () 
 });
 
 /**
- * What the signed-in person has to sign in with, for their account page to say. GitHub counts only
- * where this server offers it, since a link made while it did signs nobody in once it does not.
+ * What the signed-in person has to sign in with, for their account page to say. The session is read
+ * once and everything is answered from it. With none, this throws, and the page shows that it could
+ * not be loaded, with a way to try again.
  */
 export const getWaysToSignIn = createServerFn({ method: "GET" }).handler(async () => {
 	const { db, getAuth, githubEnabled } = await import("#/server/auth");
-	const { schema } = await import("#/server/db");
-	const { count, eq } = await import("drizzle-orm");
-	const headers = getRequestHeaders();
-	const [accounts, signedIn] = await Promise.all([
-		getAuth().api.listUserAccounts({ headers }),
-		getAuth().api.getSession({ headers }),
-	]);
-	const passkeys = signedIn
-		? await db
-				.select({ held: count() })
-				.from(schema.passkey)
-				.where(eq(schema.passkey.userId, signedIn.user.id))
-				.get()
-		: undefined;
-	return {
-		password: accounts.some((account) => account.providerId === "credential"),
-		github: githubEnabled && accounts.some((account) => account.providerId === "github"),
-		passkeys: passkeys?.held ?? 0,
-	};
+	const { waysToSignIn } = await import("#/server/auth/ways-to-sign-in");
+	const signedIn = await getAuth().api.getSession({ headers: getRequestHeaders() });
+	return waysToSignIn(db, signedIn, githubEnabled);
 });
 
 /** Whether the signed-in person can sign in with a password. */

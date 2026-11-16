@@ -116,7 +116,10 @@ test("the page says whose account it is, and leads to each of its parts", async 
 test("a product is listed once someone has signed in to it, with a way back", async ({ page }) => {
 	const problems = await watch(page);
 	await newPerson(page);
-	const products = page.getByRole("region", { name: "Gateweave products you use" });
+	const products = page.getByRole("region", { name: "Products you use" });
+	await expect(
+		products.getByText("These are part of this service, so they do not ask first."),
+	).toBeVisible();
 	await expect(products.getByText("You have not signed in to a product")).toBeVisible();
 	await expect(products.getByRole("listitem")).toHaveCount(0);
 
@@ -148,6 +151,10 @@ test("the password is a row that opens, and says what went wrong in its own word
 	await newPerson(page);
 	const password = page.getByRole("region", { name: "Password", exact: true });
 	const opener = password.getByRole("button", { name: "Change password" });
+	// There before it has anything to say, and while the form is open, so that what it says is heard.
+	const said = password.locator("[aria-live=polite]");
+	await expect(said).toHaveCount(1);
+	await expect(said).toBeEmpty();
 
 	await expect(password.getByLabel("Current password")).toHaveCount(0);
 	await opener.click();
@@ -170,8 +177,10 @@ test("the password is a row that opens, and says what went wrong in its own word
 	await password.getByLabel("Current password").fill(PASSWORD);
 	await expect(password.getByRole("alert")).toHaveCount(0);
 
+	await expect(said).toHaveCount(1);
+	await expect(said).toBeEmpty();
 	await password.getByRole("button", { name: "Save password" }).click();
-	await expect(password.getByRole("status")).toContainText("Your password is changed");
+	await expect(said).toContainText("Your password is changed");
 	await expect(password.getByLabel("Current password")).toHaveCount(0);
 	await expect(opener).toBeFocused();
 	expect(problems).toEqual([]);
@@ -198,7 +207,7 @@ test("an account with no password is told what it has, and can add one", async (
 	await password.getByLabel("New password").fill(PASSWORD);
 	await password.getByLabel("Repeat it").fill(PASSWORD);
 	await password.getByRole("button", { name: "Save password" }).click();
-	await expect(password.getByRole("status")).toContainText("Your password is set.");
+	await expect(password.locator("[aria-live=polite]")).toContainText("Your password is set.");
 
 	await expect(summary).toContainText("You sign in with your password.");
 	await expect(summary.getByRole("definition").first()).toHaveText("Set");
