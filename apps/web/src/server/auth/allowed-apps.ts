@@ -92,11 +92,14 @@ async function productsUsedBy(db: Database, userId: string): Promise<UsedProduct
 		if (!identity || identity.workspace || row.disabled) continue;
 		const lastSignIn = signIns.get(identity.app);
 		if (!lastSignIn || products.has(identity.app)) continue;
+		const openUrl = originOfUris(row.redirectUris);
 		products.set(identity.app, {
 			app: identity.app,
 			name: row.name || identity.app,
-			host: hostOfUris(row.redirectUris),
-			openUrl: originOfUris(row.redirectUris),
+			// The host of where the link leads, so the two cannot disagree, and no host where there is
+			// no link: a custom scheme has none worth reading.
+			host: openUrl && new URL(openUrl).host,
+			openUrl,
 			lastSignIn,
 		});
 	}

@@ -940,16 +940,37 @@ describe("the products someone uses", () => {
 		expect(products.map(({ openUrl }) => openUrl)).toEqual([`https://${app.host}`]);
 	});
 
-	it("has no link for an app registered at something a browser would not open", async () => {
+	it.each(["javascript:alert(1)", "myapp://cb", "data:text/html,hello"])(
+		"has no link and no host for an app registered at %s",
+		async (uri) => {
+			const app = await newApp();
+			const person = await newPerson();
+			await signedIn(app, person);
+			await id.db
+				.prepare("UPDATE oauth_client SET redirect_uris = ? WHERE client_id = ?")
+				.bind(JSON.stringify([uri]), app.clientId)
+				.run();
+			// A custom scheme's "host" is a word like `cb`, which reads as nothing to anyone.
+			expect(await productsOf(person)).toEqual([
+				expect.objectContaining({ app: app.appId, openUrl: null, host: null }),
+			]);
+		},
+	);
+
+	// An app registered for a developer's machine first sent everyone to that machine.
+	it("leads to the app's https address, though an http one is registered before it", async () => {
 		const app = await newApp();
 		const person = await newPerson();
 		await signedIn(app, person);
 		await id.db
 			.prepare("UPDATE oauth_client SET redirect_uris = ? WHERE client_id = ?")
-			.bind(JSON.stringify(["javascript:alert(1)"]), app.clientId)
+			.bind(
+				JSON.stringify(["http://localhost:4710/callback", `https://${app.host}/callback`]),
+				app.clientId,
+			)
 			.run();
 		expect(await productsOf(person)).toEqual([
-			expect.objectContaining({ app: app.appId, openUrl: null }),
+			expect.objectContaining({ openUrl: `https://${app.host}`, host: app.host }),
 		]);
 	});
 

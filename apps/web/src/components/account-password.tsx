@@ -4,6 +4,7 @@ import {
 	AccountCard,
 	CARD_ACTION_ROW,
 	CARD_FORM,
+	CARD_ROW,
 	useFocusBack,
 } from "#/components/account-section";
 import { LiveButton } from "#/components/live-button";
@@ -79,6 +80,11 @@ export function AccountPassword({ email, hasPassword }: { email: string; hasPass
 
 	return (
 		<AccountCard id="password-heading" title="Password">
+			{/* In the page from the start, and outside what opens and closes, or a screen reader would
+			    not hear it arrive: a region that appears with its words in it is often not announced. */}
+			<p aria-live="polite" className={notice ? `${CARD_ROW} text-muted-foreground` : "sr-only"}>
+				{notice}
+			</p>
 			{open ? (
 				// A mistake is about what was typed, so it goes once that changes.
 				<form onSubmit={onSubmit} onChange={() => setError(null)} className={CARD_FORM}>
@@ -158,11 +164,10 @@ export function AccountPassword({ email, hasPassword }: { email: string; hasPass
 				</form>
 			) : (
 				<div className={CARD_ACTION_ROW}>
-					<p role={notice ? "status" : undefined} className="text-muted-foreground">
-						{notice ??
-							(hasPassword
-								? "You have a password. Changing it signs you out on your other devices."
-								: "This account has no password.")}
+					<p className="text-muted-foreground">
+						{hasPassword
+							? "You have a password. Changing it signs you out on your other devices."
+							: "This account has no password."}
 					</p>
 					<LiveButton
 						ref={opener}

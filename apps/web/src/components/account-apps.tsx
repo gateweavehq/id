@@ -33,7 +33,11 @@ export function AccountProducts() {
 	const products = data?.products ?? null;
 
 	return (
-		<AccountCard id="products-heading" title="Gateweave products you use" headingRef={heading}>
+		// Not "Gateweave products": a server someone else runs lists whatever apps it registered here.
+		<AccountCard id="products-heading" title="Products you use" headingRef={heading}>
+			<p className={`${CARD_ROW} text-xs text-muted-foreground`}>
+				These are part of this service, so they do not ask first.
+			</p>
 			{failure && (
 				<LoadFailure
 					message={failure}
