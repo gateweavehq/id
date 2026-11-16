@@ -200,7 +200,7 @@ describe("describeActivity", () => {
 
 	it("tells a wrong password given while signed in from a failed sign-in", () => {
 		expect(describeActivity(activity({ type: "password_refused" }))).toBe(
-			"Mistyped your password on the account page",
+			"A wrong password was entered on the account page",
 		);
 	});
 

@@ -7,7 +7,7 @@ import {
 	useLoaded,
 } from "#/components/account-section";
 import { Button } from "#/components/ui/button";
-import { byDay, dayName, foldActivity, ifNotYou, needsALook } from "#/lib/activity";
+import { byDay, concernOf, dayName, foldActivity, ifNotYou } from "#/lib/activity";
 import { type AuditActivity, describeActivity } from "#/lib/audit-event";
 import { authClient } from "#/lib/auth-client";
 import { cn } from "#/lib/utils";
@@ -109,24 +109,33 @@ function ActivityRow({
 	/** For the row that takes the focus when "Show more" brings it. */
 	rowRef: Ref<HTMLLIElement> | undefined;
 }) {
-	const worrying = needsALook(event);
+	const concern = concernOf(event);
 	return (
 		<li
 			ref={rowRef}
 			tabIndex={rowRef ? -1 : undefined}
-			// More than a colour, which not everyone sees: the bar, and the words under it.
+			data-concern={concern}
+			// Red for the one that means someone knows the password, and a grey bar for a slip. More
+			// than a colour either way, which not everyone sees: the bar, and the words under it.
 			className={cn(
 				"border-l-2 border-transparent px-4 py-2 outline-none",
-				worrying && "border-destructive",
+				concern === "alarm" && "border-destructive",
+				concern === "notice" && "border-muted-foreground/40",
 			)}
 		>
-			<p className={cn("font-medium", worrying && "text-destructive")}>{describeActivity(event)}</p>
+			<p className={cn("font-medium", concern === "alarm" && "text-destructive")}>
+				{describeActivity(event)}
+			</p>
 			<p className="break-words text-xs text-muted-foreground">
 				{new Date(event.at).toLocaleTimeString(undefined, { timeStyle: "short" })}
 				{event.device && ` · ${event.device}`}
 				{event.ip && ` · ${event.ip}`}
 			</p>
-			{worrying && <p className="text-xs text-muted-foreground">{ifNotYou(hasPassword)}</p>}
+			{concern && (
+				<p className={cn("text-xs", concern === "alarm" ? "font-medium" : "text-muted-foreground")}>
+					{ifNotYou(concern, hasPassword)}
+				</p>
+			)}
 		</li>
 	);
 }

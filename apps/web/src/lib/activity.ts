@@ -18,8 +18,12 @@ function time(event: AuditActivity): number {
  * sign-in, and two rows for it bury what matters. One that nothing followed stays, because a right
  * password with no code after it is the row someone most needs to see.
  *
- * A sign-in takes the latest question before it, from the same place, within ten minutes. Takes and
- * returns events newest first, as the server sends them.
+ * A sign-in takes one question before it, from the same kind of device, within ten minutes. The
+ * address may differ: a phone leaves the wifi between the password and the code, and a code that was
+ * right closes the question whatever network it crossed. Where several questions are open, it takes
+ * the latest from its own address, and only without one the latest from another, so that the one left
+ * showing is the one from somewhere else. Takes and returns events newest first, as the server sends
+ * them.
  */
 export function foldActivity(events: AuditActivity[]): AuditActivity[] {
 	const folded = new Set<string>();
@@ -30,12 +34,12 @@ export function foldActivity(events: AuditActivity[]): AuditActivity[] {
 			continue;
 		}
 		if (event.type !== "sign_in" || !FOLLOWS_A_PASSWORD.has(event.detail ?? "")) continue;
-		const asked = unanswered.findLastIndex(
-			(question) =>
-				question.ip === event.ip &&
-				question.device === event.device &&
-				time(event) - time(question) <= ONE_SIGN_IN_MS,
+		const led = (question: AuditActivity) =>
+			question.device === event.device && time(event) - time(question) <= ONE_SIGN_IN_MS;
+		const fromHere = unanswered.findLastIndex(
+			(question) => led(question) && question.ip === event.ip,
 		);
+		const asked = fromHere >= 0 ? fromHere : unanswered.findLastIndex(led);
 		const [question] = asked >= 0 ? unanswered.splice(asked, 1) : [];
 		if (question) folded.add(question.id);
 	}
@@ -43,23 +47,31 @@ export function foldActivity(events: AuditActivity[]): AuditActivity[] {
 }
 
 /**
- * Whether an event is one to stop at: someone tried to get in and did not, or had the password and
- * went no further. Meant for what is left after `foldActivity`, where a question still on the list
- * is one that no code followed.
+ * How much an event should stop someone, for what is left after `foldActivity`.
+ *
+ * - `alarm`: a right password that no code followed. Someone knows the password. It is the only one
+ *   in red, since marking everything alike teaches people to pass over the one that matters.
+ * - `notice`: a sign-in that failed, or a wrong password on the account page. Usually their own
+ *   slip, and worth a look only if it keeps happening.
  */
-export function needsALook(event: AuditActivity): boolean {
-	return (
-		event.type === "sign_in_failed" ||
-		event.type === "password_refused" ||
-		event.type === "two_factor_asked"
-	);
+export type Concern = "alarm" | "notice";
+
+export function concernOf(event: AuditActivity): Concern | undefined {
+	if (event.type === "two_factor_asked") return "alarm";
+	if (event.type === "sign_in_failed" || event.type === "password_refused") return "notice";
+	return undefined;
 }
 
-/** What to do about an event that was not them. An account with no password has none to change. */
-export function ifNotYou(hasPassword: boolean): string {
+/** What to do if it was not them. An account with no password has none to change. */
+export function ifNotYou(concern: Concern, hasPassword: boolean): string {
+	if (concern === "alarm") {
+		return hasPassword
+			? "Not you? Change your password now and sign out of everything."
+			: "Not you? Sign out of everything.";
+	}
 	return hasPassword
-		? "Not you? Change your password and sign out of everything."
-		: "Not you? Sign out of everything.";
+		? "Not you? If this keeps happening, change your password."
+		: "Not you? If this keeps happening, sign out of everything.";
 }
 
 export interface ActivityDay {

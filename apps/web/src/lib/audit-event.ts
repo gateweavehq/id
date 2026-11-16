@@ -191,7 +191,8 @@ export function describeActivity({ type, app, detail, byOther, other }: AuditAct
 				return "A new password was chosen with a link from this server's owner";
 			return detail === "removed" ? "Removed the password" : "Changed the password";
 		case "password_refused":
-			return "Mistyped your password on the account page";
+			// What happened, and not who did it: the row under it asks whether it was them.
+			return "A wrong password was entered on the account page";
 		case "password_link_made":
 			if (byOther) return `${someone} made a link to choose a new password for this account`;
 			return `Made a link to choose a new password for ${other ?? "someone"}`;

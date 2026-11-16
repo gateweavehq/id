@@ -1081,7 +1081,10 @@ themselves, so a session they cannot read is refused there too.
 - Rate limits are durable and keyed by `cf-connecting-ip`, or by zone for a Worker.
 - Changing a password ends every other session, since whoever knew the old one may be why it changed.
   The account page lists a person's sessions, and they can end any of them. Ending several at once asks
-  first, on the page, and then makes the request it always made.
+  first, on the page, and then makes the request it always made. Each row says when the session was
+  made and when it was last renewed, and not when it was last used: Better Auth moves a session's
+  `updatedAt` only once a day has passed since the last time, so a session in use now, a copied one
+  too, can show yesterday's date.
 - The cookie keeps the session token away from scripts, so the session a page carries leaves it out.
 - A password known from a breach is refused wherever someone chooses one. Only the first five
   characters of its SHA-1 go to Have I Been Pwned. It is on in Gateweave Cloud, and self-hosters opt in
@@ -1150,9 +1153,12 @@ account can collect.
 A person sees their last 50 events on their account page: what happened to them, and what they did to
 someone else. Where someone else did it, they see who, and not that person's IP address or device. Nobody
 can read anyone else's. The page shows ten at a time, under the day they happened on. It leaves out a
-`two_factor_asked` whose sign-in with a code followed from the same place within ten minutes, since the two
-are one sign-in, and marks a failed sign-in, a wrong password from a session and a `two_factor_asked` that
-nothing followed. That is the page's arrangement (`lib/activity.ts`): the endpoint still sends every row.
+`two_factor_asked` whose sign-in with a code followed within ten minutes from the same kind of device, since
+the two are one sign-in. The address may differ, as a phone's does when it leaves the wifi, and where two
+questions are open the one from the sign-in's own address is the one taken. A `two_factor_asked` that
+nothing followed is the page's one alarm, in red, since it means someone has the password. A failed
+sign-in and a wrong password from a session get a quieter mark. That is the page's arrangement
+(`lib/activity.ts`): the endpoint still sends every row.
 
 Every write happens after the response. A failed sign-in writes a row only for an address with an
 account, so a response that waited for the write would say which addresses have one, as sending email

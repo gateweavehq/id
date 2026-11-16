@@ -89,14 +89,30 @@ export function AccountSessions({
 	const othersButton = useFocusBack<HTMLButtonElement>(asking === "others");
 	const everythingButton = useFocusBack<HTMLButtonElement>(asking === "everything");
 
-	const others = sessions?.filter((session) => session.id !== currentId) ?? [];
+	/**
+	 * The sessions the server has said are ended. They leave the list at once, whatever becomes of
+	 * the read that follows: a row that stayed with its "Sign out" beside "is signed out" would say
+	 * two things.
+	 */
+	const [ended, setEnded] = useState<ReadonlySet<string>>(new Set());
+	/**
+	 * Whether a request to end something is on its way. Not state, which a second press in the same
+	 * moment would not see yet, and would send the request again.
+	 */
+	const busy = useRef(false);
+
+	const shown = sessions?.filter((session) => !ended.has(session.id)) ?? null;
+	const others = shown?.filter((session) => session.id !== currentId) ?? [];
 
 	/** Ends what `action` ends, then says so where a screen reader hears it and a person sees it. */
 	async function end(
 		what: string,
 		action: () => Promise<{ error: { message?: string | undefined } | null }>,
+		sessionIds: string[],
 		said: string,
 	) {
+		if (busy.current) return;
+		busy.current = true;
 		setError(null);
 		setDone(null);
 		setEnding(what);
@@ -106,19 +122,24 @@ export function AccountSessions({
 				setError(result.error.message ?? NOT_DONE);
 				return;
 			}
-			await reload();
+			setEnded((before) => new Set([...before, ...sessionIds]));
 			setAsking(null);
 			setDone(said);
 			// The button that was pressed went with its row, and the focus must not go with it.
 			heading.current?.focus();
+			// For what else has changed meanwhile. If it fails, the card says so and offers to try again.
+			await reload();
 		} catch {
 			setError(NOT_DONE);
 		} finally {
+			busy.current = false;
 			setEnding(null);
 		}
 	}
 
 	async function signOutOfEverything() {
+		if (busy.current) return;
+		busy.current = true;
 		setError(null);
 		setEnding("everything");
 		try {
@@ -131,6 +152,7 @@ export function AccountSessions({
 		} catch {
 			setError(NOT_DONE);
 		} finally {
+			busy.current = false;
 			setEnding(null);
 		}
 	}
@@ -191,6 +213,7 @@ export function AccountSessions({
 								end(
 									"others",
 									() => authClient.revokeOtherSessions(),
+									others.map(({ id }) => id),
 									"Your other browsers are signed out.",
 								)
 							}
@@ -210,18 +233,20 @@ export function AccountSessions({
 					</div>
 				</div>
 			)}
-			{sessions === null ? (
+			{shown === null ? (
 				!failure && <p className={`${CARD_ROW} text-muted-foreground`}>Loading…</p>
 			) : (
 				<ul className="divide-y">
-					{inOrder(sessions, currentId).map((session) => (
+					{inOrder(shown, currentId).map((session) => (
 						<li key={session.id} className="flex items-center justify-between gap-4 px-4 py-3">
 							<div className="min-w-0">
 								<p className="break-words font-medium">{nameOf(session)}</p>
 								<p className="break-words text-xs text-muted-foreground">
 									Signed in {momentOf(session.createdAt)}
 									{session.ipAddress && ` from ${session.ipAddress}`}
-									{session.updatedAt && ` · Last active ${dayOf(session.updatedAt)}`}
+									{/* Not "last active": this moves about once a day, so a session in use now, a
+									    copied one too, can show yesterday. */}
+									{session.updatedAt && ` · Last renewed ${dayOf(session.updatedAt)}`}
 								</p>
 							</div>
 							{session.id === currentId ? (
@@ -238,6 +263,7 @@ export function AccountSessions({
 										end(
 											session.id,
 											() => authClient.revokeSession({ token: session.token }),
+											[session.id],
 											`${describeBrowser(session.userAgent)} is signed out.`,
 										)
 									}
