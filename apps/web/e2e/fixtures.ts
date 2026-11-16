@@ -11,6 +11,13 @@ export const APP = {
 	redirectUri: "http://localhost:4733/callback",
 };
 
+/**
+ * A `state` that begins with this makes the app take a few seconds to answer, as one does. The page
+ * that sent the browser there shows, and runs, for that long. A test cannot hold the answer back
+ * itself: `page.route` does not see where a redirect leads.
+ */
+export const SLOW_STATE = "take-your-time-";
+
 /** Someone who already has an account, so that a test about something else need not make one. */
 export const PERSON = {
 	name: "Seeded Person",

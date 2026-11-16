@@ -11,6 +11,7 @@ import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, type Search } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
 import { getSession } from "#/lib/session";
+import { useSignInBusy, useSignInLatch } from "#/lib/sign-in-latch";
 import { useDocumentTitle } from "#/lib/title";
 
 // Loose, because on the way to an app the query is the app's signed request. See `lib/oauth-flow`.
@@ -71,22 +72,34 @@ function TwoFactorPage() {
 	const router = useRouter();
 	const [recovery, setRecovery] = useState(false);
 	const [error, setError] = useState<ReactNode>(null);
-	const [pending, setPending] = useState(false);
+	// A right code leaves this page, and the button stays off until it has: see `lib/sign-in-latch`.
+	const latch = useSignInLatch();
+	const busy = useSignInBusy(latch);
 	useDocumentTitle("Enter your code");
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const element = event.currentTarget;
 		const code = String(new FormData(element).get("code")).trim();
-		setPending(true);
+		const release = latch.take();
+		if (!release) return;
 		setError(null);
-		const result = recovery
-			? await authClient.twoFactor.verifyBackupCode({ code: code.toLowerCase() })
-			: await authClient.twoFactor.verifyTotp({ code });
-		setPending(false);
+		const verify = () =>
+			recovery
+				? authClient.twoFactor.verifyBackupCode({ code: code.toLowerCase() })
+				: authClient.twoFactor.verifyTotp({ code });
+		let result: Awaited<ReturnType<typeof verify>>;
+		try {
+			result = await verify();
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : "Something went wrong");
+			release();
+			return;
+		}
 		if (result.error) {
 			setError(refusal(result.error, search));
 			element.reset();
+			release();
 			return;
 		}
 		// The auth client has already sent the browser on, when this is on the way to an app.
@@ -133,7 +146,7 @@ function TwoFactorPage() {
 						{error}
 					</p>
 				)}
-				<LiveButton type="submit" className="w-full" disabled={pending}>
+				<LiveButton type="submit" className="w-full" disabled={busy}>
 					Continue
 				</LiveButton>
 			</form>

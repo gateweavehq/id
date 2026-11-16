@@ -14,6 +14,7 @@ import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, owesACode } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
 import { getAccessRequestUrl, getAuthOptions, getSession } from "#/lib/session";
+import { useSignInBusy, useSignInLatch } from "#/lib/sign-in-latch";
 import { requestRefusal, signInRefusal } from "#/lib/sign-in-refusal";
 import { useTurnstile } from "#/lib/turnstile";
 
@@ -52,14 +53,19 @@ function SignInForm() {
 	const router = useRouter();
 	const [refusal, setRefusal] = useState(() => signInRefusal(search.error));
 	const [error, setError] = useState<ReactNode>(null);
-	const [pending, setPending] = useState(false);
+	// One for the form, GitHub and the passkey together: see `lib/sign-in-latch`.
+	const latch = useSignInLatch();
+	const busy = useSignInBusy(latch);
 	const turnstile = useTurnstile(options.turnstileSiteKey);
 	const legal = useLegalLinks();
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget);
-		setPending(true);
+		// Taking it ends the browser's offer of a passkey in the email field, which could otherwise be
+		// answered while the password is on its way. A wrong password gives it back, and the offer too.
+		const release = latch.take();
+		if (!release) return;
 		setError(null);
 		setRefusal(null);
 		try {
@@ -70,8 +76,12 @@ function SignInForm() {
 			});
 			if (result.error) {
 				setError(failureMessage(result.error, search));
+				release();
 				return;
 			}
+			// Everything from here leaves this page, and the latch stays taken until it has: the answer to
+			// a redirect can be a while in coming, and a button that worked again meanwhile would start
+			// a second sign-in beside the one that is finishing.
 			if (onItsWay(result.data)) return;
 			if (owesACode(result.data)) {
 				await router.navigate({
@@ -82,9 +92,8 @@ function SignInForm() {
 			}
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : "Something went wrong");
+			release();
 			return;
-		} finally {
-			setPending(false);
 		}
 		await router.invalidate();
 		await router.navigate({ href: next });
@@ -106,8 +115,8 @@ function SignInForm() {
 				{(options.github || options.passkeys) && (
 					<>
 						<div className="space-y-3">
-							{options.github && <GitHubSignIn next={next} search={search} />}
-							{options.passkeys && <PasskeySignIn next={next} search={search} />}
+							{options.github && <GitHubSignIn next={next} search={search} latch={latch} />}
+							{options.passkeys && <PasskeySignIn next={next} search={search} latch={latch} />}
 						</div>
 						<SignInDivider />
 					</>
@@ -152,7 +161,7 @@ function SignInForm() {
 							{error}
 						</p>
 					)}
-					<LiveButton type="submit" className="w-full" disabled={pending}>
+					<LiveButton type="submit" className="w-full" disabled={busy}>
 						Sign in
 					</LiveButton>
 				</form>

@@ -37,6 +37,62 @@ export async function withoutTheOfferInTheEmailField(page: Page) {
 	});
 }
 
+/**
+ * The offers in the email field that pages make from now on. One that only waits sends nothing, so
+ * this is the one place a test can see it. A page may make several, each ending the one before.
+ */
+export async function watchOffers(page: Page) {
+	await page.addInitScript(() => {
+		const offers: AbortSignal[] = [];
+		Reflect.set(window, "offers", offers);
+		const ask = navigator.credentials.get.bind(navigator.credentials);
+		navigator.credentials.get = (options) => {
+			if (options?.mediation === "conditional" && options.signal) offers.push(options.signal);
+			return ask(options);
+		};
+	});
+	const ended = () =>
+		page.evaluate(() =>
+			((Reflect.get(window, "offers") as AbortSignal[] | undefined) ?? []).map(
+				(offer) => offer.aborted,
+			),
+		);
+	return {
+		/** How many this page has made. */
+		made: async () => (await ended()).length,
+		/** Whether one is waiting to be answered: `false` once the page has ended the last it made. */
+		waiting: async () => (await ended()).at(-1) === false,
+	};
+}
+
+/** Every passkey answer the page sends to be checked from now on, which is what signs someone in. */
+export function passkeyAnswersSent(page: Page) {
+	const sent: string[] = [];
+	page.on("request", (request) => {
+		if (request.url().endsWith("/passkey/verify-authentication")) sent.push(request.url());
+	});
+	return sent;
+}
+
+/**
+ * Holds every request the page's script sends to `url` until the test lets go, and says which came.
+ * Not for where the browser itself is going: see `SLOW_STATE`.
+ */
+export async function holdUntilLetGo(page: Page, url: string | RegExp) {
+	let letGo = () => {};
+	const held = new Promise<void>((resolve) => {
+		letGo = resolve;
+	});
+	const seen: string[] = [];
+	await page.route(url, async (route) => {
+		seen.push(route.request().url());
+		await held;
+		// One that the page has since navigated away from is no longer there to continue.
+		await route.continue().catch(() => {});
+	});
+	return { seen, letGo };
+}
+
 /** Makes an account through the pages and stops on the way to choosing a password. */
 export async function signUpWithoutAPassword(page: Page) {
 	const email = `passkey-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;

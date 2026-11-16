@@ -5,12 +5,16 @@ import * as oauth from "oauth4webapi";
 import {
 	addAuthenticator,
 	addPasskey,
+	holdUntilLetGo,
+	passkeyAnswersSent,
+	passkeyCeremonyAsked,
 	passkeySignIn,
 	signOut,
 	signUpWithoutAPassword,
+	watchOffers,
 	withoutTheOfferInTheEmailField,
 } from "./authenticator";
-import { APP, PERSON } from "./fixtures";
+import { APP, PERSON, SLOW_STATE } from "./fixtures";
 import { codeSentSince, watch } from "./helpers";
 
 // Signing in to an app, with a real OIDC client library for the app's server and real pages for
@@ -66,7 +70,7 @@ async function goToSignIn(
 		state,
 	}).toString();
 	await page.goto(url.href, { waitUntil: "networkidle" });
-	return { as, state, nonce, verifier };
+	return { as, state, nonce, verifier, url };
 }
 
 type SignIn = Awaited<ReturnType<typeof goToSignIn>>;
@@ -356,6 +360,147 @@ test.describe("signing in with a passkey on the way to an app", () => {
 
 		const claims = await finish(page, flow);
 		expect(claims.email).toBe(email);
+		expect(problems).toEqual([]);
+	});
+
+	// One sign-in per page. Signing in with GitHub is redirects all the way to the app, so the sign-in
+	// page shows until the app answers, and its offer in the email field used to wait that long too.
+	// Answered in that time, it signed the person in a second time: the provider gave a second code
+	// for the same request, and the page set off for the app again, which cancelled the first return
+	// after the app had used up its state. These tests cannot use GitHub itself, since ID's server
+	// asks it who came back, so GitHub's part is played by a redirect to what ID's answer to GitHub
+	// ends in: the app's request again, for someone signed in by now, which the provider answers
+	// with a code. The person is signed in from the start, and the app asks them to sign in again.
+	// The app takes its time to answer, which is when the sign-in page is still there to do harm.
+	//
+	// What the passkey does has to happen in that time, after the button is pressed, and a browser's
+	// tools cannot reach into a page that is leaving. So each test's page keeps one request to itself
+	// until a button is pressed and sends it then, and the test holds it from there until the browser
+	// is on its way back to the app. (Held from the start, the page would never be done loading.)
+	async function leavingWithGitHub(page: Page) {
+		const { email, authenticator } = await personWithAPasskey(page);
+		await page.addInitScript(() => {
+			Reflect.set(
+				window,
+				"aButtonIsPressed",
+				new Promise<void>((resolve) => {
+					const listen = (event: Event) => {
+						if (event.target instanceof Element && event.target.closest("button")) resolve();
+					};
+					document.addEventListener("click", listen, true);
+				}),
+			);
+		});
+		let comeBackTo = "";
+		await page.route("https://github.com/**", (route) =>
+			route.fulfill({ status: 302, headers: { location: comeBackTo } }),
+		);
+		const returns: string[] = [];
+		page.on("request", (request) => {
+			if (request.url().startsWith(APP.redirectUri)) returns.push(request.url());
+		});
+		const sent = passkeyAnswersSent(page);
+		return {
+			email,
+			authenticator,
+			/** Every time the browser set off for the app with an answer. */
+			returns,
+			sent,
+			goToSignIn: () =>
+				goToSignIn(page, {
+					prompt: "login",
+					state: `${SLOW_STATE}${oauth.generateRandomState()}`,
+				}),
+			/** Presses the button, and waits until the browser is on its way back to the app. */
+			async press(flow: SignIn) {
+				const request = new URL(flow.url);
+				request.searchParams.delete("prompt");
+				comeBackTo = request.href;
+				await page.getByRole("button", { name: "Continue with GitHub" }).click();
+				await expect.poll(() => returns.length).toBe(1);
+			},
+		};
+	}
+
+	test("does not answer the offer in the email field once GitHub has been pressed", async ({
+		page,
+	}) => {
+		const problems = await watch(page);
+		const offers = await watchOffers(page);
+		const github = await leavingWithGitHub(page);
+		// The authenticator answers the moment it is asked, and cannot be made to answer a request it
+		// has left waiting. A person chooses from the list when they like, so the page hears the
+		// answer only when the test says they have chosen. An offer the page has ended by then is
+		// over, as a browser's is: nobody hears its answer.
+		await page.addInitScript(() => {
+			const ask = navigator.credentials.get.bind(navigator.credentials);
+			navigator.credentials.get = async (options) => {
+				const answer = ask(options);
+				const signal = options?.signal;
+				if (options?.mediation !== "conditional" || !signal) return answer;
+				answer.catch(() => {});
+				const ended = new Promise<never>((_, reject) => {
+					signal.addEventListener("abort", () => reject(signal.reason));
+				});
+				const chosen = (Reflect.get(window, "aButtonIsPressed") as Promise<void>).then(() =>
+					fetch("/the-person-chooses-a-passkey"),
+				);
+				await Promise.race([chosen, ended]);
+				return answer;
+			};
+		});
+		const choice = await holdUntilLetGo(page, "**/the-person-chooses-a-passkey");
+		const flow = await github.goToSignIn();
+		await expect(page).toHaveURL(/\/login\?/);
+		await expect.poll(offers.waiting).toBe(true);
+
+		await github.press(flow);
+		// Now they choose the passkey, with the app still to answer.
+		await expect.poll(() => choice.seen.length).toBeGreaterThan(0);
+		choice.letGo();
+
+		const claims = await finish(page, flow);
+		expect(claims.email).toBe(github.email);
+		expect({ answers: github.sent.length, returns: github.returns.length }).toEqual({
+			answers: 0,
+			returns: 1,
+		});
+		expect(problems).toEqual([]);
+	});
+
+	test("does not answer an offer that only got going after GitHub was pressed", async ({
+		page,
+	}) => {
+		const problems = await watch(page);
+		const github = await leavingWithGitHub(page);
+		// The offer starts with a request for its options, and until they arrive there is nothing to
+		// end. Here they arrive after the button is pressed, and the authenticator answers at once.
+		await page.addInitScript(() => {
+			const send = window.fetch.bind(window);
+			window.fetch = async (input, init) => {
+				const url = input instanceof Request ? input.url : String(input);
+				if (url.includes("/passkey/generate-authenticate-options")) {
+					await (Reflect.get(window, "aButtonIsPressed") as Promise<void>);
+				}
+				return send(input, init);
+			};
+		});
+		const options = await holdUntilLetGo(page, "**/api/auth/passkey/generate-authenticate-options");
+		const flow = await github.goToSignIn();
+		await expect(page).toHaveURL(/\/login\?/);
+
+		await github.press(flow);
+		await expect.poll(() => options.seen.length).toBeGreaterThan(0);
+		const offered = passkeyCeremonyAsked(page);
+		options.letGo();
+		await offered;
+
+		const claims = await finish(page, flow);
+		expect(claims.email).toBe(github.email);
+		expect({ answers: github.sent.length, returns: github.returns.length }).toEqual({
+			answers: 0,
+			returns: 1,
+		});
 		expect(problems).toEqual([]);
 	});
 

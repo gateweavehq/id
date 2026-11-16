@@ -249,6 +249,35 @@ A passkey is a way to sign in like any other: someone whose only one is a passke
 password on the way to an app, and is still subject to "Who may sign in", after which they carry on to
 it as they would after a password.
 
+### One sign-in per page
+
+The sign-in page offers a password, GitHub and a passkey at once, and the browser's offer under the email
+field waits for as long as the page shows. On the way to an app that is longer than it looks: GitHub, ID
+and the app answer each other with redirects, so the page is still there, and still running, until the
+app has answered. A passkey chosen in that time used to sign the person in a second time. The provider
+answered it with a second code for the same request, the page set off for the app again, and that
+cancelled the first return after the app had used up its one-time `state`: the person landed on the app's
+error page, signed in to nothing.
+
+So a page runs one attempt at a time (`lib/sign-in-latch.ts`). Whatever starts one takes the page's
+latch: a button, the form, or the request that sends a passkey's answer to be checked. While it is taken
+the offer in the field is ended and the buttons are off. It is given back only when the attempt has
+failed, which brings the offer back too. An attempt that worked keeps it, since the browser is leaving,
+and a page the browser brings back as it was left (`pageshow` with `persisted`) starts free again.
+
+- **Ending the ceremony is not what stops a second sign-in.** `WebAuthnAbortService.cancelCeremony()`
+  only ends a request the browser has waiting. It does nothing to an offer whose options are still on
+  their way, which starts when they arrive, nor to one the authenticator has just answered. The plugin's
+  client has no way to end either. What it does take is a hook on the request that sends the answer, so
+  the latch is asked there, and an answer that arrives while another attempt has the page is never sent.
+- **The provider would still answer twice.** It keeps nothing about a request it is waiting on: the
+  request is the signed query in the page's address, good for ten minutes, and any response that sets a
+  session cookie while a page sends it back is followed by the authorization. Refusing the second would
+  take a row per signature, with a unique index to make the first use win, written inside the plugin's
+  own hook between the session and the code. That is a migration and a fourth change to a patched
+  dependency for something only ID's own page could do, so it is not done. What went wrong was the page
+  setting off twice, and the latch is what stops that.
+
 ## Two-factor sign-in
 
 Someone who turns this on is asked for a code from an authenticator app every time they sign in with a

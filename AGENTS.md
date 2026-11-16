@@ -166,7 +166,10 @@ them, check whether the others have the same bug, especially in auth and rate li
   `pnpm verify`; CI runs them as the `e2e` job. A preview reads only the required secrets from
   `.dev.vars`, so `e2e/build.mjs` turns email and the provider on for these tests. `e2e/server.mjs`
   seeds what tests cannot make themselves (`e2e/fixtures.ts`), and answers for the app they play on
-  port 4733, because `page.route` does not see where a redirect leads. Sign-up codes land in local
+  port 4733, because `page.route` does not see where a redirect leads. That app takes a few seconds
+  over a request whose `state` begins with `SLOW_STATE`, for tests of what a page does while the
+  browser is leaving it; Chromium answers no `page.evaluate` or locator for that long, so such a test
+  looks at requests instead. Sign-up codes land in local
   files that name the address in their text, so tests can wait for their own side by side.
   `e2e/authenticator.ts` gives a page Chromium's virtual authenticator. It answers the offer under
   the email field by itself, so once it holds a passkey, signing out signs that person back in.

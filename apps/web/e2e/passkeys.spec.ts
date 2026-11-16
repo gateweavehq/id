@@ -2,11 +2,14 @@ import { expect, type Page, test } from "@playwright/test";
 import {
 	addAuthenticator,
 	addPasskey,
+	holdUntilLetGo,
+	passkeyAnswersSent,
 	passkeyCeremonyAsked,
 	passkeySignIn,
 	pressSignOut,
 	signOut,
 	signUpWithoutAPassword,
+	watchOffers,
 	withoutTheOfferInTheEmailField,
 } from "./authenticator";
 import { watch } from "./helpers";
@@ -131,6 +134,163 @@ test("leaving the sign-in page ends the browser's offer in the email field", asy
 	await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
 
 	await expect.poll(offerEnded).toBe(true);
+	expect(problems).toEqual([]);
+});
+
+// One sign-in per page: whatever starts one ends the offer, and nothing else starts until it has
+// failed. `oidc.spec.ts` has what goes wrong otherwise, on the way to an app.
+
+/** Someone with a password and a passkey, signed in. */
+async function personWithBoth(page: Page) {
+	const email = await signUpWithoutAPassword(page);
+	await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+	await page.getByLabel("Repeat it").fill(PASSWORD);
+	await page.getByRole("button", { name: "Continue" }).click();
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	await addPasskey(page);
+	return email;
+}
+
+test("sending a password ends the offer in the email field, and no passkey answer follows", async ({
+	page,
+}) => {
+	const problems = await watch(page);
+	const offers = await watchOffers(page);
+	const authenticator = await addAuthenticator(page);
+	const email = await personWithBoth(page);
+	const sent = passkeyAnswersSent(page);
+	// The offer waits, as it does for someone who has not chosen from the list.
+	await authenticator.setAnswering(false);
+	await signOut(page);
+	await expect.poll(offers.waiting).toBe(true);
+	const password = await holdUntilLetGo(page, "**/api/auth/sign-in/email");
+
+	await page.getByLabel("Email").fill(email);
+	await page.getByLabel("Password").fill(PASSWORD);
+	await page.getByRole("button", { name: "Sign in", exact: true }).click();
+
+	// With the password still on its way, the offer is over and nothing else can be pressed.
+	await expect.poll(() => password.seen.length).toBe(1);
+	await expect.poll(offers.waiting).toBe(false);
+	await expect(page.getByRole("button", { name: "Use a passkey" })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Continue with GitHub" })).toBeDisabled();
+	await authenticator.setAnswering(true);
+	password.letGo();
+
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	expect(sent).toEqual([]);
+	expect(password.seen).toHaveLength(1);
+	expect(problems).toEqual([]);
+});
+
+test("a wrong password brings the offer in the email field back, and the buttons", async ({
+	page,
+}) => {
+	const problems = await watch(page);
+	const offers = await watchOffers(page);
+	// It has no passkey to answer with, so each offer keeps waiting.
+	await addAuthenticator(page);
+	await page.goto("/login", { waitUntil: "networkidle" });
+	await expect.poll(offers.waiting).toBe(true);
+	const before = await offers.made();
+
+	await page.getByLabel("Email").fill("nobody@example.com");
+	await page.getByLabel("Password").fill("not-the-password");
+	await page.getByRole("button", { name: "Sign in", exact: true }).click();
+
+	await expect(page.getByRole("alert")).toBeVisible();
+	// The one from before ended when the password left, and there is a new one now.
+	await expect.poll(offers.made).toBeGreaterThan(before);
+	await expect.poll(offers.waiting).toBe(true);
+	await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+	await expect(page.getByRole("button", { name: "Use a passkey" })).toBeEnabled();
+	await expect(page.getByRole("button", { name: "Continue with GitHub" })).toBeEnabled();
+	expect(problems).toEqual([]);
+});
+
+test("a page that is leaving for GitHub stays out of the way, until the browser brings it back", async ({
+	page,
+}) => {
+	const problems = await watch(page);
+	const offers = await watchOffers(page);
+	// It has no passkey to answer with, so each offer keeps waiting.
+	await addAuthenticator(page);
+	// The browser sets off for GitHub and gets an answer with no page in it, so the one that pressed
+	// the button still shows, as it does while a real answer is on its way. A browser's tools cannot
+	// reach into a page for that long, and they can into this one.
+	await page.route("https://github.com/**", (route) => route.fulfill({ status: 204 }));
+	const left = page.waitForResponse((response) => response.url().startsWith("https://github.com/"));
+	await page.goto("/login", { waitUntil: "networkidle" });
+	await expect.poll(offers.waiting).toBe(true);
+	const before = await offers.made();
+	const buttons = ["Continue with GitHub", "Use a passkey", "Sign in"].map((name) =>
+		page.getByRole("button", { name, exact: true }),
+	);
+
+	await page.getByRole("button", { name: "Continue with GitHub" }).click();
+	await left;
+	await expect.poll(offers.waiting).toBe(false);
+	for (const button of buttons) await expect(button).toBeDisabled();
+
+	// What a browser tells a page it has kept and shows again, when someone goes back to it. These
+	// tests' browser keeps no pages, so nothing else here can say it.
+	await page.evaluate(() => {
+		window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+	});
+
+	for (const button of buttons) await expect(button).toBeEnabled();
+	await expect.poll(offers.made).toBeGreaterThan(before);
+	await expect.poll(offers.waiting).toBe(true);
+	expect(problems).toEqual([]);
+});
+
+test("going back from GitHub finds a page that works, with the offer in the email field", async ({
+	page,
+}) => {
+	const problems = await watch(page);
+	const offers = await watchOffers(page);
+	await addAuthenticator(page);
+	await page.route("https://github.com/**", (route) =>
+		route.fulfill({ contentType: "text/html", body: "<h1>GitHub</h1>" }),
+	);
+	await page.goto("/login", { waitUntil: "networkidle" });
+
+	await page.getByRole("button", { name: "Continue with GitHub" }).click();
+	await expect(page.getByRole("heading", { name: "GitHub" })).toBeVisible();
+	await page.goBack({ waitUntil: "networkidle" });
+
+	await expect(page.getByRole("heading", { name: "Sign in to Gateweave ID" })).toBeVisible();
+	for (const name of ["Continue with GitHub", "Use a passkey", "Sign in"]) {
+		await expect(page.getByRole("button", { name, exact: true })).toBeEnabled();
+	}
+	await expect.poll(offers.waiting).toBe(true);
+	expect(problems).toEqual([]);
+});
+
+test("pressing the passkey button twice sends one answer", async ({ page }) => {
+	const problems = await watch(page);
+	await withoutTheOfferInTheEmailField(page);
+	await addAuthenticator(page);
+	await signUpWithoutAPassword(page);
+	await toAccount(page);
+	await addPasskey(page);
+	await signOut(page);
+	await page.waitForLoadState("networkidle");
+	const sent = passkeyAnswersSent(page);
+	// The first answer is still being checked when the second press comes.
+	const answer = await holdUntilLetGo(page, "**/api/auth/passkey/verify-authentication");
+
+	await page.getByRole("button", { name: "Use a passkey" }).evaluate((button: HTMLElement) => {
+		button.click();
+		button.click();
+	});
+	await expect.poll(() => answer.seen.length).toBe(1);
+	await expect(page.getByRole("button", { name: "Use a passkey" })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeDisabled();
+	answer.letGo();
+
+	await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+	expect(sent).toHaveLength(1);
 	expect(problems).toEqual([]);
 });
 
