@@ -109,6 +109,13 @@ These are load-bearing. Breaking one breaks users' data or security, usually sil
     check for who may sign in relies on, and nothing a caller sends reaches them. Every app has a secret,
     so `none` is never a way to send one. An app's host does not change. See "Apps a workspace adds" in the
     same document.
+11. **A statement's text holds no value.** Everything that asks D1 goes through `createDb`, which
+    logs a failed statement's text and throws an error without it ("When a query of D1 fails" in
+    [docs/architecture.md](docs/architecture.md)). So values are bound: no `sql.raw` with anything
+    but the code's own words. Never read a database error's message to decide an answer, and never
+    show or log Drizzle's own error. A trigger that refuses with new words is added to `REFUSALS` in
+    `apps/web/src/server/db/query-failure.ts`. Only a single `select` is ever sent again after a
+    failure: what uses up a code or rotates a token is a write, and runs once.
 
 Also: one Better Auth instance per isolate, built on first use (`getAuth()`). workerd forbids I/O in
 global scope, and `test/startup-logs.test.ts` fails if a cold start logs an error.
@@ -148,7 +155,9 @@ them, check whether the others have the same bug, especially in auth and rate li
   build the app and run it in workerd through Miniflare, with every outbound request failing as a
   deployed Worker's request to its own hostname does; see `test/id-worker.ts`. Email lands in an
   outbox the tests read. Give each person in a test a `cf-connecting-ip` of their own, or the rate
-  limits will stop them.
+  limits will stop them. For a database that fails, `src/server/db/faulty-d1.ts` gives a unit test
+  a real local D1 with a failure put in front of it, and a Worker test renames a table away
+  (`without` in `test/query-failure.test.ts`).
 - `apps/web/e2e` has browser tests: Playwright drives Chromium against the production build, its
   own empty local database and port 4732. They cover what the other suites cannot: a page's Content
   Security Policy, because a blocked script leaves the same HTML. Every page they visit fails on a
