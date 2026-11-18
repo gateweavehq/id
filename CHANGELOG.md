@@ -576,12 +576,12 @@ its secret in the body or has no PKCE can now connect, and a request that stops 
   apps, and `--client-auth` and `--no-pkce` on `apps:add`. Nothing changes for an app that says nothing. An app without
   PKCE has to send a nonce and check it, which ID cannot see. The form says so, and turning PKCE off asks for a recent
   sign-in. [Connect an
-  app](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md#if-your-library-needs-something-else) has the
+app](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md#if-your-library-needs-something-else) has the
   details. (#56)
 - **`pnpm test:conformance` runs the OpenID conformance suite against a local build.** It needs Docker, runs in a few
   minutes, and fails on any difference from what is written down, a better result included. CI runs it when the app's
   code or its dependencies change, and weekly. [The suite's
-  page](https://github.com/gateweavehq/id/blob/main/docs/conformance.md) lists what does not plainly pass, and why:
+page](https://github.com/gateweavehq/id/blob/main/docs/conformance.md) lists what does not plainly pass, and why:
   warnings that stay, skips the suite allows, pages it leaves for a person to look at, and one test that fails on
   purpose for apps a workspace adds, since a quiet redirect to an app anyone can add would make ID an open redirector.
   (#58)
