@@ -7,6 +7,28 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.16.2] - 2026-11-18
+
+Workspace invitations explain the required second factor before invitees open connected apps.
+There is no migration in this release, and the signing algorithm does not change.
+
+### Fixed
+
+- **An invitation to a workspace that requires two-factor sign-in explains both paths.** Someone
+  with a passkey or authenticator signs in with it; someone without one can join, set one up on
+  ID's account page, then sign in again. Other workspaces keep the shorter invitation. If the
+  optional workspace-rule lookup fails during a re-invite, ID still sends the replacement email.
+  ([#134](https://github.com/gateweavehq/id/pull/134))
+
+### Added
+
+- **An Apple touch icon** gives ID a recognizable icon when saved to an Apple device's home
+  screen.
+
+### If you run your own
+
+- **Update.** No database migration, new secret or environment variable is required.
+
 ## [0.16.1] - 2026-11-18
 
 Better Auth and its OAuth Provider are updated to 1.7.25. There is no migration in this release,
