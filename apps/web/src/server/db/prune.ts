@@ -40,26 +40,44 @@ export const LOGOUT_OUTBOX_RETENTION_HOURS = 24;
  * sign-up's code, a GitHub sign-in that was never finished, a device that was never used again, and
  * a row for every token an app was ever given. An invitation goes too, and with it an address that
  * may never have had anything to do with this deployment. Audit events go when they reach their age.
+ *
+ * Each table is pruned on its own: one that fails, a large audit log say, must not keep the others,
+ * least of all the logout outbox, whose rows hold a person's pairwise subject and session. The first
+ * failure is thrown once every table has had its turn.
  */
 export async function pruneExpired(db: Database): Promise<void> {
 	const now = new Date();
-	await pruneOlder(db, schema.session, schema.session.expiresAt, now);
-	await pruneOlder(db, schema.verification, schema.verification.expiresAt, now);
-	// Refresh tokens first, because deleting one takes the access tokens made from it along.
-	await pruneOlder(db, schema.oauthRefreshToken, schema.oauthRefreshToken.expiresAt, now);
-	await pruneOlder(db, schema.oauthAccessToken, schema.oauthAccessToken.expiresAt, now);
-	await pruneOlder(db, schema.invitation, schema.invitation.expiresAt, now);
-	await pruneOlder(db, schema.deploymentInvitation, schema.deploymentInvitation.expiresAt, now);
-	await pruneOlder(
-		db,
-		schema.auditEvent,
-		schema.auditEvent.at,
-		new Date(now.getTime() - AUDIT_RETENTION_DAYS * 86_400_000),
-	);
-	await pruneOlder(
-		db,
-		schema.logoutOutbox,
-		schema.logoutOutbox.createdAt,
-		new Date(now.getTime() - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
-	);
+	const prunes: (() => Promise<void>)[] = [
+		() =>
+			pruneOlder(
+				db,
+				schema.logoutOutbox,
+				schema.logoutOutbox.createdAt,
+				new Date(now.getTime() - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
+			),
+		() => pruneOlder(db, schema.session, schema.session.expiresAt, now),
+		() => pruneOlder(db, schema.verification, schema.verification.expiresAt, now),
+		// Refresh tokens first, because deleting one takes the access tokens made from it along.
+		() => pruneOlder(db, schema.oauthRefreshToken, schema.oauthRefreshToken.expiresAt, now),
+		() => pruneOlder(db, schema.oauthAccessToken, schema.oauthAccessToken.expiresAt, now),
+		() => pruneOlder(db, schema.invitation, schema.invitation.expiresAt, now),
+		() => pruneOlder(db, schema.deploymentInvitation, schema.deploymentInvitation.expiresAt, now),
+		() =>
+			pruneOlder(
+				db,
+				schema.auditEvent,
+				schema.auditEvent.at,
+				new Date(now.getTime() - AUDIT_RETENTION_DAYS * 86_400_000),
+			),
+	];
+	const failures: unknown[] = [];
+	// One after another: D1 runs one query at a time, so running them together would gain nothing.
+	for (const prune of prunes) {
+		try {
+			await prune();
+		} catch (error) {
+			failures.push(error);
+		}
+	}
+	if (failures.length) throw failures[0];
 }

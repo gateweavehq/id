@@ -1,5 +1,6 @@
-import { asc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
 import { type Database, schema } from "./db";
+import { LOGOUT_OUTBOX_RETENTION_HOURS, pruneExpired } from "./db/prune";
 
 export interface OwedLogout {
 	clientId: string;
@@ -58,16 +59,29 @@ export async function queueOrStoreLogout(
 	}
 }
 
-/** Retry rows after the request's handoff has had time to finish. */
+/**
+ * Retry rows after the request's handoff has had time to finish. A row past its retention is left
+ * for the daily prune: sending it again would give the Queue a fresh retry window and keep the
+ * person's identifiers in flight past the 24 hours the outbox promises.
+ */
 export async function flushLogoutOutbox(
 	db: Database,
 	queue: LogoutQueue,
 	batchSize = BATCH,
 ): Promise<void> {
+	const now = Date.now();
 	const rows = await db
 		.select()
 		.from(schema.logoutOutbox)
-		.where(lt(schema.logoutOutbox.createdAt, new Date(Date.now() - MIN_RETRY_AGE_MS)))
+		.where(
+			and(
+				lt(schema.logoutOutbox.createdAt, new Date(now - MIN_RETRY_AGE_MS)),
+				gt(
+					schema.logoutOutbox.createdAt,
+					new Date(now - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
+				),
+			),
+		)
 		// Untried rows go first. A persistently failing row must not occupy this whole batch.
 		.orderBy(
 			asc(sql`coalesce(${schema.logoutOutbox.lastAttemptAt}, 0)`),
@@ -91,4 +105,30 @@ export async function flushLogoutOutbox(
 			}
 		}
 	}
+}
+
+/** The cron that only retries logout handoffs; any other firing is the daily one. */
+export const OUTBOX_CRON = "*/5 * * * *";
+
+/**
+ * One cron firing. The daily one prunes; every one retries owed logouts. A prune that fails must
+ * not hold back the retries, so its error is thrown only after them.
+ */
+export async function runCron(
+	db: Database,
+	cron: string,
+	queue: LogoutQueue | undefined,
+): Promise<void> {
+	let pruneFailure: unknown;
+	let pruneFailed = false;
+	if (cron !== OUTBOX_CRON) {
+		try {
+			await pruneExpired(db);
+		} catch (error) {
+			pruneFailure = error;
+			pruneFailed = true;
+		}
+	}
+	if (queue) await flushLogoutOutbox(db, queue);
+	if (pruneFailed) throw pruneFailure;
 }

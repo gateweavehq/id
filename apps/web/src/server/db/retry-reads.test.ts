@@ -317,12 +317,15 @@ describe("ID's own statements", () => {
 	it("sends once the daily run's delete, which begins with no select although it holds one", async () => {
 		const { database, state } = faulty(real);
 		const db = createDb(database);
+		state.only = /^delete from "session"/;
 		state.failures = 1;
 
 		await expect(pruneExpired(db)).rejects.toBeInstanceOf(DatabaseError);
 
-		expect(state.sent).toHaveLength(1);
-		expect(state.sent[0]).toMatch(/^delete from "session" where "session"\."id" in \(select /);
+		// The other tables are pruned too; the refused delete itself went once.
+		const sessions = state.sent.filter((query) => /^delete from "session"/.test(query));
+		expect(sessions).toHaveLength(1);
+		expect(sessions[0]).toMatch(/^delete from "session" where "session"\."id" in \(select /);
 		expect(warned).not.toHaveBeenCalled();
 	});
 });
