@@ -140,8 +140,10 @@ them, check whether the others have the same bug, especially in auth and rate li
   `apps/web/src/server/db/auth-schema.ts` (`pnpm --filter @gateweave/id-web auth:schema`), and
   everything under `apps/web/migrations/`.
 - Dependencies are pinned to exact versions. Shared ones go in the `catalog:` of
-  `pnpm-workspace.yaml`. `drizzle-orm` stays on 0.45 while 1.0 is a release candidate; its
-  folder per migration is no obstacle, since Wrangler reads it through `migrations_pattern`.
+  `pnpm-workspace.yaml`. `drizzle-orm` stays on 0.45 while 1.0 is a release candidate.
+  Moving later is its own change: Wrangler reads 1.0's folder per migration through
+  `migrations_pattern`, but the names each D1 has recorded and the tests' migration loader would
+  have to follow.
   `patches/` holds one fix to `@better-auth/oauth-provider`, which an upgrade has to look at
   again (see "A patched dependency" in the architecture notes).
 - UI code copied into the repository (components, blocks, hooks) must come from an MIT or
