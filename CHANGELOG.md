@@ -21,9 +21,10 @@ migrations, which a deploy applies, and the signing algorithm does not change.
   the same logout twice, which it already treats as done.
   ([#132](https://github.com/gateweavehq/id/pull/132))
 - **Those rows are gone within 24 hours.** They hold an app's pairwise subject and a session id.
-  The daily prune now clears them first and still clears them when another table's prune fails,
-  and a row older than 24 hours is not handed to the queue again.
-  ([#138](https://github.com/gateweavehq/id/pull/138))
+  The five-minute run deletes a row once it is 24 hours old, and a row that old is not handed to
+  the queue again. The daily prune clears the outbox first and still clears it when another
+  table's prune fails. ([#138](https://github.com/gateweavehq/id/pull/138),
+  [#141](https://github.com/gateweavehq/id/pull/141))
 
 ### Changed
 
