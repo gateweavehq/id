@@ -35,6 +35,19 @@ export const AUDIT_RETENTION_DAYS = 90;
 export const LOGOUT_OUTBOX_RETENTION_HOURS = 24;
 
 /**
+ * Deletes logout outbox rows past their retention. The five-minute cron runs it as well as the daily
+ * one: with the daily run alone, a row written just after it would stay for nearly two days.
+ */
+export function pruneLogoutOutbox(db: Database, now = new Date()): Promise<void> {
+	return pruneOlder(
+		db,
+		schema.logoutOutbox,
+		schema.logoutOutbox.createdAt,
+		new Date(now.getTime() - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
+	);
+}
+
+/**
  * Deletes sessions, verifications and tokens past their time. Better Auth removes one only when
  * something looks it up, so those nobody comes back for would otherwise stay forever: an abandoned
  * sign-up's code, a GitHub sign-in that was never finished, a device that was never used again, and
@@ -48,13 +61,7 @@ export const LOGOUT_OUTBOX_RETENTION_HOURS = 24;
 export async function pruneExpired(db: Database): Promise<void> {
 	const now = new Date();
 	const prunes: (() => Promise<void>)[] = [
-		() =>
-			pruneOlder(
-				db,
-				schema.logoutOutbox,
-				schema.logoutOutbox.createdAt,
-				new Date(now.getTime() - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
-			),
+		() => pruneLogoutOutbox(db, now),
 		() => pruneOlder(db, schema.session, schema.session.expiresAt, now),
 		() => pruneOlder(db, schema.verification, schema.verification.expiresAt, now),
 		// Refresh tokens first, because deleting one takes the access tokens made from it along.

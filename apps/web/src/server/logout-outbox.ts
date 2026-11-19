@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
 import { type Database, schema } from "./db";
-import { LOGOUT_OUTBOX_RETENTION_HOURS, pruneExpired } from "./db/prune";
+import { LOGOUT_OUTBOX_RETENTION_HOURS, pruneExpired, pruneLogoutOutbox } from "./db/prune";
 
 export interface OwedLogout {
 	clientId: string;
@@ -111,8 +111,9 @@ export async function flushLogoutOutbox(
 export const OUTBOX_CRON = "*/5 * * * *";
 
 /**
- * One cron firing. The daily one prunes; every one retries owed logouts. A prune that fails must
- * not hold back the retries, so its error is thrown only after them.
+ * One cron firing. The daily one prunes every table; the five-minute one prunes only the outbox, so
+ * its rows are gone within 24 hours of being written. Every firing retries owed logouts. A prune that
+ * fails must not hold back the retries, so its error is thrown only after them.
  */
 export async function runCron(
 	db: Database,
@@ -121,13 +122,11 @@ export async function runCron(
 ): Promise<void> {
 	let pruneFailure: unknown;
 	let pruneFailed = false;
-	if (cron !== OUTBOX_CRON) {
-		try {
-			await pruneExpired(db);
-		} catch (error) {
-			pruneFailure = error;
-			pruneFailed = true;
-		}
+	try {
+		await (cron === OUTBOX_CRON ? pruneLogoutOutbox(db) : pruneExpired(db));
+	} catch (error) {
+		pruneFailure = error;
+		pruneFailed = true;
 	}
 	if (queue) await flushLogoutOutbox(db, queue);
 	if (pruneFailed) throw pruneFailure;
