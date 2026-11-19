@@ -967,7 +967,10 @@ Queue accepts it but D1 cannot remove it; a later duplicate is safe because an a
 answers successfully. If D1 cannot store the row, ID still tries the
 Queue; failure of both systems is logged but cannot be recovered automatically. The daily cleanup
 deletes outbox rows older than 24 hours, near the Queue's own retry horizon, so session identifiers
-are not held indefinitely if the Queue or its binding remains unavailable.
+are not held indefinitely if the Queue or its binding remains unavailable. It prunes the outbox first
+and each table on its own, so a failure elsewhere does not keep them, and the retry skips rows past
+that age rather than give them a fresh retry window on the Queue. A failed prune does not hold back
+the retries of the same firing either; its error is raised after them.
 The message holds who and which session, not the token: a logout token lives two minutes and apps refuse
 old ones, so each try signs a new one with the same `iss`, `aud`, `sub` and `sid` and a new `jti`. The
 queue tries again after a minute, then twice as long each time up to six hours, for about 20 hours. A 4xx

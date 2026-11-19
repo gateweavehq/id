@@ -701,12 +701,12 @@ describe("what else asks the database", () => {
 			)?.n;
 
 		const from = id.logs.length;
-		// The sessions go first, so nothing of this run reaches the row.
-		await without("session", () => id.runCron().catch(() => {}));
+		// Each table is pruned on its own, so the row's own table is the one taken away.
+		await without("verification", () => id.runCron().catch(() => {}));
 
 		const logged = loggedSince(from);
 		expect(failuresSince(from).map(({ kind }) => kind)).toEqual([
-			"D1_ERROR, SQLITE_ERROR, no such table: session",
+			"D1_ERROR, SQLITE_ERROR, no such table: verification",
 		]);
 		expect(logged).not.toContain("Failed query");
 		expect(logged).not.toContain("params:");

@@ -1,8 +1,9 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDb, schema } from "./db";
 import { faulty, migratedD1 } from "./db/faulty-d1";
 import { pruneExpired } from "./db/prune";
-import { flushLogoutOutbox, queueOrStoreLogout } from "./logout-outbox";
+import { flushLogoutOutbox, OUTBOX_CRON, queueOrStoreLogout, runCron } from "./logout-outbox";
 
 const logout = { clientId: "track", sub: "pairwise-person", sid: "ended-session" };
 let real: D1Database;
@@ -227,5 +228,90 @@ describe("logout queue outbox", () => {
 		} finally {
 			await db.delete(schema.logoutOutbox).run();
 		}
+	});
+});
+
+describe("pruning and retrying the outbox", () => {
+	const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000);
+
+	it("prunes expired outbox rows even when an earlier table's prune fails", async () => {
+		const { database, state } = faulty(real);
+		state.only = /^delete from "session"/i;
+		state.failures = 1;
+		const db = createDb(real);
+		await db
+			.insert(schema.logoutOutbox)
+			.values({ id: "expired", ...logout, createdAt: hoursAgo(25) })
+			.run();
+		try {
+			await expect(pruneExpired(createDb(database))).rejects.toThrow();
+			expect(await rows()).toHaveLength(0);
+		} finally {
+			await db.delete(schema.logoutOutbox).run();
+		}
+	});
+
+	it("prunes the other tables when the outbox's own prune fails", async () => {
+		const { database, state } = faulty(real);
+		state.only = /^delete from "logout_outbox"/i;
+		state.failures = 1;
+		const db = createDb(real);
+		await db
+			.insert(schema.verification)
+			.values({
+				id: "expired-code",
+				identifier: "someone@example.com",
+				value: "code",
+				expiresAt: hoursAgo(1),
+				createdAt: hoursAgo(2),
+				updatedAt: hoursAgo(2),
+			})
+			.run();
+		await expect(pruneExpired(createDb(database))).rejects.toThrow();
+		expect(
+			await db.select().from(schema.verification).where(eq(schema.verification.id, "expired-code")),
+		).toHaveLength(0);
+	});
+
+	it("leaves a row past its retention to the prune instead of sending it again", async () => {
+		const db = createDb(real);
+		const send = vi.fn().mockResolvedValue(undefined);
+		await db
+			.insert(schema.logoutOutbox)
+			.values({ id: "too-old", ...logout, createdAt: hoursAgo(25) })
+			.run();
+		try {
+			await flushLogoutOutbox(db, { send });
+			expect(send).not.toHaveBeenCalled();
+			expect((await rows()).map((row) => row.id)).toEqual(["too-old"]);
+		} finally {
+			await db.delete(schema.logoutOutbox).run();
+		}
+	});
+
+	it("still retries owed logouts on the daily cron when pruning fails, then reports the failure", async () => {
+		const { database, state } = faulty(real);
+		state.only = /^delete from "session"/i;
+		state.failures = 1;
+		const db = createDb(real);
+		const send = vi.fn().mockResolvedValue(undefined);
+		await db
+			.insert(schema.logoutOutbox)
+			.values({ id: "owed", ...logout, createdAt: hoursAgo(1) })
+			.run();
+		try {
+			await expect(runCron(createDb(database), "17 3 * * *", { send })).rejects.toThrow();
+			expect(send).toHaveBeenCalledTimes(1);
+			expect(await rows()).toHaveLength(0);
+		} finally {
+			await db.delete(schema.logoutOutbox).run();
+		}
+	});
+
+	it("only retries on the outbox's own cron, without pruning", async () => {
+		const { database, state } = faulty(real);
+		const send = vi.fn().mockResolvedValue(undefined);
+		await runCron(createDb(database), OUTBOX_CRON, { send });
+		expect(state.sent.some((query) => /^delete from "session"/i.test(query))).toBe(false);
 	});
 });
