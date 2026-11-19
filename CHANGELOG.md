@@ -7,6 +7,39 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.16.3] - 2026-11-19
+
+A sign-out that an app missed is no longer lost when the queue refuses it. This release has two
+migrations, which a deploy applies, and the signing algorithm does not change.
+
+### Fixed
+
+- **A missed sign-out survives a refused queue.** ID tries an app's back-channel logout three
+  times, then hands it to a queue. If the queue refused that handoff, the logout was only logged
+  and could be lost. ID now writes it to D1 first. A run every five minutes retries what a refused
+  handoff left behind and removes each row only once the queue has taken it. An app may receive
+  the same logout twice, which it already treats as done.
+  ([#132](https://github.com/gateweavehq/id/pull/132))
+- **Those rows are gone within 24 hours.** They hold an app's pairwise subject and a session id.
+  The five-minute run deletes a row once it is 24 hours old, and a row that old is not handed to
+  the queue again. The daily prune clears the outbox first and still clears it when another
+  table's prune fails. ([#138](https://github.com/gateweavehq/id/pull/138),
+  [#141](https://github.com/gateweavehq/id/pull/141))
+
+### Changed
+
+- **Development tools are updated:** Biome 2.6.7, Vite 8.3.8, Wrangler 4.162.0, the Cloudflare
+  Vite plugin 1.69.1, Playwright 1.65.1 and the React plugin 6.3.0. The app itself does not
+  change. ([#137](https://github.com/gateweavehq/id/pull/137))
+
+### If you run your own
+
+- **Update.** Migrations `0020` and `0021` add the outbox table. A deploy applies them before the
+  new code, and the previous version runs fine on them.
+- **A second cron.** The Worker now also runs every five minutes (`*/5 * * * *`), next to the
+  daily run. A deployment without the `LOGOUTS` queue keeps its old behavior: a refused handoff
+  is logged.
+
 ## [0.16.2] - 2026-11-18
 
 Workspace invitations explain the required second factor before invitees open connected apps.
