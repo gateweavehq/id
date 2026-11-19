@@ -141,6 +141,20 @@
       "when": 1794711910066,
       "tag": "0019_require_two_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795006022871,
+      "tag": "0020_logout_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1795016169479,
+      "tag": "0021_robust_misty_knight",
+      "breakpoints": true
     }
   ]
 }

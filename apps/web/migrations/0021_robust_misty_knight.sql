@@ -1,0 +1,1 @@
+ALTER TABLE `logout_outbox` ADD `last_attempt_at` integer;

@@ -35,8 +35,8 @@
 	// domain onboarded to Email Sending; without it, ID runs with email off: no sign-up codes, no
 	// password reset, and the owner hands out invitation links.
 	"send_email": [{ "name": "EMAIL" }],
-	// Once a day, deletes expired sessions, verifications and tokens (apps/web/src/server/db/prune.ts).
-	"triggers": { "crons": ["17 3 * * *"] },
+	// Every five minutes, retry Queue handoffs left in D1. Daily, also prune expired rows.
+	"triggers": { "crons": ["*/5 * * * *", "17 3 * * *"] },
 	"queues": {
 		"producers": [{ "binding": "LOGOUTS", "queue": "gateweave-id-logouts" }],
 		"consumers": [{ "queue": "gateweave-id-logouts", "max_retries": 20 }]

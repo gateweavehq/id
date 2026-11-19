@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, getAuth } from "./auth";
 import { schema } from "./db";
+import { queueOrStoreLogout } from "./logout-outbox";
 
 // "Logouts an app missed" in docs/architecture.md.
 
@@ -36,7 +37,7 @@ export async function queueLogout(logout: UndeliveredLogout): Promise<void> {
 		);
 		return;
 	}
-	await env.LOGOUTS.send(logout, { delaySeconds: retryDelay(1) });
+	await queueOrStoreLogout(db, env.LOGOUTS, logout, retryDelay(1));
 }
 
 /** The queue's consumer: tries each logout again, and puts it back for later while the app is down. */

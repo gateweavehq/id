@@ -9,17 +9,17 @@ wrong person in to someone else's app.
 
 ## The shape
 
-One Worker, one D1 database, a Durable Object for rate limits and a cron trigger.
+One Worker, one D1 database, a Durable Object for rate limits and cron triggers.
 
 Identity data is relational, read at sign-in and written rarely. Nobody edits it offline or
 watches it change, so ID has no per-workspace Durable Object and no sync engine, unlike Track.
 Building on Track's sync engine here would add moving parts and solve nothing.
 
-| Piece       | Holds                                                                     |
-| ----------- | ------------------------------------------------------------------------- |
-| D1          | Accounts, sessions, passkeys, workspaces, groups, apps, tokens, audit log |
-| RateLimiter | Durable counters for sign-in and code attempts, as in Track               |
-| Cron        | Prunes expired rows and old audit events                                  |
+| Piece       | Holds                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------- |
+| D1          | Accounts, sessions, passkeys, workspaces, groups, apps, tokens, audit log                         |
+| RateLimiter | Durable counters for sign-in and code attempts, as in Track                                       |
+| Cron        | Retries stored logout handoffs every five minutes; prunes expired rows and old audit events daily |
 
 ## Accounts, workspaces and apps
 
@@ -959,12 +959,23 @@ has to look at each again: drop what upstream has fixed, and move the rest.
 
 Signing out of ID promises to end the person's session in every app, so a logout an app missed goes on
 a Cloudflare Queue (`LOGOUTS`, `apps/web/src/server/logouts.ts`) rather than only a warning in the log.
+Before handing it to the Queue, ID writes the client, subject and session to a D1 outbox. If the Queue
+rejects the send, the row remains. A five-minute cron retries up to 100 retained rows older than one
+minute per run. A refused row does not block younger rows. The row is removed only after the Queue
+accepts the message. A row can also remain when the
+Queue accepts it but D1 cannot remove it; a later duplicate is safe because an app already signed out
+answers successfully. If D1 cannot store the row, ID still tries the
+Queue; failure of both systems is logged but cannot be recovered automatically. The daily cleanup
+deletes outbox rows older than 24 hours, near the Queue's own retry horizon, so session identifiers
+are not held indefinitely if the Queue or its binding remains unavailable.
 The message holds who and which session, not the token: a logout token lives two minutes and apps refuse
 old ones, so each try signs a new one with the same `iss`, `aud`, `sub` and `sid` and a new `jti`. The
 queue tries again after a minute, then twice as long each time up to six hours, for about 20 hours. A 4xx
 ends it, as it would only repeat, and so does an app that was deleted or no longer takes logouts. Then
-the person's session in that app is left to run out. A Queue rather than the cron: the daily cron is too
-slow, and a cron every minute would run all day for something that rarely happens. A deployment without
+the person's session in that app is left to run out. Normal delivery retries use the Queue, since the
+daily cron is too slow. Retrying from D1 every five minutes adds 288 indexed reads of an empty table
+per day, where Queue-only delivery had avoided a frequent cron for a rare failure; this cost keeps
+rejected handoffs recoverable. A deployment without
 the binding keeps the old behaviour, a warning in the log.
 
 ## Products as clients

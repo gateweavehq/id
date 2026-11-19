@@ -5,7 +5,7 @@ import * as schema from "./schema";
 
 /**
  * The database every part of the Worker asks: Better Auth and its plugins, the provider's hooks,
- * the pages' server functions, the consumer of the `LOGOUTS` queue and the daily run. A read that
+ * the pages' server functions, the consumer of the `LOGOUTS` queue and both cron runs. A read that
  * fails for a moment is sent again (`retry-reads.ts`), and a query that failed for good is thrown
  * without its statement or its values (`query-failure.ts`).
  */

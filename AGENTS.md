@@ -29,8 +29,9 @@ app. A mistake in those places signs the wrong person in to someone else's app.
 
 There is no sync engine and no per-workspace Durable Object: identity data is relational, read at
 sign-in and written rarely, so it lives in D1. The Durable Object only counts rate limits. Beside
-`fetch`, the Worker has two handlers: a daily cron that deletes expired sessions, verifications and
-tokens (`apps/web/src/server/db/prune.ts`), and the consumer of the `LOGOUTS` queue, which tries
+`fetch`, the Worker has two handlers: cron triggers that retry failed Queue handoffs every five minutes
+and delete expired sessions, verifications and tokens daily (`apps/web/src/server/db/prune.ts`),
+and the consumer of the `LOGOUTS` queue, which tries
 again the back-channel logouts an app missed (`apps/web/src/server/logouts.ts`, "Logouts an app
 missed" in [docs/architecture.md](docs/architecture.md)).
 

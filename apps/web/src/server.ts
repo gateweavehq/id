@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import handler from "@tanstack/react-start/server-entry";
 import { createDb } from "./server/db";
 import { pruneExpired } from "./server/db/prune";
+import { flushLogoutOutbox } from "./server/logout-outbox";
 import { deliverMissedLogouts } from "./server/logouts";
 import { newNonce, withSecurityHeaders } from "./server/security-headers";
 
@@ -29,9 +30,11 @@ export default {
 		if (import.meta.env.DEV) return response;
 		return withSecurityHeaders(request, response, { nonce, turnstile });
 	},
-	// A failure shows in the Worker's logs, and the next run picks up what this one left.
-	async scheduled() {
-		await pruneExpired(createDb(env.DB));
+	// The short cron retries logout handoffs; the daily cron also prunes expired identity rows.
+	async scheduled(controller) {
+		const db = createDb(env.DB);
+		if (controller.cron !== "*/5 * * * *") await pruneExpired(db);
+		if (env.LOGOUTS) await flushLogoutOutbox(db, env.LOGOUTS);
 	},
 	async queue(batch) {
 		await deliverMissedLogouts(batch);

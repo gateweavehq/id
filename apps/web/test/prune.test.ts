@@ -160,12 +160,37 @@ describe("the daily cron", () => {
 describe("the schedule", () => {
 	const config = resolve(import.meta.dirname, "../../../wrangler.jsonc");
 
+	it("retries a stored Queue handoff on the five-minute cron", async () => {
+		const rowId = crypto.randomUUID();
+		await id.db
+			.prepare(
+				"INSERT INTO logout_outbox (id, client_id, sub, sid, created_at) VALUES (?, ?, ?, ?, ?)",
+			)
+			.bind(rowId, "missing-client", "pairwise-person", "ended-session", Date.now() - HOUR)
+			.run();
+		await id.runCron("*/5 * * * *");
+		const remaining = await id.db
+			.prepare("SELECT id FROM logout_outbox WHERE id = ?")
+			.bind(rowId)
+			.first();
+		expect(remaining).toBeNull();
+	});
+
+	it("prunes expired rows when a deployment moves the daily cron", async () => {
+		await addVerification("moved-daily-cron", Date.now() - HOUR).run();
+		await id.runCron("0 4 * * *");
+		expect(await has("verification", "moved-daily-cron")).toBe(false);
+	});
+
 	// A handler with no schedule never runs, and nothing would say so: the tables just keep growing.
 	it.each([
 		["a self-hosted deployment", undefined],
 		["Gateweave Cloud", "cloud"],
 		["staging", "staging"],
 	])("runs on %s", (_name, env) => {
-		expect(unstable_readConfig({ config, env }).triggers.crons).toEqual(["17 3 * * *"]);
+		expect(unstable_readConfig({ config, env }).triggers.crons).toEqual([
+			"*/5 * * * *",
+			"17 3 * * *",
+		]);
 	});
 });

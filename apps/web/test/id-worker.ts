@@ -413,12 +413,12 @@ export async function startId(
 				{ timeout: 5_000 },
 			);
 		},
-		/** Runs what the Worker's daily cron runs, and resolves when it has finished. */
-		async runCron() {
+		/** Runs a Worker cron and resolves when it has finished. */
+		async runCron(cron = "17 3 * * *") {
 			const worker = (await mf.getWorker(names[0])) as unknown as {
 				scheduled(options: { cron: string; scheduledTime: Date }): Promise<unknown>;
 			};
-			await worker.scheduled({ cron: "17 3 * * *", scheduledTime: new Date() });
+			await worker.scheduled({ cron, scheduledTime: new Date() });
 		},
 		dispose: () => mf.dispose(),
 	};

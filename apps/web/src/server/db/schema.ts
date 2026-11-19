@@ -149,6 +149,20 @@ export const deploymentInvitation = sqliteTable("deployment_invitation", {
 	createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/** Logouts awaiting a queue handoff after direct delivery failed. A cron retries each stored row. */
+export const logoutOutbox = sqliteTable(
+	"logout_outbox",
+	{
+		id: text("id").primaryKey(),
+		clientId: text("client_id").notNull(),
+		sub: text("sub").notNull(),
+		sid: text("sid").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+		lastAttemptAt: integer("last_attempt_at", { mode: "timestamp_ms" }),
+	},
+	(table) => [index("logout_outbox_created_at_idx").on(table.createdAt)],
+);
+
 /**
  * "Who may make an account" in docs/architecture.md. The owner's list of people who may make an account
  * while sign-up is closed: an address, lowercased, or a domain written with a leading `@`, which covers
