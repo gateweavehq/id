@@ -308,10 +308,52 @@ describe("pruning and retrying the outbox", () => {
 		}
 	});
 
-	it("only retries on the outbox's own cron, without pruning", async () => {
+	it("prunes no other table on the outbox's own cron", async () => {
 		const { database, state } = faulty(real);
 		const send = vi.fn().mockResolvedValue(undefined);
 		await runCron(createDb(database), OUTBOX_CRON, { send });
 		expect(state.sent.some((query) => /^delete from "session"/i.test(query))).toBe(false);
+	});
+
+	it("removes a row past its retention on the outbox's own cron, without sending it", async () => {
+		const db = createDb(real);
+		const send = vi.fn().mockResolvedValue(undefined);
+		await db
+			.insert(schema.logoutOutbox)
+			.values([
+				{ id: "expired", ...logout, createdAt: hoursAgo(25) },
+				{ id: "owed", ...logout, sid: "recent-session", createdAt: hoursAgo(1) },
+			])
+			.run();
+		try {
+			await runCron(db, OUTBOX_CRON, { send });
+			expect(send).toHaveBeenCalledTimes(1);
+			expect(send).toHaveBeenCalledWith(
+				{ clientId: logout.clientId, sub: logout.sub, sid: "recent-session" },
+				{ delaySeconds: 0 },
+			);
+			expect(await rows()).toHaveLength(0);
+		} finally {
+			await db.delete(schema.logoutOutbox).run();
+		}
+	});
+
+	it("still retries on the outbox's own cron when its prune fails, then reports the failure", async () => {
+		const { database, state } = faulty(real);
+		state.only = /^delete from "logout_outbox" where "logout_outbox"."id" in \(select/i;
+		state.failures = 1;
+		const db = createDb(real);
+		const send = vi.fn().mockResolvedValue(undefined);
+		await db
+			.insert(schema.logoutOutbox)
+			.values({ id: "owed", ...logout, createdAt: hoursAgo(1) })
+			.run();
+		try {
+			await expect(runCron(createDb(database), OUTBOX_CRON, { send })).rejects.toThrow();
+			expect(send).toHaveBeenCalledTimes(1);
+			expect(await rows()).toHaveLength(0);
+		} finally {
+			await db.delete(schema.logoutOutbox).run();
+		}
 	});
 });

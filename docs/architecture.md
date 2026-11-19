@@ -965,10 +965,12 @@ minute per run. A refused row does not block younger rows. The row is removed on
 accepts the message. A row can also remain when the
 Queue accepts it but D1 cannot remove it; a later duplicate is safe because an app already signed out
 answers successfully. If D1 cannot store the row, ID still tries the
-Queue; failure of both systems is logged but cannot be recovered automatically. The daily cleanup
-deletes outbox rows older than 24 hours, near the Queue's own retry horizon, so session identifiers
-are not held indefinitely if the Queue or its binding remains unavailable. It prunes the outbox first
-and each table on its own, so a failure elsewhere does not keep them, and the retry skips rows past
+Queue; failure of both systems is logged but cannot be recovered automatically. Every firing of the
+cron, the five-minute one included, deletes outbox rows older than 24 hours, near the Queue's own
+retry horizon, so session identifiers are not held past that if the Queue or its binding remains
+unavailable. With the daily run alone, a row written just after it would stay for nearly two days.
+The daily cleanup prunes the outbox first and each table on its own, so a failure elsewhere does not
+keep them, and the retry skips rows past
 that age rather than give them a fresh retry window on the Queue. A failed prune does not hold back
 the retries of the same firing either; its error is raised after them.
 The message holds who and which session, not the token: a logout token lives two minutes and apps refuse
