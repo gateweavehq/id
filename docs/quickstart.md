@@ -98,7 +98,10 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    `gateweave-id-logouts`, from `name`, `database_name` and the two `queue` lines at the top of
    `wrangler.jsonc`. To use other names, change those four before this step, and leave the `env`
    blocks further down, which are Gateweave's own deployments. The Worker's name is also the first
-   part of its address.
+   part of its address. If your account already has a Worker or a database under one of these names,
+   the deploy updates that Worker in place, keeping its secrets, and applies the migrations to that
+   database, and Wrangler binds a queue of that name too, which two servers cannot share. Choose
+   other names to keep a new ID apart from it.
 
    <details>
    <summary>Expected output</summary>
