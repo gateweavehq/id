@@ -10,8 +10,8 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
 ## What you need
 
-- A Cloudflare account on the Workers Paid plan. The Free plan gives a request too little CPU for a
-  password sign-in; [self-hosting.md](self-hosting.md) has the numbers.
+- A Cloudflare account on the Workers Paid plan. The Free plan gives a request 10 ms of CPU, and checking
+  a password takes about 100 ms; [self-hosting.md](self-hosting.md) has the numbers.
 - [Git](https://git-scm.com/downloads).
 - [Node.js](https://nodejs.org) 24, the version in `.node-version`, and [pnpm](https://pnpm.io/installation) 12.
 - A browser, for signing in to Cloudflare and for claiming the server.
@@ -98,10 +98,10 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    `gateweave-id-logouts`, from `name`, `database_name` and the two `queue` lines at the top of
    `wrangler.jsonc`. To use other names, change those four before this step, and leave the `env`
    blocks further down, which are Gateweave's own deployments. The Worker's name is also the first
-   part of its address. If your account already has a Worker or a database under one of these names,
-   the deploy updates that Worker in place, keeping its secrets, and applies the migrations to that
-   database, and Wrangler binds a queue of that name too, which two servers cannot share. Choose
-   other names to keep a new ID apart from it.
+   part of its address. An earlier ID under these names is updated in place: the deploy keeps its
+   secrets and applies the migrations to its database. A different Worker under the name, one with
+   no `BETTER_AUTH_SECRET`, or a queue that another Worker already consumes, makes the deploy fail,
+   since a queue has one consumer. Choose unused names to keep a new ID apart from either.
 
    <details>
    <summary>Expected output</summary>
@@ -187,8 +187,9 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
    </details>
 
-6. Tell the server its address. Run this and paste your
-   address, such as `https://gateweave-id.<your-subdomain>.workers.dev`, with nothing after the
+6. Tell the server its address. If this server already has a `BETTER_AUTH_URL`, keep it and skip this
+   step: changing it breaks the issuer apps compare and every passkey. Otherwise run this and paste
+   your address, such as `https://gateweave-id.<your-subdomain>.workers.dev`, with nothing after the
    `.dev`, when Wrangler asks for the value.
 
    ```sh
@@ -218,7 +219,8 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
    </details>
 
-7. Generate `OIDC_PAIRWISE_SECRET` and **keep a copy of it** in your password manager before you go
+7. If this server already has an `OIDC_PAIRWISE_SECRET`, keep it and skip steps 7 and 8: setting it
+   again gives everybody a new id in every app. Otherwise generate `OIDC_PAIRWISE_SECRET` and **keep a copy of it** in your password manager before you go
    on. It gives each app its own id for each person, so without your copy you cannot set it again
    after a mistake, and changing or losing it gives everybody a new id in every app. Wrangler cannot
    read a secret back.
