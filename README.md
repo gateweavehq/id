@@ -101,7 +101,8 @@ what must never break.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/gateweavehq/id)
 
-[docs/self-hosting.md](docs/self-hosting.md) has the steps and every setting, including what you give
+The [quickstart](docs/quickstart.md) takes you from a fresh clone to a first registered app, with no
+custom domain and no email. [docs/self-hosting.md](docs/self-hosting.md) has the steps and every setting, including what you give
 up without email. The first account owns a new server and sign-up closes behind it, so claim yours as
 soon as it is up.
 
