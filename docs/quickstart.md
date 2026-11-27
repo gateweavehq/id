@@ -99,22 +99,16 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    `$env:CLOUDFLARE_ACCOUNT_ID = "<id>"`) for the one to deploy to. The deploy runs Wrangler where it
    cannot ask which.
 
-   ```sh
-   pnpm run deploy
-   ```
-
-   Nothing needs setting first. The deploy builds ID, creates the database and the queue, makes the
-   secret that signs sessions (`BETTER_AUTH_SECRET`) and never shows it, and then applies the
-   database migrations. Answer **yes** when Wrangler asks whether to continue with the migrations.
-   If your account has no workers.dev subdomain yet, Wrangler offers to register one: say yes
-   to that too. If the deploy stops with an error, read it and do what it says.
-
    The Worker, the database and the queue are called `gateweave-id`, `gateweave-id` and
    `gateweave-id-logouts`, from `name`, `database_name` and the two `queue` lines at the top of
    `wrangler.jsonc`, before `"env"`. To use other names, change all four in one pass before this
    step. Leave the names under `env`: those are Gateweave's own deployments, and `gateweave-id`
    appears there too, so a find-and-replace over the whole file would change them. The Worker's name
    is also the first part of its address.
+
+   For a fresh installation, choose unused names for all three resources. If a D1 database already
+   has the configured `database_name`, the deploy reuses it and applies pending ID migrations
+   before checking for an existing Worker. This also happens when the Worker name is free.
 
    If the account already has a Worker under the Worker's name, the deploy does not make a new one,
    and what happens depends on that Worker's secrets. If it has a `BETTER_AUTH_SECRET`, as an
@@ -131,7 +125,15 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    `Trigger configuration for "<name>" was only partially updated`. Again, a database that this
    deploy made has no tables yet.
 
-   Either way, choose names nothing uses, unless you mean to update an ID you already run.
+   ```sh
+   pnpm run deploy
+   ```
+
+   On a fresh installation, the deploy builds ID, creates the database and the queue, makes the
+   secret that signs sessions (`BETTER_AUTH_SECRET`) and never shows it, and then applies the
+   database migrations. Answer **yes** when Wrangler asks whether to continue with the migrations.
+   If your account has no workers.dev subdomain yet, Wrangler offers to register one: say yes
+   to that too. If the deploy stops with an error, read it and do what it says.
 
    <details>
    <summary>Expected output</summary>
@@ -358,7 +360,9 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
    </details>
 
-9. Check that the provider answers. Replace the address with yours, or open it in your browser.
+9. Check that the provider answers. Replace the example address with the origin you set in step 6,
+   or the origin of the existing `BETTER_AUTH_URL` if you kept it. That can be a custom domain.
+   You can also open the discovery URL in your browser.
 
    ```sh
    curl https://gateweave-id.<your-subdomain>.workers.dev/.well-known/openid-configuration
@@ -371,8 +375,8 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    {"scopes_supported":["openid","profile","email","offline_access","groups"],"issuer":"https://gateweave-id.<your-subdomain>.workers.dev","authorization_endpoint":"https://gateweave-id.<your-subdomain>.workers.dev/api/auth/oauth2/authorize", ...
    ```
 
-   One line of JSON that carries your address as the `issuer`. If you get something else, read what
-   it says. "Not found" means the provider is still off, which it is until both `BETTER_AUTH_URL` and
+   One line of JSON that carries the configured origin as the `issuer`. Keep that exact value for
+   step 10. "Not found" means the provider is still off, which it is until both `BETTER_AUTH_URL` and
    `OIDC_PAIRWISE_SECRET` are set. Wait a few seconds after step 8 and try again, and if it stays,
    check that steps 6 and 8 each ended with `Success!`.
 
@@ -401,8 +405,8 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
     ```
 
     The client id is 32 characters, and the secret starts with `gwid_cs_`: both are different each
-    time. The issuer to give your app is your address, and
-    [connect-an-app.md](connect-an-app.md) has the rest of its settings. An app registered this way
+    time. Give your app the exact `issuer` from the discovery document in step 9. See
+    [connect-an-app.md](connect-an-app.md) for its other settings. An app registered this way
     is first-party: nobody is asked before it signs them in. Admins of a workspace can add apps of
     their own from its page instead, which only that workspace's members can use. If the command
     stops with an error, read it and do what it says.
