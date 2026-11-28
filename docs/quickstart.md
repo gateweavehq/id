@@ -107,12 +107,14 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    is also the first part of its address.
 
    **Choose unused names for all three resources before you deploy.** Check the Worker, D1 and
-   Queue lists in the selected Cloudflare account. If a D1 database already has the configured
-   `database_name`, the deploy reuses it and applies pending ID migrations before checking the
-   Worker name.
+   Queue lists in the selected Cloudflare account. Deploying to an existing Worker can replace
+   its code. If a D1 database already has the configured `database_name`, the deploy reuses it
+   and applies pending ID migrations before checking the Worker name.
 
    To update an ID you already run, follow [Updating](self-hosting.md#updating) from its existing
    checkout. Keep its Worker name, database name and binding ID (if set), and queue name together.
+   To retry a partial deployment from this guide, use the same checkout and names after you
+   confirm that the resources under those names came from your earlier attempt.
 
    ```sh
    pnpm run deploy
@@ -239,9 +241,10 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    share the address. Sign-up closes behind the first account, so after it only people you invite
    can make one: see [Who can get in](self-hosting.md#who-can-get-in).
 
-   If you already claimed this server during an earlier attempt, sign in at `/login` and continue.
-   If the address already has someone else's account, check the address from step 4 and start again
-   under unused names if needed.
+   If `/signup` shows **Create your account** instead of **Claim this server**, the server already
+   has an account. If you claimed it on an earlier attempt, sign in at `/login` and continue.
+   Otherwise, check that you opened the address from step 4. If it matches, stop and deploy again
+   under three unused names.
 
    <details>
    <summary>Expected output</summary>
@@ -350,7 +353,9 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
 9. Check that the provider answers. Replace the example address with the origin you set in step 6,
    or the origin of the existing `BETTER_AUTH_URL` if you kept it. That can be a custom domain.
-   You can also open the discovery URL in your browser. In Windows PowerShell, use `curl.exe`.
+   If you are resuming and do not know the configured origin, try the Worker's address from
+   step 4 and read the `issuer` from the response. You can also open the discovery URL in your
+   browser. In Windows PowerShell, use `curl.exe`.
 
    ```sh
    curl https://gateweave-id.<your-subdomain>.workers.dev/.well-known/openid-configuration
