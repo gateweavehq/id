@@ -109,7 +109,8 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    **Choose unused names for all three resources before you deploy.** Check the Worker, D1 and
    Queue lists in the selected Cloudflare account. Deploying to an existing Worker can replace
    its code. If a D1 database already has the configured `database_name`, the deploy reuses it
-   and applies pending ID migrations before checking the Worker name.
+   and applies pending ID migrations before checking the Worker name. For a fresh installation,
+   leave `database_id` unset in the top-level `DB` binding so Wrangler selects the database by name.
 
    To update an ID you already run, follow [Updating](self-hosting.md#updating) from its existing
    checkout. Keep its Worker name, database name and binding ID (if set), and queue name together.
@@ -241,10 +242,10 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    share the address. Sign-up closes behind the first account, so after it only people you invite
    can make one: see [Who can get in](self-hosting.md#who-can-get-in).
 
-   If `/signup` shows **Create your account** instead of **Claim this server**, the server already
-   has an account. If you claimed it on an earlier attempt, sign in at `/login` and continue.
-   Otherwise, check that you opened the address from step 4. If it matches, stop and deploy again
-   under three unused names.
+   If the heading on `/signup` says **Create your account**, the server already has an account.
+   If you claimed it on an earlier attempt, sign in at `/login` and continue. Otherwise, check
+   that you opened the address from step 4. If it matches, stop. Remove any `database_id` from the
+   top-level `DB` binding in `wrangler.jsonc` and deploy again under three unused names.
 
    <details>
    <summary>Expected output</summary>
