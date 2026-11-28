@@ -388,8 +388,7 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
     its hash is stored, so nothing can show it again, and an app without it cannot sign anyone in.
 
     ```sh
-    pnpm --filter @gateweave/id-web apps:add --app my-app --name "My app" \
-      --redirect-uri https://app.example.com/callback
+    pnpm --filter @gateweave/id-web apps:add --app my-app --name "My app" --redirect-uri https://app.example.com/callback
     ```
 
     <details>
