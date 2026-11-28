@@ -11,6 +11,9 @@ Paid plan too. ID has not been run on the Free plan.
 There are two ways to deploy: the button, which also sets up deploys on every push, or the command line.
 Either way, [claim your server](#claim-your-server) as soon as it is up.
 
+For a first server in a few steps, with no custom domain and no email, follow the
+[quickstart](quickstart.md).
+
 ## Deploy with the button
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/gateweavehq/id)
