@@ -106,24 +106,13 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    appears there too, so a find-and-replace over the whole file would change them. The Worker's name
    is also the first part of its address.
 
-   For a fresh installation, choose unused names for all three resources. If a D1 database already
-   has the configured `database_name`, the deploy reuses it and applies pending ID migrations
-   before checking for an existing Worker. This also happens when the Worker name is free.
+   **Choose unused names for all three resources before you deploy.** Check the Worker, D1 and
+   Queue lists in the selected Cloudflare account. If a D1 database already has the configured
+   `database_name`, the deploy reuses it and applies pending ID migrations before checking the
+   Worker name.
 
-   If the account already has a Worker under the Worker's name, the deploy does not make a new one,
-   and what happens depends on that Worker's secrets. If it has a `BETTER_AUTH_SECRET`, as an
-   earlier ID of yours does, the deploy overwrites it: it replaces the Worker's code, keeps its
-   secrets and applies these migrations to a database of that name before the new code goes live.
-   If that Worker is not an ID of yours, you lose it: its code is gone, and only its secrets stay.
-   If it has no `BETTER_AUTH_SECRET`, the deploy fails, but by then it has made the database and the
-   queue, or, where the database was already there, applied these migrations to it. A database made
-   this way has no tables yet, since the migrations of a new database run after the deploy.
-
-   If another Worker already consumes the queue, the deploy fails too, since a queue has one
-   consumer. It fails late: Wrangler has uploaded the Worker by then, and stops when it sets this
-   Worker up as the queue's consumer, with a message that begins
-   `Trigger configuration for "<name>" was only partially updated`. Again, a database that this
-   deploy made has no tables yet.
+   To update an ID you already run, follow [Updating](self-hosting.md#updating) from its existing
+   checkout. Keep its Worker name, database name and binding ID (if set), and queue name together.
 
    ```sh
    pnpm run deploy
@@ -250,12 +239,9 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
    share the address. Sign-up closes behind the first account, so after it only people you invite
    can make one: see [Who can get in](self-hosting.md#who-can-get-in).
 
-   If the server already has an account, there is nothing to claim, so skip this step. Signed in,
-   `/signup` opens your account page. Signed out, on a server without email, it shows **Create your
-   account** and says "This server does not send email, so it cannot check an address. Ask whoever
-   runs it for an invitation." If the account is yours, as when step 4 updated an ID you run, sign
-   in at `/login` instead. If it is not yours, someone reached the server first:
-   don't use it, and deploy again under new names. If the form shows a message, it says what to fix.
+   If you already claimed this server during an earlier attempt, sign in at `/login` and continue.
+   If the address already has someone else's account, check the address from step 4 and start again
+   under unused names if needed.
 
    <details>
    <summary>Expected output</summary>
@@ -273,8 +259,9 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
    </details>
 
-6. Tell the server its address. If this server already has a `BETTER_AUTH_URL`, keep it and skip this
-   step: changing it breaks the issuer apps compare and every passkey. Otherwise run this and paste
+6. Tell the server its address. If you are resuming a setup, check **Variables and Secrets** for
+   your Worker in the Cloudflare dashboard. If it already has a `BETTER_AUTH_URL`, keep it and skip
+   this step: changing it breaks the issuer apps compare and every passkey. Otherwise run this and paste
    your address, such as `https://gateweave-id.<your-subdomain>.workers.dev`, with nothing after the
    `.dev`, when Wrangler asks `Enter a secret value:`.
 
@@ -314,7 +301,8 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
    </details>
 
-7. If this server already has an `OIDC_PAIRWISE_SECRET`, keep it and skip steps 7 and 8: setting it
+7. Check **Variables and Secrets** for `OIDC_PAIRWISE_SECRET` if you are resuming a setup. If the
+   Worker already has it, keep it and skip steps 7 and 8: setting it
    again gives everybody a new id in every app. Otherwise generate `OIDC_PAIRWISE_SECRET` and **keep a copy of it** in your password manager before you go
    on. It gives each app its own id for each person, so without your copy you cannot set it again
    after a mistake, and changing or losing it gives everybody a new id in every app. Wrangler cannot
@@ -362,7 +350,7 @@ nothing here needs a passkey. The rest is in [self-hosting.md](self-hosting.md).
 
 9. Check that the provider answers. Replace the example address with the origin you set in step 6,
    or the origin of the existing `BETTER_AUTH_URL` if you kept it. That can be a custom domain.
-   You can also open the discovery URL in your browser.
+   You can also open the discovery URL in your browser. In Windows PowerShell, use `curl.exe`.
 
    ```sh
    curl https://gateweave-id.<your-subdomain>.workers.dev/.well-known/openid-configuration
